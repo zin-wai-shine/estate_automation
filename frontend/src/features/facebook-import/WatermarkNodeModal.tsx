@@ -11,6 +11,10 @@ import {
   FiArchive,
   FiChevronUp,
   FiChevronDown,
+  FiUploadCloud,
+  FiUpload,
+  FiTrash2,
+  FiRefreshCw,
 } from 'react-icons/fi';
 import JSZip from 'jszip';
 import {
@@ -417,12 +421,127 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     });
   }, [connections, workflowBoxes, box.id]);
 
-  // Image Source Selection: 'get_images' | 'enhance' | 'generate' | 'all'
-  const [imageSource, setImageSource] = useState<'get_images' | 'enhance' | 'generate' | 'all'>(() => {
+  // Direct uploaded images state
+  const [uploadedImages, setUploadedImages] = useState<Array<{ id: string; url: string; name?: string }>>(() => {
+    if (Array.isArray(box.uploadedImages) && box.uploadedImages.length > 0) {
+      return box.uploadedImages.map((img: any, i: number) => ({
+        id: img.id || `up-${i}`,
+        url: typeof img === 'string' ? img : img.url,
+        name: img.name || `Photo #${i + 1}`,
+      }));
+    }
+    try {
+      const saved = localStorage.getItem(`bolthaven_format_uploads_${box.id}`);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
+  const [isProcessingCrop, setIsProcessingCrop] = useState<boolean>(false);
+
+  // Image Source Selection: 'get_images' | 'enhance' | 'generate' | 'all' | 'upload'
+  const [imageSource, setImageSource] = useState<'get_images' | 'enhance' | 'generate' | 'all' | 'upload'>(() => {
     if (box.imageSource) return box.imageSource as any;
+    if (box.uploadedImages && box.uploadedImages.length > 0) return 'upload';
     if (isUpstreamEnhance) return 'enhance';
     return 'get_images';
   });
+
+  // Upload handler for image files
+  const handleFilesUpload = async (files: FileList | File[]) => {
+    const fileArr = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    if (fileArr.length === 0) return;
+
+    setIsProcessingCrop(true);
+    const newItems: Array<{ id: string; url: string; name?: string }> = [];
+
+    for (let i = 0; i < fileArr.length; i++) {
+      const file = fileArr[i];
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve((e.target?.result as string) || '');
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(file);
+      });
+
+      if (dataUrl) {
+        newItems.push({
+          id: `up-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+          url: dataUrl,
+          name: file.name,
+        });
+      }
+    }
+
+    if (newItems.length > 0) {
+      const updated = [...uploadedImages, ...newItems];
+      setUploadedImages(updated);
+      setImageSource('upload');
+      onUpdateBox(box.id, {
+        uploadedImages: updated,
+        imageSource: 'upload',
+        selectedImageIndices: updated.map((_, i) => i + 1),
+      });
+      try {
+        localStorage.setItem(`bolthaven_format_uploads_${box.id}`, JSON.stringify(updated));
+      } catch {}
+
+      lastRenderedKeyRef.current = '';
+    }
+    setIsProcessingCrop(false);
+  };
+
+  const handleRemoveUploadedImage = (idToRemove: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const next = uploadedImages.filter((img) => img.id !== idToRemove);
+    setUploadedImages(next);
+    onUpdateBox(box.id, {
+      uploadedImages: next,
+      selectedImageIndices: next.map((_, i) => i + 1),
+    });
+    try {
+      localStorage.setItem(`bolthaven_format_uploads_${box.id}`, JSON.stringify(next));
+    } catch {}
+    lastRenderedKeyRef.current = '';
+  };
+
+  // Listen for global canvas clear event
+  useEffect(() => {
+    const handleCleared = () => {
+      setUploadedImages([]);
+      setFormattedPreviewItems([]);
+      setLiveFormattedPhotos({});
+      setCompanionEnhanced({});
+      setSelectedIndices([]);
+      lastRenderedKeyRef.current = '';
+      try {
+        localStorage.removeItem(`bolthaven_format_uploads_${box.id}`);
+      } catch {}
+      try {
+        const codeKey = listingCode || 'current';
+        localStorage.removeItem(`bolthaven_canvas_enhanced_${codeKey}`);
+      } catch {}
+    };
+    window.addEventListener('ea_workflow_cleared', handleCleared);
+    return () => window.removeEventListener('ea_workflow_cleared', handleCleared);
+  }, [box.id, listingCode]);
+
+  // Synchronize when box.uploadedImages is cleared externally
+  useEffect(() => {
+    if (!box.uploadedImages || box.uploadedImages.length === 0) {
+      if (uploadedImages.length > 0) {
+        setUploadedImages([]);
+        setFormattedPreviewItems([]);
+        setLiveFormattedPhotos({});
+        lastRenderedKeyRef.current = '';
+      }
+    }
+  }, [box.uploadedImages]);
 
   // Effective images extracted from workflow run
   const effectiveImageList = useMemo(() => {
@@ -577,15 +696,38 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       index: number;
       displayNumber: number;
       url: string;
-      source: 'get_images' | 'enhance' | 'generate';
+      source: 'get_images' | 'enhance' | 'generate' | 'upload';
       label: string;
       isEnhanced?: boolean;
     }> = [];
 
+    const hasEnhancedPhotos = Object.keys(mergedEnhancedPhotos).length > 0;
+    const isEnhanceEmpty = isUpstreamEnhance || imageSource === 'enhance';
+    const shouldUseUploaded =
+      imageSource === 'upload' ||
+      (uploadedImages.length > 0 &&
+        ((isEnhanceEmpty && !hasEnhancedPhotos) ||
+         (!isUpstreamEnhance && (!effectiveImageList || effectiveImageList.length === 0))));
+
+    if (shouldUseUploaded && uploadedImages.length > 0) {
+      uploadedImages.forEach((img, idx) => {
+        const photoNum = idx + 1;
+        rawList.push({
+          id: img.id || `up-${photoNum}`,
+          index: photoNum,
+          displayNumber: photoNum,
+          url: img.url,
+          source: 'upload',
+          label: img.name || `Uploaded #${photoNum}`,
+          isEnhanced: false,
+        });
+      });
+      return rawList;
+    }
+
     // When upstream is an Enhance node, merge with the first step's photos!
     if (isUpstreamEnhance || imageSource === 'enhance') {
-      const hasEnhanced = Object.keys(mergedEnhancedPhotos).length > 0;
-      if (!hasEnhanced) {
+      if (!hasEnhancedPhotos) {
         return [];
       }
       const enhancedIndices = Object.keys(mergedEnhancedPhotos).map(Number).filter((n) => !isNaN(n));
@@ -656,6 +798,22 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       }
     }
 
+    // If 'all' mode and uploadedImages exist, include them as well
+    if (imageSource === 'all' && uploadedImages.length > 0) {
+      uploadedImages.forEach((img, idx) => {
+        const photoNum = rawList.length + idx + 1;
+        rawList.push({
+          id: img.id || `up-${photoNum}`,
+          index: photoNum,
+          displayNumber: photoNum,
+          url: img.url,
+          source: 'upload',
+          label: img.name || `Uploaded #${idx + 1}`,
+          isEnhanced: false,
+        });
+      });
+    }
+
     return rawList;
   }, [
     isUpstreamEnhance,
@@ -665,6 +823,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     watermarkedPhotos,
     effectiveHeroImage,
     heroLabel,
+    uploadedImages,
   ]);
 
   const [selectedIndices, setSelectedIndices] = useState<number[]>(() => {
@@ -756,6 +915,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     let isCancelled = false;
 
     const generatePreviews = async () => {
+      setIsProcessingCrop(true);
       const items: Array<{
         id: string;
         sourcePhotoId: string;
@@ -825,12 +985,14 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         lastRenderedKeyRef.current = currentKey;
         setFormattedPreviewItems(items);
         setLiveFormattedPhotos(resultMap);
+        setIsProcessingCrop(false);
       }
     };
 
     generatePreviews();
     return () => {
       isCancelled = true;
+      setIsProcessingCrop(false);
     };
   }, [
     activePhotosToFormat,
@@ -844,6 +1006,12 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     currentFormat?.gridLayoutId,
     JSON.stringify(currentFormat?.watermarkConfig),
   ]);
+
+  const handleTriggerCropProcess = () => {
+    setIsProcessingCrop(true);
+    lastRenderedKeyRef.current = '';
+    setFormattedPreviewItems([]);
+  };
 
   const handleSelectFormat = (format: CropStudioFormat) => {
     setSelectedFormatId(format.id);
@@ -1039,10 +1207,32 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               {currentFormat?.name || 'Crop Format'}
             </div>
             <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              {currentFormat?.targetWidth} × {currentFormat?.targetHeight} px • Source: {imageSource === 'generate' ? `${heroLabel} (${(effectiveHeroImage && effectiveHeroImage.url) ? '1 Photo' : '0 Photos'})` : imageSource === 'enhance' ? `${enhanceLabel} (${activePhotosToFormat.length} Photos)` : `Get Images (${activePhotosToFormat.length} Photos)`}
+              {currentFormat?.targetWidth} × {currentFormat?.targetHeight} px • Source:{' '}
+              {imageSource === 'upload' || (activePhotosToFormat.length > 0 && (activePhotosToFormat[0] as any)?.source === 'upload')
+                ? `Uploaded Files (${activePhotosToFormat.length} Photos)`
+                : imageSource === 'generate'
+                ? `${heroLabel} (${effectiveHeroImage && effectiveHeroImage.url ? '1 Photo' : '0 Photos'})`
+                : imageSource === 'enhance'
+                ? `${enhanceLabel} (${activePhotosToFormat.length} Photos)`
+                : `Get Images (${activePhotosToFormat.length} Photos)`}
             </div>
           </div>
         </div>
+
+        {/* Hidden file input for uploading local images */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) {
+              handleFilesUpload(e.target.files);
+              e.target.value = '';
+            }
+          }}
+        />
 
         {onOpenSettingsSidebox && (
           <button
@@ -1080,24 +1270,115 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       {/* Processed Photos Live Preview */}
       {displayPreviewItems.length > 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginTop: '0.25rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-              Processed Photos Preview
-            </label>
-            <span
-              style={{
-                fontSize: '0.6875rem',
-                fontWeight: 600,
-                color: box.enabled === false ? 'var(--text-muted)' : '#10B981',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-              }}
-            >
-              {box.enabled === false
-                ? '⏸️ Bypassed (Disabled in workflow)'
-                : `✓ ${displayPreviewItems.length} ${isGridFormat && displayPreviewItems.length > 1 ? 'Tiles' : 'Photos'} Ready · ${currentFormat?.aspect || '1:1'}`}
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Processed Photos Preview
+              </label>
+              <span
+                style={{
+                  fontSize: '0.625rem',
+                  fontWeight: 600,
+                  color: isProcessingCrop ? '#3B82F6' : (box.enabled === false ? 'var(--text-muted)' : '#10B981'),
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  backgroundColor: isProcessingCrop ? 'rgba(59, 130, 246, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  border: isProcessingCrop ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
+                }}
+              >
+                {isProcessingCrop ? '⚡ Cropping...' : box.enabled === false ? '⏸️ Bypassed' : `✓ ${displayPreviewItems.length} ${isGridFormat && displayPreviewItems.length > 1 ? 'Tiles' : 'Photos'} Ready`}
+              </span>
+            </div>
+
+            {/* Quick Action Buttons: Upload More & Run Crop Process */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                title="Upload image files from computer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '3px 8px',
+                  borderRadius: '5px',
+                  fontSize: '0.6875rem',
+                  fontWeight: 600,
+                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
+                  border: isDark ? '1px solid rgba(59, 130, 246, 0.35)' : '1px solid rgba(59, 130, 246, 0.3)',
+                  color: '#3B82F6',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.15s ease',
+                }}
+              >
+                <FiUpload size={11} />
+                <span>Upload</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleTriggerCropProcess}
+                disabled={isProcessingCrop}
+                title="Process crop again with current preset"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '3px 8px',
+                  borderRadius: '5px',
+                  fontSize: '0.6875rem',
+                  fontWeight: 600,
+                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.08)',
+                  border: isDark ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(16, 185, 129, 0.3)',
+                  color: '#10B981',
+                  cursor: isProcessingCrop ? 'not-allowed' : 'pointer',
+                  transition: 'background-color 0.15s ease',
+                }}
+              >
+                <FiRefreshCw size={11} style={isProcessingCrop ? { animation: 'spin 1s linear infinite' } : {}} />
+                <span>{isProcessingCrop ? 'Cropping...' : 'Process Crop'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setUploadedImages([]);
+                  setFormattedPreviewItems([]);
+                  setLiveFormattedPhotos({});
+                  setSelectedIndices([]);
+                  lastRenderedKeyRef.current = '';
+                  try {
+                    localStorage.removeItem(`bolthaven_format_uploads_${box.id}`);
+                  } catch {}
+                  onUpdateBox(box.id, {
+                    uploadedImages: [],
+                    imageSource: undefined,
+                    selectedImageIndices: undefined,
+                  });
+                }}
+                title="Clear photos from this format node"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '3px 8px',
+                  borderRadius: '5px',
+                  fontSize: '0.6875rem',
+                  fontWeight: 600,
+                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.08)',
+                  border: isDark ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid rgba(239, 68, 68, 0.3)',
+                  color: '#EF4444',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.15s ease',
+                }}
+              >
+                <FiTrash2 size={11} />
+                <span>Clear</span>
+              </button>
+            </div>
           </div>
 
           <div
@@ -1258,6 +1539,32 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                       >
                         <FiMaximize2 size={13} />
                       </div>
+
+                      {/* Delete button if photo is an uploaded file */}
+                      {uploadedImages.some((u) => u.id === item.sourcePhotoId || item.id?.startsWith('up-') || item.sourcePhotoId?.startsWith('up-')) && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleRemoveUploadedImage(item.sourcePhotoId, e)}
+                          title="Remove uploaded image"
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '50%',
+                            backgroundColor: 'rgba(239, 68, 68, 0.85)',
+                            border: '1px solid rgba(255, 255, 255, 0.35)',
+                            color: '#FFFFFF',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#DC2626')}
+                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.85)')}
+                        >
+                          <FiTrash2 size={12} />
+                        </button>
+                      )}
                     </div>
 
                     {/* Photo or Tile Number Badge */}
@@ -1502,29 +1809,108 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         </div>
       ) : (
         <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDraggingOver(true);
+          }}
+          onDragLeave={() => setIsDraggingOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDraggingOver(false);
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+              handleFilesUpload(e.dataTransfer.files);
+            }
+          }}
           style={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '2rem 1rem',
-            borderRadius: '8px',
-            border: isDark ? '1px dashed #30363D' : '1px dashed #E2E8F0',
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
-            gap: '8px',
+            padding: '2.5rem 1.25rem',
+            borderRadius: '10px',
+            border: isDraggingOver
+              ? '2px dashed #3B82F6'
+              : isDark
+              ? '1.5px dashed #30363D'
+              : '1.5px dashed #CBD5E1',
+            backgroundColor: isDraggingOver
+              ? (isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.06)')
+              : (isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)'),
+            gap: '12px',
             marginTop: '0.25rem',
+            transition: 'all 0.2s ease',
+            cursor: 'pointer',
           }}
+          onClick={() => fileInputRef.current?.click()}
         >
-          <FiImage size={26} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
-          <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-            No Photos Available
-          </span>
-          <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', textAlign: 'center', maxWidth: '260px', lineHeight: 1.4 }}>
-            {imageSource === 'generate'
-              ? `The upstream ${heroLabel} node has not generated a photo yet. Run the generator node first.`
-              : imageSource === 'enhance'
-              ? `The upstream ${enhanceLabel} node has not enhanced photos yet.`
-              : 'No images available from Get Images.'}
+          <div
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#3B82F6',
+            }}
+          >
+            <FiUploadCloud size={24} />
+          </div>
+
+          <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              Upload Photos for Crop & Format
+            </span>
+            <span style={{ fontSize: '0.71875rem', color: 'var(--text-muted)', maxWidth: '320px', lineHeight: 1.45 }}>
+              {imageSource === 'generate'
+                ? `The upstream ${heroLabel} node has not generated a photo yet. You can upload photos directly to run the crop process.`
+                : imageSource === 'enhance' || isUpstreamEnhance
+                ? `The upstream ${enhanceLabel} node has not enhanced photos yet. You can upload photos directly to run the crop process.`
+                : 'Drag & drop photos here, or click to browse files from your computer to run the crop process.'}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              fileInputRef.current?.click();
+            }}
+            disabled={isProcessingCrop}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '7px 16px',
+              borderRadius: '6px',
+              backgroundColor: '#3B82F6',
+              border: 'none',
+              color: '#FFFFFF',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              cursor: isProcessingCrop ? 'not-allowed' : 'pointer',
+              marginTop: '4px',
+              boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)',
+              transition: 'background-color 0.15s ease',
+            }}
+          >
+            {isProcessingCrop ? (
+              <>
+                <FiRefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                <span>Processing Crop...</span>
+              </>
+            ) : (
+              <>
+                <FiUpload size={13} />
+                <span>Choose Files to Upload</span>
+              </>
+            )}
+          </button>
+
+          <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+            Target Format: <strong style={{ color: 'var(--text-secondary)' }}>{currentFormat?.name}</strong> ({currentFormat?.targetWidth}×{currentFormat?.targetHeight} · {currentFormat?.aspect})
           </span>
         </div>
       )}

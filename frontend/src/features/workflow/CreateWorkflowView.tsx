@@ -995,6 +995,12 @@ export const CreateWorkflowView: React.FC = () => {
           ...editingFormat.config.getContent,
           manualContent: '',
         },
+        aiBoxes: (editingFormat.config.aiBoxes || []).map((b) => ({
+          ...b,
+          uploadedImages: [],
+          imageSource: b.imageSource === 'upload' ? undefined : b.imageSource,
+          selectedImageIndices: undefined,
+        })),
       });
     }
     if (editingFormat?.id) {
@@ -1013,7 +1019,14 @@ export const CreateWorkflowView: React.FC = () => {
     } catch {}
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
-      if (k && k.startsWith('ea_workflow_execution_data_')) {
+      if (
+        k &&
+        (k.startsWith('ea_workflow_execution_data_') ||
+         k.startsWith('bolthaven_format_uploads_') ||
+         k.startsWith('bolthaven_canvas_enhanced_') ||
+         k.startsWith('bolthaven_last_hero_image') ||
+         k.startsWith('estate_facebook_import_'))
+      ) {
         localStorage.removeItem(k);
       }
     }
@@ -1062,15 +1075,32 @@ export const CreateWorkflowView: React.FC = () => {
           completedNodeIds: nextCompleted,
         };
       });
-      if (editingFormat?.config?.trigger) {
+      if (editingFormat?.config) {
         handleCanvasConfigChange({
           ...editingFormat.config,
           trigger: {
             ...editingFormat.config.trigger,
             manualImages: [],
           },
+          aiBoxes: (editingFormat.config.aiBoxes || []).map((b) => ({
+            ...b,
+            uploadedImages: [],
+            imageSource: b.imageSource === 'upload' ? undefined : b.imageSource,
+            selectedImageIndices: undefined,
+          })),
         });
       }
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (
+          k &&
+          (k.startsWith('bolthaven_format_uploads_') ||
+           k.startsWith('bolthaven_canvas_enhanced_'))
+        ) {
+          localStorage.removeItem(k);
+        }
+      }
+      window.dispatchEvent(new CustomEvent('ea_workflow_cleared'));
     }
   };
 
@@ -2699,6 +2729,28 @@ export const CreateWorkflowView: React.FC = () => {
                 [tabGroupNodeId],
                 [],
                 `⏸️ [${groupName}] is disabled. Skipped.`
+              );
+              await delay(200);
+              return true;
+            }
+
+            const isTabGroupAutoRun = connectedTabGroupBox
+              ? (connectedTabGroupBox.autoRun === true || (connectedTabGroupBox as any).enableAutoRun === true)
+              : (box.autoRun === true || (box as any).enableAutoRun === true);
+            const isBoxAutoRun = box ? box.autoRun !== false && (box as any).enableAutoRun !== false : true;
+            const isProfileAutoRun = connectedProfileBox
+              ? connectedProfileBox.autoRun !== false && (connectedProfileBox as any).enableAutoRun !== false
+              : true;
+
+            if (!isTabGroupAutoRun || !isBoxAutoRun || !isProfileAutoRun) {
+              console.log(
+                `[Workflow] Tab Group [${groupName}] Auto-Run is OFF (tabGroupAutoRun=${isTabGroupAutoRun}, boxAutoRun=${isBoxAutoRun}, profileAutoRun=${isProfileAutoRun}). Skipping browser execution during automated workflow run.`
+              );
+              updateBranchNodes(
+                [tabGroupNodeId],
+                [],
+                [],
+                `⏸️ [${groupName}] Auto-Run is Off (Manual click). Skipped.`
               );
               await delay(200);
               return true;
@@ -4479,80 +4531,95 @@ export const CreateWorkflowView: React.FC = () => {
 
 
 
-      {/* Portal: Back Button, Workflow Name & Icon into Main Top Navbar Title area when canvas is open */}
-      {headerTitleEl &&
-        isCanvasOpen &&
-        editingFormat &&
-        createPortal(
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
-            {/* Back Button */}
+      {/* Conditional: Canvas Full Page View VS Workflow Formats List */}
+      {isCanvasOpen && editingFormat ? (
+        <div
+          style={{
+            flex: 1,
+            width: '100%',
+            height: '100%',
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Floating Top-Left Controls: Circular Back Button & Workflow Name Pill */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '16px',
+              left: '16px',
+              zIndex: 90,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              pointerEvents: 'auto',
+            }}
+          >
+            {/* Back Button (Circle) */}
             <button
               type="button"
               onClick={handleBackClick}
-              title="Back to workflow formats"
+              data-tooltip="Back to workflows"
+              data-tooltip-position="bottom"
               style={{
-                height: '32px',
-                padding: '0 10px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                borderRadius: '6px',
-                backgroundColor: 'transparent',
-                border: '1px solid transparent',
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                backgroundColor: isDark ? 'rgba(30, 41, 59, 0.7)' : 'rgba(241, 245, 249, 0.85)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(0, 0, 0, 0.12)',
+                boxShadow: 'none',
                 color: 'var(--text-secondary)',
-                fontSize: '0.75rem',
-                fontWeight: 600,
                 cursor: 'pointer',
-                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
-                e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(51, 65, 85, 0.9)' : 'rgba(226, 232, 240, 0.95)';
+                e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.2)';
                 e.currentTarget.style.color = 'var(--text-primary)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent';
-                e.currentTarget.style.borderColor = 'transparent';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(30, 41, 59, 0.7)' : 'rgba(241, 245, 249, 0.85)';
+                e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)';
                 e.currentTarget.style.color = 'var(--text-secondary)';
               }}
             >
-              <FiArrowLeft size={14} />
-              <span>Back</span>
+              <FiArrowLeft size={16} />
             </button>
 
+            {/* Workflow Name Floating Pill */}
             <div
               style={{
-                height: '32px',
-                padding: '0 6px 0 4px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                borderRadius: '6px',
-                backgroundColor: isFormatNameFocused ? (isDark ? '#21262D' : '#F1F5F9') : 'transparent',
+                height: '40px',
+                padding: '0 14px 0 10px',
+                borderRadius: '20px',
+                backgroundColor: isDark ? 'rgba(30, 41, 59, 0.7)' : 'rgba(241, 245, 249, 0.85)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
                 border: isFormatNameFocused
-                  ? (isDark ? '1px solid #30363D' : '1px solid #CBD5E1')
-                  : '1px solid transparent',
-                boxSizing: 'border-box',
-                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
-                e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
-              }}
-              onMouseLeave={(e) => {
-                if (!isFormatNameFocused) {
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                  e.currentTarget.style.borderColor = 'transparent';
-                }
+                  ? (isDark ? '1px solid #8B5CF6' : '1px solid #7C3AED')
+                  : (isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(0, 0, 0, 0.12)'),
+                boxShadow: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'border-color 0.18s ease, background-color 0.18s ease',
               }}
             >
               <div
                 style={{
-                  width: '24px',
-                  height: '24px',
-                  borderRadius: '5px',
-                  backgroundColor: isDark ? 'rgba(139, 92, 246, 0.18)' : 'rgba(139, 92, 246, 0.12)',
+                  width: '26px',
+                  height: '26px',
+                  borderRadius: '50%',
+                  backgroundColor: isDark ? 'rgba(139, 92, 246, 0.22)' : 'rgba(139, 92, 246, 0.15)',
                   color: isDark ? '#A78BFA' : '#7C3AED',
                   display: 'flex',
                   alignItems: 'center',
@@ -4578,7 +4645,8 @@ export const CreateWorkflowView: React.FC = () => {
                   }
                 }}
                 placeholder="Format Name"
-                title="Click to rename workflow"
+                data-tooltip="Click to rename workflow"
+                data-tooltip-position="bottom"
                 style={{
                   backgroundColor: 'transparent',
                   border: 'none',
@@ -4587,80 +4655,90 @@ export const CreateWorkflowView: React.FC = () => {
                   fontWeight: 600,
                   padding: '2px 4px',
                   outline: 'none',
-                  minWidth: '180px',
-                  maxWidth: '320px',
-                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  minWidth: '140px',
+                  maxWidth: '240px',
                 }}
               />
-              <button
-                type="button"
-                onClick={(e) => {
-                  const input = e.currentTarget.previousElementSibling as HTMLInputElement;
-                  if (input) input.focus();
-                }}
-                title="Rename workflow"
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '4px',
-                  borderRadius: '4px',
-                  opacity: 0.7,
-                }}
-              >
-                <FiEdit2 size={12} />
-              </button>
+              <FiEdit2 size={12} style={{ color: 'var(--text-muted)', opacity: 0.7 }} />
             </div>
-          </div>,
-          headerTitleEl
-        )}
+          </div>
 
-      {/* Portal: Run & Reset Layout Buttons into Navbar Right Corner (Same size, simple, zero glow) */}
-      {headerActionEl &&
-        isCanvasOpen &&
-        editingFormat &&
-        createPortal(
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            {/* Run / Stop Button */}
+          {/* Floating Top-Right Controls: Vertical Circular ("Cycle") Icon Buttons */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '16px',
+              right: '16px',
+              zIndex: 90,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '10px',
+              pointerEvents: 'auto',
+            }}
+          >
+            {/* 1. Run / Stop Circular Button */}
             {isRunningWorkflow ? (
               <button
                 type="button"
                 onClick={handleStopWorkflow}
-                title="Stop workflow execution"
+                data-tooltip="Stop"
+                data-tooltip-position="left"
                 style={{
-                  width: '130px',
-                  height: '32px',
-                  padding: '0 12px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  borderRadius: '6px',
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
                   backgroundColor: '#DC2626',
-                  color: '#FFFFFF',
                   border: '1px solid #B91C1C',
+                  color: '#FFFFFF',
                   boxShadow: 'none',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  outline: 'none',
-                  userSelect: 'none',
-                  whiteSpace: 'nowrap',
-                  boxSizing: 'border-box',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background-color 0.18s ease, border-color 0.18s ease',
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.backgroundColor = '#B91C1C';
+                  e.currentTarget.style.borderColor = '#991B1B';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = '#DC2626';
+                  e.currentTarget.style.borderColor = '#B91C1C';
                 }}
               >
-                <FiSquare size={11} style={{ fill: '#FFFFFF', color: '#FFFFFF' }} />
-                <span>Stop</span>
+                <FiSquare size={13} style={{ fill: '#FFFFFF', color: '#FFFFFF' }} />
+              </button>
+            ) : !isRunningWorkflow && executionState?.hasError && (executionState.failedNodeIds?.length || 0) > 0 && !executionState.failedNodeIds?.includes('trigger') ? (
+              <button
+                type="button"
+                onClick={() => handleContinueWorkflow(executionState.failedNodeIds?.[0])}
+                data-tooltip="Continue"
+                data-tooltip-position="left"
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  backgroundColor: '#059669',
+                  border: '1px solid #047857',
+                  color: '#FFFFFF',
+                  boxShadow: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background-color 0.18s ease, border-color 0.18s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#047857';
+                  e.currentTarget.style.borderColor = '#065F46';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#059669';
+                  e.currentTarget.style.borderColor = '#047857';
+                }}
+              >
+                <FiPlay size={15} style={{ fill: '#FFFFFF', color: '#FFFFFF', marginLeft: '2px' }} />
               </button>
             ) : (
               <button
@@ -4669,217 +4747,108 @@ export const CreateWorkflowView: React.FC = () => {
                   setRunFacebookUrl('');
                   setIsRunModalOpen(true);
                 }}
-                title="Run workflow format"
+                data-tooltip="Run"
+                data-tooltip-position="left"
                 style={{
-                  width: '130px',
-                  height: '32px',
-                  padding: '0 12px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  borderRadius: '6px',
-                  backgroundColor: 'transparent',
-                  color: isDark ? '#4ADE80' : '#16A34A',
-                  border: '1px solid transparent',
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  backgroundColor: isDark ? '#15803D' : '#16A34A',
+                  border: isDark ? '1px solid #166534' : '1px solid #15803D',
+                  color: '#FFFFFF',
                   boxShadow: 'none',
                   cursor: 'pointer',
-                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                  outline: 'none',
-                  userSelect: 'none',
-                  whiteSpace: 'nowrap',
-                  boxSizing: 'border-box',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background-color 0.18s ease, border-color 0.18s ease',
                 }}
                 onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? '#166534' : '#15803D';
+                  e.currentTarget.style.borderColor = isDark ? '#14532D' : '#166534';
+                }}
+                onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = isDark ? '#15803D' : '#16A34A';
                   e.currentTarget.style.borderColor = isDark ? '#166534' : '#15803D';
-                  e.currentTarget.style.color = '#FFFFFF';
-                  const icon = e.currentTarget.querySelector('svg');
-                  if (icon) {
-                    icon.style.fill = '#FFFFFF';
-                    icon.style.color = '#FFFFFF';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                  e.currentTarget.style.borderColor = 'transparent';
-                  e.currentTarget.style.color = isDark ? '#4ADE80' : '#16A34A';
-                  const icon = e.currentTarget.querySelector('svg');
-                  if (icon) {
-                    icon.style.fill = isDark ? '#4ADE80' : '#16A34A';
-                    icon.style.color = isDark ? '#4ADE80' : '#16A34A';
-                  }
                 }}
               >
-                <FiPlay size={12} style={{ fill: isDark ? '#4ADE80' : '#16A34A', color: isDark ? '#4ADE80' : '#16A34A', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }} />
-                <span>Run</span>
+                <FiPlay size={15} style={{ fill: '#FFFFFF', color: '#FFFFFF', marginLeft: '2px' }} />
               </button>
             )}
 
-            {/* Continue Workflow Button: Shown when execution is paused on error (excluding trigger failure) */}
-            {!isRunningWorkflow && executionState?.hasError && (executionState.failedNodeIds?.length || 0) > 0 && !executionState.failedNodeIds?.includes('trigger') && (
-              <button
-                type="button"
-                onClick={() => handleContinueWorkflow(executionState.failedNodeIds?.[0])}
-                style={{
-                  height: '32px',
-                  padding: '0 12px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  borderRadius: '6px',
-                  backgroundColor: 'transparent',
-                  color: '#10B981',
-                  border: '1px solid transparent',
-                  boxShadow: 'none',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                  outline: 'none',
-                  userSelect: 'none',
-                  whiteSpace: 'nowrap',
-                  boxSizing: 'border-box',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#059669';
-                  e.currentTarget.style.borderColor = '#047857';
-                  e.currentTarget.style.color = '#FFFFFF';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                  e.currentTarget.style.borderColor = 'transparent';
-                  e.currentTarget.style.color = '#10B981';
-                }}
-              >
-                <FiPlay size={12} style={{ fill: '#FFFFFF', color: '#FFFFFF' }} />
-                <span>Continue Workflow</span>
-              </button>
-            )}
-
-            {/* Reset Layout Button - Simple matching surface style, exact same size, no glow */}
+            {/* 2. Reset Layout Circular Button */}
             <button
               type="button"
               onClick={() => canvasRef.current?.resetLayout()}
+              data-tooltip="Reset Layout"
+              data-tooltip-position="left"
               style={{
-                width: '130px',
-                height: '32px',
-                padding: '0 12px',
-                display: 'inline-flex',
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                backgroundColor: isDark ? 'rgba(30, 41, 59, 0.7)' : 'rgba(241, 245, 249, 0.85)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(0, 0, 0, 0.12)',
+                boxShadow: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '6px',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                borderRadius: '6px',
-                backgroundColor: 'transparent',
-                color: 'var(--text-secondary)',
-                border: '1px solid transparent',
-                boxShadow: 'none',
-                cursor: 'pointer',
-                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                outline: 'none',
-                userSelect: 'none',
-                whiteSpace: 'nowrap',
-                boxSizing: 'border-box',
+                transition: 'background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
-                e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(51, 65, 85, 0.9)' : 'rgba(226, 232, 240, 0.95)';
+                e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.2)';
                 e.currentTarget.style.color = 'var(--text-primary)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent';
-                e.currentTarget.style.borderColor = 'transparent';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(30, 41, 59, 0.7)' : 'rgba(241, 245, 249, 0.85)';
+                e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)';
                 e.currentTarget.style.color = 'var(--text-secondary)';
               }}
-              onMouseDown={(e) => {
-                e.currentTarget.style.transform = 'scale(0.98)';
-              }}
-              onMouseUp={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-              }}
             >
-              <FiCrosshair size={13} style={{ color: 'inherit', transition: 'color 0.2s ease' }} />
-              <span>Reset Layout</span>
+              <FiCrosshair size={16} />
             </button>
 
-            {/* Clear Data & Results Button */}
-            {(Boolean(executionState && ((executionState.completedNodeIds?.length || 0) > 0 || executionState.hasError)) ||
-              extractedImages.length > 0 ||
-              Boolean(extractedContent && extractedContent.trim().length > 0) ||
-              Object.keys(aiGeneratedOutputs).length > 0 ||
-              Object.keys(watermarkedPhotos).length > 0 ||
-              Object.keys(enhancedPhotos).length > 0) && (
-              <button
-                type="button"
-                onClick={() => setShowClearConfirmModal(true)}
-                title="Clear all extracted post data and execution results"
-                style={{
-                  height: '32px',
-                  padding: '0 12px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  borderRadius: '6px',
-                  backgroundColor: 'transparent',
-                  color: isDark ? '#F87171' : '#DC2626',
-                  border: '1px solid transparent',
-                  boxShadow: 'none',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                  outline: 'none',
-                  userSelect: 'none',
-                  whiteSpace: 'nowrap',
-                  boxSizing: 'border-box',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2';
-                  e.currentTarget.style.borderColor = isDark ? 'rgba(239, 68, 68, 0.35)' : '#FECACA';
-                  e.currentTarget.style.color = isDark ? '#FCA5A5' : '#B91C1C';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                  e.currentTarget.style.borderColor = 'transparent';
-                  e.currentTarget.style.color = isDark ? '#F87171' : '#DC2626';
-                }}
-                onMouseDown={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.98)';
-                }}
-                onMouseUp={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                }}
-              >
-                <FiTrash2 size={12} style={{ color: 'inherit', transition: 'color 0.2s ease' }} />
-                <span>Clear</span>
-              </button>
-            )}
-          </div>,
-          headerActionEl
-        )}
+            {/* 3. Clear Data Circular Button */}
+            <button
+              type="button"
+              onClick={() => setShowClearConfirmModal(true)}
+              data-tooltip="Clear Data"
+              data-tooltip-position="left"
+              style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                backgroundColor: isDark ? 'rgba(30, 41, 59, 0.7)' : 'rgba(241, 245, 249, 0.85)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: isDark ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(220, 38, 38, 0.25)',
+                boxShadow: 'none',
+                color: isDark ? '#F87171' : '#DC2626',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.22)' : 'rgba(254, 226, 226, 0.95)';
+                e.currentTarget.style.borderColor = isDark ? 'rgba(239, 68, 68, 0.5)' : 'rgba(220, 38, 38, 0.45)';
+                e.currentTarget.style.color = isDark ? '#FCA5A5' : '#B91C1C';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(30, 41, 59, 0.7)' : 'rgba(241, 245, 249, 0.85)';
+                e.currentTarget.style.borderColor = isDark ? 'rgba(239, 68, 68, 0.3)' : 'rgba(220, 38, 38, 0.25)';
+                e.currentTarget.style.color = isDark ? '#F87171' : '#DC2626';
+              }}
+            >
+              <FiTrash2 size={15} />
+            </button>
+          </div>
 
-
-      {/* Conditional: Canvas Full Page View VS Workflow Formats List */}
-      {isCanvasOpen && editingFormat ? (
-        <div
-          style={{
-            flex: 1,
-            width: '100%',
-            height: '100%',
-            minHeight: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
-            position: 'relative',
-            overflow: 'hidden',
-          }}
-        >
           <FacebookWorkflowCanvas
             key={editingFormat.id}
             formatId={editingFormat.id}

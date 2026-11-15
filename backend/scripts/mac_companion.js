@@ -3126,10 +3126,50 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         }
       }
 
+      // Sync with ~/Downloads:
+      // If ~/Downloads currently holds files for activeListingFilter, ~/Downloads is the user source of truth!
+      // If the user deleted any file from ~/Downloads, remove it from cache and backend storage so it is not resurrected!
+      let dlListingFiles = [];
+      if (activeListingFilter && fs.existsSync(downloadsDir)) {
+        try {
+          const allDl = fs.readdirSync(downloadsDir);
+          dlListingFiles = allDl.filter((f) => {
+            const lower = f.toLowerCase();
+            return (
+              (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.webp')) &&
+              lower.includes(activeListingFilter.toLowerCase())
+            );
+          });
+
+          if (dlListingFiles.length > 0) {
+            const dlFileSet = new Set(dlListingFiles.map((f) => f.toLowerCase()));
+            const cacheDirs = [backendStorageEnhancedDir, canvasCacheDir, defaultProcessingDir].filter((d) => fs.existsSync(d));
+            for (const cDir of cacheDirs) {
+              try {
+                const cFiles = fs.readdirSync(cDir);
+                for (const cf of cFiles) {
+                  const cfLower = cf.toLowerCase();
+                  if (cfLower.includes(activeListingFilter.toLowerCase())) {
+                    if (!dlFileSet.has(cfLower)) {
+                      // Deleted by user from ~/Downloads! Unlink from cache
+                      try {
+                        fs.unlinkSync(path.join(cDir, cf));
+                        console.log(`[COMPANION] 🗑️ Cleaned up deleted enhanced image from cache: ${cf}`);
+                      } catch (e) {}
+                    }
+                  }
+                }
+              } catch (e) {}
+            }
+          }
+        } catch (e) {}
+      }
+
       const seenPositions = new Map(); // pos -> imgObj
 
       for (const item of allCandidates) {
         const { filename: f, fullPath, stat, pos, listingPrefix } = item;
+        if (!fs.existsSync(fullPath)) continue;
         const lower = f.toLowerCase();
 
         if (activeListingFilter) {
@@ -3139,8 +3179,16 @@ function mergeTabGroups(scannedGroups, liveGroups) {
             if (listingPrefix.toLowerCase() !== filterLower) continue;
           } else if (!lower.includes(filterLower)) {
             // Also accept recently created enhanced_X files within the last 3 hours
-            const isRecentEnhanced = mEnhanced && (Date.now() - stat.mtimeMs < 3 * 60 * 60 * 1000);
+            const isRecentEnhanced = f.match(/^enhanced_(\d+)_/i) && (Date.now() - stat.mtimeMs < 3 * 60 * 60 * 1000);
             if (!isRecentEnhanced && (!reqPropertyId || !f.includes(reqPropertyId))) continue;
+          }
+
+          // If ~/Downloads has files for this listing, but this file is NOT in Downloads, skip it!
+          if (dlListingFiles.length > 0) {
+            const isPresentInDownloads = dlListingFiles.some((dlf) => dlf.toLowerCase() === lower);
+            if (!isPresentInDownloads) {
+              continue;
+            }
           }
         } else if (reqPropertyId && !f.includes(reqPropertyId)) {
           continue;
@@ -3180,6 +3228,62 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       return res.end(JSON.stringify({ error: err.message, images: [] }));
     }
+  }
+
+  // ── Delete Specific Enhanced Image (called when user clicks trash icon on card) ──
+  if ((url.pathname === '/delete-enhanced-image' || url.pathname === '/delete-image') && (req.method === 'POST' || req.method === 'DELETE')) {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const filename = payload.filename || url.searchParams.get('file') || '';
+        const position = payload.position || url.searchParams.get('position');
+        const listingCode = (payload.listingCode || payload.listing_code || url.searchParams.get('listing_code') || '').trim();
+
+        const safeName = filename ? path.basename(filename) : '';
+        const allDirs = [
+          path.join(os.homedir(), 'Downloads'),
+          backendStorageEnhancedDir,
+          canvasCacheDir,
+          defaultProcessingDir,
+        ].filter((d) => fs.existsSync(d));
+
+        let deletedCount = 0;
+        for (const d of allDirs) {
+          try {
+            if (safeName) {
+              const target = path.join(d, safeName);
+              if (fs.existsSync(target)) {
+                try {
+                  fs.unlinkSync(target);
+                  deletedCount++;
+                } catch (e) {}
+              }
+            }
+            if (listingCode && position) {
+              const files = fs.readdirSync(d);
+              for (const f of files) {
+                if (f.toLowerCase().includes(listingCode.toLowerCase()) && f.match(new RegExp(`[-_]${position}\\.(?:png|jpg|jpeg|webp)$`, 'i'))) {
+                  try {
+                    fs.unlinkSync(path.join(d, f));
+                    deletedCount++;
+                  } catch (e) {}
+                }
+              }
+            }
+          } catch (e) {}
+        }
+
+        console.log(`[COMPANION] 🗑️ Explicitly deleted enhanced image ${safeName || `${listingCode}-${position}`} (${deletedCount} files removed)`);
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({ status: 'success', deleted: deletedCount }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
   }
 
   // ── Clear Canvas Images (called when user explicitly resets/cleans canvas) ──

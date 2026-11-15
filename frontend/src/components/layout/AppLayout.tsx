@@ -227,6 +227,35 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   // Custom tooltip shown to the right of collapsed sidebar icons
   const [navTip, setNavTip] = useState<{ label: string; top: number; left: number } | null>(null);
 
+  // Floating auto-hiding top navbar in canvas mode with smooth animation & professional backdrop/shadow
+  const [isCanvasNavHovered, setIsCanvasNavHovered] = useState<boolean>(false);
+  const navHoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleNavMouseEnter = () => {
+    if (navHoverTimeoutRef.current) {
+      clearTimeout(navHoverTimeoutRef.current);
+      navHoverTimeoutRef.current = null;
+    }
+    setIsCanvasNavHovered(true);
+  };
+
+  const handleNavMouseLeave = () => {
+    if (navHoverTimeoutRef.current) {
+      clearTimeout(navHoverTimeoutRef.current);
+    }
+    navHoverTimeoutRef.current = setTimeout(() => {
+      setIsCanvasNavHovered(false);
+    }, 240);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (navHoverTimeoutRef.current) {
+        clearTimeout(navHoverTimeoutRef.current);
+      }
+    };
+  }, []);
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-main)' }}>
       {navTip && isCollapsed && !isMobile && (
@@ -253,201 +282,153 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           {navTip.label}
         </div>
       )}
-      {/* Top Navigation Bar */}
-      <header
-        style={{
-          height: '56px',
-          width: '100%',
-          backgroundColor: isCurrentlyInCanvas ? 'transparent' : 'var(--bg-secondary)',
-          borderBottom: isCurrentlyInCanvas ? 'none' : '1px solid var(--border-color)',
-          display: 'flex',
-          alignItems: 'center',
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: 40,
-          padding: isMobile ? '0 0.875rem' : 0,
-          pointerEvents: isCurrentlyInCanvas ? 'none' : 'auto',
-          boxShadow: isCurrentlyInCanvas ? 'none' : undefined,
-        }}
-      >
-        {isMobile ? (
-          /* Mobile Top Bar */
-          <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.375rem', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, overflow: 'hidden' }}>
-              <button
-                type="button"
-                onClick={() => setIsMobileOpen(!isMobileOpen)}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid var(--border-color)',
-                  color: 'var(--text-primary)',
-                  fontSize: '1.125rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '0.375rem',
-                  borderRadius: '0.5rem',
-                  backgroundColor: 'var(--bg-surface)',
-                  flexShrink: 0,
-                }}
-                aria-label="Toggle Navigation Drawer"
-              >
-                {isMobileOpen ? <FiX /> : <FiMenu />}
-              </button>
 
-              <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, overflow: 'hidden' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
-                  <h1 style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {currentNav.label}
-                  </h1>
-                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>BoltHavenProperty</span>
-                </div>
-              </div>
-            </div>
-
-            <div id="header-action-portal" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }} />
-          </div>
-        ) : (
-          /* Desktop Top Bar */
-          <>
-            {/* Top-Left Brand Logo (Corner cell with border removed when collapsed) */}
-            <div
-              style={{
-                width: currentSidebarWidth,
-                minWidth: currentSidebarWidth,
-                height: '100%',
-                padding: currentSidebarWidth === '0px' ? 0 : (isCollapsed || isCanvasMode ? '0 0.5rem' : '0 1.25rem'),
-                display: currentSidebarWidth === '0px' ? 'none' : 'flex',
-                alignItems: 'center',
-                justifyContent: (isCollapsed || isCanvasMode) ? 'center' : 'flex-start',
-                borderRight: currentSidebarWidth === '0px' ? 'none' : '1px solid var(--border-color)',
-                borderBottom: 'none',
-                backgroundColor: isCanvasMode ? 'var(--bg-secondary)' : undefined,
-                pointerEvents: isCanvasMode ? 'auto' : undefined,
-                boxSizing: 'border-box',
-                overflow: 'hidden',
-                transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-              }}
-            >
-              {!isCollapsed && !isCanvasMode ? (
-                <div style={{ overflow: 'hidden', whiteSpace: 'nowrap', textAlign: 'left' }}>
-                  <h1 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2, margin: 0, letterSpacing: '-0.01em', textAlign: 'left' }}>
-                    BoltHavenProperty
-                  </h1>
-                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', textAlign: 'left', display: 'block' }}>
-                    AI Automation Studio
-                  </span>
-                </div>
-              ) : (
-                <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-                  BHP
-                </span>
-              )}
-            </div>
-
-            {/* Canvas Mode Standalone Sidebar Toggle Button (docked cleanly in top header when sidebar is hidden) */}
-            {isCanvasMode && !isCanvasSidebarVisible && (
-              <div
-                style={{
-                  height: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  paddingLeft: '0.875rem',
-                  borderBottom: isCurrentlyInCanvas ? 'none' : '1px solid var(--border-color)',
-                  backgroundColor: 'transparent',
-                  pointerEvents: 'auto',
-                  flexShrink: 0,
-                }}
-              >
+      {/* Top Navigation Bar (Hidden completely in canvas mode) */}
+      {!isCurrentlyInCanvas && (
+        <header
+          style={{
+            height: '56px',
+            width: '100%',
+            backgroundColor: 'var(--bg-secondary)',
+            borderBottom: '1px solid var(--border-color)',
+            display: 'flex',
+            alignItems: 'center',
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 42,
+            padding: isMobile ? '0 0.875rem' : 0,
+          }}
+        >
+          {isMobile ? (
+            /* Mobile Top Bar */
+            <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.375rem', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, overflow: 'hidden' }}>
                 <button
                   type="button"
-                  onClick={() => setIsCanvasSidebarVisible(true)}
-                  title="Show navigation sidebar"
-                  aria-label="Show navigation sidebar"
+                  onClick={() => setIsMobileOpen(!isMobileOpen)}
                   style={{
+                    background: 'transparent',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)',
+                    fontSize: '1.125rem',
+                    cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '8px',
-                    backgroundColor: 'transparent',
-                    border: '1px solid transparent',
-                    color: 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                    padding: '0.375rem',
+                    borderRadius: '0.5rem',
+                    backgroundColor: 'var(--bg-surface)',
+                    flexShrink: 0,
                   }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = 'var(--text-primary)';
-                    e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
-                    e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = 'var(--text-secondary)';
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                    e.currentTarget.style.borderColor = 'transparent';
-                  }}
+                  aria-label="Toggle Navigation Drawer"
                 >
-                  <FiSidebar size={15} />
+                  {isMobileOpen ? <FiX /> : <FiMenu />}
                 </button>
-              </div>
-            )}
 
-            {/* Top-Right Header Content */}
-            <div
-              style={{
-                flex: 1,
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0 1.25rem',
-                gap: '1rem',
-                position: 'relative',
-                borderBottom: isCurrentlyInCanvas ? 'none' : '1px solid var(--border-color)',
-                boxSizing: 'border-box',
-                pointerEvents: 'none',
-              }}
-            >
-              <div id="header-title-portal" style={{ display: 'flex', alignItems: 'center', minWidth: 0, zIndex: 5, pointerEvents: 'auto' }}>
-                {!isCanvasMode && activeTab !== 'testing' && activeTab !== 'watermark' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-                        {currentNav.label}
-                      </h2>
-                    </div>
-                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                      Workflow Engine · Real Estate SaaS
+                <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+                    <h1 style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {currentNav.label}
+                    </h1>
+                    <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>BoltHavenProperty</span>
+                  </div>
+                </div>
+              </div>
+
+              <div id="header-action-portal" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }} />
+            </div>
+          ) : (
+            /* Desktop Top Bar */
+            <>
+              {/* Top-Left Brand Logo (Corner cell with border removed when collapsed) */}
+              <div
+                style={{
+                  width: currentSidebarWidth,
+                  minWidth: currentSidebarWidth,
+                  height: '100%',
+                  padding: currentSidebarWidth === '0px' ? 0 : (isCollapsed ? '0 0.5rem' : '0 1.25rem'),
+                  display: currentSidebarWidth === '0px' ? 'none' : 'flex',
+                  alignItems: 'center',
+                  justifyContent: isCollapsed ? 'center' : 'flex-start',
+                  borderRight: currentSidebarWidth === '0px' ? 'none' : '1px solid var(--border-color)',
+                  borderBottom: 'none',
+                  pointerEvents: 'auto',
+                  boxSizing: 'border-box',
+                  overflow: 'hidden',
+                  transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+              >
+                {!isCollapsed ? (
+                  <div style={{ overflow: 'hidden', whiteSpace: 'nowrap', textAlign: 'left' }}>
+                    <h1 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2, margin: 0, letterSpacing: '-0.01em', textAlign: 'left' }}>
+                      BoltHavenProperty
+                    </h1>
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', textAlign: 'left', display: 'block' }}>
+                      AI Automation Studio
                     </span>
                   </div>
+                ) : (
+                  <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+                    BHP
+                  </span>
                 )}
               </div>
+
+              {/* Top-Right Header Content */}
               <div
-                id="header-center-portal"
                 style={{
-                  position: 'absolute',
-                  left: '50%',
-                  top: '50%',
-                  transform: 'translate(-50%, -50%)',
+                  flex: 1,
+                  height: '100%',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  pointerEvents: 'auto',
-                  zIndex: 10,
+                  justifyContent: 'space-between',
+                  padding: '0 1.25rem',
+                  gap: '1rem',
+                  position: 'relative',
+                  borderBottom: 'none',
+                  boxSizing: 'border-box',
+                  pointerEvents: 'none',
                 }}
-              />
+              >
+                <div id="header-title-portal" style={{ display: 'flex', alignItems: 'center', minWidth: 0, zIndex: 5, pointerEvents: 'auto' }}>
+                  {activeTab !== 'testing' && activeTab !== 'watermark' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                          {currentNav.label}
+                        </h2>
+                      </div>
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                        Workflow Engine · Real Estate SaaS
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div
+                  id="header-center-portal"
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    pointerEvents: 'auto',
+                    zIndex: 10,
+                  }}
+                />
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0, zIndex: 5, pointerEvents: 'auto' }}>
-                <div id="header-action-portal" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0, pointerEvents: 'auto' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0, zIndex: 5, pointerEvents: 'auto' }}>
+                  <div id="header-action-portal" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0, pointerEvents: 'auto' }} />
+                </div>
               </div>
-            </div>
-          </>
-        )}
-      </header>
+            </>
+          )}
+        </header>
+      )}
 
       {/* Mobile Backdrop Overlay */}
       {isMobile && isMobileOpen && (

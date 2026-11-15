@@ -21,9 +21,11 @@ import {
   FiTrash2,
   FiAlertTriangle,
   FiSave,
+  FiClock,
 } from 'react-icons/fi';
 import { SiGooglesheets } from 'react-icons/si';
 import { type DynamicAIBoxConfig } from './FacebookWorkflowCanvas';
+import { apiUrl } from '../../services/apiClient';
 
 export interface SheetRowItem {
   originalIndex: number;
@@ -70,9 +72,10 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
   const [columnFilters, setColumnFilters] = useState<{ [colIdx: number]: string }>({});
   const [showColumnFilterRow, setShowColumnFilterRow] = useState<boolean>(true);
 
-  // Sorting
+  // Sorting & Row Ordering
   const [sortColIdx, setSortColIdx] = useState<number | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [defaultOrder, setDefaultOrder] = useState<'latestFirst' | 'oldestFirst'>('latestFirst');
 
   // Pagination
   const [pageSize, setPageSize] = useState<number>(50);
@@ -89,7 +92,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('http://localhost:8085/api/google-sheets/fetch-rows', {
+      const res = await fetch(apiUrl('/api/google-sheets/fetch-rows'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -100,7 +103,13 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
         }),
       });
 
-      const data = await res.json();
+      let data: any = null;
+      const rawText = await res.text();
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(`Server returned status ${res.status} (${res.statusText || 'Error'}). Please check backend connection.`);
+      }
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Failed to load Google Sheet rows');
       }
@@ -130,7 +139,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      const res = await fetch('http://localhost:8085/api/google-sheets/delete-row', {
+      const res = await fetch(apiUrl('/api/google-sheets/delete-row'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -141,7 +150,13 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
           credentials_json: boxConfig.googleServiceAccountJson || '',
         }),
       });
-      const data = await res.json();
+      let data: any = null;
+      const rawText = await res.text();
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(`Server returned status ${res.status} (${res.statusText || 'Error'}).`);
+      }
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Failed to delete row from Google Sheet');
       }
@@ -163,7 +178,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
     setIsSavingEdit(true);
     setEditError(null);
     try {
-      const res = await fetch('http://localhost:8085/api/google-sheets/update-row', {
+      const res = await fetch(apiUrl('/api/google-sheets/update-row'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -174,7 +189,13 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
           credentials_json: boxConfig.googleServiceAccountJson || '',
         }),
       });
-      const data = await res.json();
+      let data: any = null;
+      const rawText = await res.text();
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(`Server returned status ${res.status} (${res.statusText || 'Error'}).`);
+      }
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Failed to update row in Google Sheet');
       }
@@ -224,7 +245,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
       }
     }
 
-    // 3. Sorting
+    // 3. Sorting & Default Row Ordering
     if (sortColIdx !== null) {
       result.sort((itemA, itemB) => {
         const valA = itemA.values[sortColIdx] || '';
@@ -241,10 +262,13 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
           ? valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' })
           : valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
       });
+    } else if (defaultOrder === 'latestFirst') {
+      // Default: Last First (Show newest appended rows first at the top)
+      result.reverse();
     }
 
     return result;
-  }, [rows, globalSearch, columnFilters, sortColIdx, sortDirection]);
+  }, [rows, globalSearch, columnFilters, sortColIdx, sortDirection, defaultOrder]);
 
   // Pagination calculation
   const totalPages = Math.max(1, Math.ceil(filteredRowItems.length / pageSize));
@@ -652,6 +676,32 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
 
         {/* Filter Indicators & Toggles */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Order Toggle: Last First (Default) vs First First */}
+          <button
+            type="button"
+            onClick={() => {
+              setDefaultOrder((prev) => (prev === 'latestFirst' ? 'oldestFirst' : 'latestFirst'));
+              setSortColIdx(null);
+            }}
+            title={`Toggle row order: currently showing ${defaultOrder === 'latestFirst' ? 'Last First (newest appended rows first)' : 'First First (oldest rows first)'}. Click to switch.`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '4px 8px',
+              borderRadius: '5px',
+              fontSize: '0.6875rem',
+              fontWeight: 500,
+              backgroundColor: defaultOrder === 'latestFirst' ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
+              border: defaultOrder === 'latestFirst' ? '1px solid rgba(59, 130, 246, 0.4)' : isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+              color: defaultOrder === 'latestFirst' ? '#3B82F6' : 'var(--text-secondary)',
+              cursor: 'pointer',
+            }}
+          >
+            <FiClock size={11} />
+            <span>{defaultOrder === 'latestFirst' ? 'Last First (Newest)' : 'First First (Oldest)'}</span>
+          </button>
+
           {/* Toggle Column Filter Inputs */}
           <button
             type="button"
@@ -817,23 +867,37 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                   zIndex: 20,
                 }}
               >
-                {/* Row # Header */}
+                {/* Row # Header (Click to toggle Last First / First First) */}
                 <th
+                  onClick={() => {
+                    setDefaultOrder((prev) => (prev === 'latestFirst' ? 'oldestFirst' : 'latestFirst'));
+                    setSortColIdx(null);
+                  }}
+                  title={`Click to toggle order: currently showing ${defaultOrder === 'latestFirst' ? 'Last First (newest first)' : 'First First (oldest first)'}`}
                   style={{
                     padding: '8px 10px',
-                    width: '52px',
-                    minWidth: '52px',
+                    width: '56px',
+                    minWidth: '56px',
                     fontWeight: 600,
-                    color: 'var(--text-muted)',
+                    color: sortColIdx === null ? '#3B82F6' : 'var(--text-muted)',
                     borderRight: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
                     textAlign: 'center',
                     position: 'sticky',
                     left: 0,
                     backgroundColor: isDark ? '#161B22' : '#F6F8FA',
                     zIndex: 25,
+                    cursor: 'pointer',
+                    userSelect: 'none',
                   }}
                 >
-                  #
+                  <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                    <span>#</span>
+                    {sortColIdx === null && (
+                      <span style={{ fontSize: '0.6875rem', color: '#3B82F6', fontWeight: 700 }}>
+                        {defaultOrder === 'latestFirst' ? '↓' : '↑'}
+                      </span>
+                    )}
+                  </div>
                 </th>
 
                 {/* Manage Header */}
@@ -1028,13 +1092,13 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                 </tr>
               ) : (
                 paginatedRowItems.map((item, rowIdx) => {
-                  const actualRowNumber = pageSize === 0 ? rowIdx + 1 : (currentPage - 1) * pageSize + rowIdx + 1;
+                  const actualRowNumber = item.originalIndex + 1;
                   const isEven = rowIdx % 2 === 0;
                   const row = item.values;
 
                   return (
                     <tr
-                      key={`row-${actualRowNumber}`}
+                      key={`row-${item.sheetRowNum}-${item.originalIndex}`}
                       style={{
                         backgroundColor: isEven
                           ? (isDark ? 'transparent' : '#FFFFFF')
@@ -1058,7 +1122,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                           textAlign: 'center',
                           color: 'var(--text-muted)',
                           fontSize: '0.6875rem',
-                          fontWeight: 500,
+                          fontWeight: 600,
                           borderRight: isDark ? '1px solid #21262D' : '1px solid #E5E7EB',
                           position: 'sticky',
                           left: 0,
@@ -1066,6 +1130,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                           zIndex: 10,
                           userSelect: 'none',
                         }}
+                        title={`Data Row #${actualRowNumber} (Sheet Row #${item.sheetRowNum})`}
                       >
                         {actualRowNumber}
                       </td>

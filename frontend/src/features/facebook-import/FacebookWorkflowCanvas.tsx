@@ -341,8 +341,11 @@ export interface DynamicAIBoxConfig {
   selectedUpstreamAiId?: string;
   referenceImageMode?: 'photo_1' | 'picked' | 'custom_upload' | 'condo_scan';
   selectedReferenceIndex?: number;
-  imageSource?: 'get_images' | 'enhance' | 'generate' | 'all';
+  imageSource?: 'get_images' | 'enhance' | 'generate' | 'all' | 'upload';
   selectedImageIndices?: number[];
+  autoRun?: boolean;
+  enableAutoRun?: boolean;
+  uploadedImages?: any[];
 }
 
 export interface WorkflowWireConnection {
@@ -3535,10 +3538,33 @@ export const FacebookWorkflowCanvas = forwardRef<
       setLocallyCompletedNodeIds([]);
       setLocallyRunningNodeId(null);
       setCompanionEnhancedMap({});
+      setCombineMediaAssets([]);
+      setCombineCropSlices([]);
+      if (config.aiBoxes && config.aiBoxes.length > 0) {
+        const nextBoxes = config.aiBoxes.map((b) => {
+          if ((b.uploadedImages && b.uploadedImages.length > 0) || b.imageSource === 'upload') {
+            return {
+              ...b,
+              uploadedImages: [],
+              imageSource: b.imageSource === 'upload' ? undefined : b.imageSource,
+              selectedImageIndices: undefined,
+            };
+          }
+          return b;
+        });
+        const hasChange = nextBoxes.some((nb, i) => nb !== config.aiBoxes[i]);
+        if (hasChange) {
+          setConfig((prev) => ({ ...prev, aiBoxes: nextBoxes }));
+          onConfigChange?.({
+            ...config,
+            aiBoxes: nextBoxes,
+          });
+        }
+      }
     };
     window.addEventListener('ea_workflow_cleared', handleWorkflowCleared);
     return () => window.removeEventListener('ea_workflow_cleared', handleWorkflowCleared);
-  }, []);
+  }, [config, onConfigChange]);
 
   useEffect(() => {
     if (executionState?.hasError && executionState?.failedNodeIds?.includes('trigger')) {
@@ -4068,6 +4094,33 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
   }, [canvasStorageKey, formatId, isFormatActive, onConfigChange]);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isZoomDockHovered, setIsZoomDockHovered] = useState<boolean>(false);
+  const zoomHoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleZoomDockEnter = () => {
+    if (zoomHoverTimeoutRef.current) {
+      clearTimeout(zoomHoverTimeoutRef.current);
+      zoomHoverTimeoutRef.current = null;
+    }
+    setIsZoomDockHovered(true);
+  };
+
+  const handleZoomDockLeave = () => {
+    if (zoomHoverTimeoutRef.current) {
+      clearTimeout(zoomHoverTimeoutRef.current);
+    }
+    zoomHoverTimeoutRef.current = setTimeout(() => {
+      setIsZoomDockHovered(false);
+    }, 220);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (zoomHoverTimeoutRef.current) {
+        clearTimeout(zoomHoverTimeoutRef.current);
+      }
+    };
+  }, []);
   const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [selectionBox, setSelectionBox] = useState<{
@@ -8935,7 +8988,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
   }, [draggedNodeId, isPanning, Boolean(dragWire), isSelecting]);
 
-  // Single click: Select the node for viewing/dragging, but do NOT open the sidebar drawer
+  // Single click: Select the node AND open the sidebar drawer (single-click open)
   const handleNodeClick = (node: ActiveModalNode, e: React.MouseEvent) => {
     e.stopPropagation();
     if (hasMoved.current) {
@@ -8950,8 +9003,9 @@ export const FacebookWorkflowCanvas = forwardRef<
       else if (node.type === 'ai-box') nodeId = node.boxId;
       else if (node.type === 'combine') nodeId = node.combineId || (node as any).id;
       else if (node.type === 'destination') nodeId = node.destinationId || 'destination';
-      if (nodeId) {
-        if (e.shiftKey) {
+
+      if (e.shiftKey) {
+        if (nodeId) {
           if (shiftToggledNodeRef.current !== nodeId) {
             setSelectedNodeIds((prev) => {
               const next = new Set(prev);
@@ -8964,62 +9018,37 @@ export const FacebookWorkflowCanvas = forwardRef<
             });
           }
           setSelectedBoxId(nodeId);
-        } else {
-          setSelectedNodeIds(new Set([nodeId]));
-          setSelectedBoxId(nodeId);
+          shiftToggledNodeRef.current = null;
         }
+        return;
+      }
+
+      // Single click: select node and open its sidebar drawer immediately
+      if (nodeId) {
+        setSelectedNodeIds(new Set([nodeId]));
+        setSelectedBoxId(nodeId);
         shiftToggledNodeRef.current = null;
       }
+
+      handleToggleGeneralSettings(false);
+      setConnectDrawerNode(null);
+      setQuickAddPopover(null);
+      setViewingPromptTemplate(null);
+      setShowPhotoCropSettingsSidebox(false);
+      setShowFBHeroSettingsSidebox(false);
+      setShowCombineMediaSidebox(false);
+      setShowGoogleSheetSettingsSidebox(false);
+      setActiveModalNode(node);
     }
   };
 
-  // Double click: Open / toggle the sidebar drawer for this node
+  // Double click: Keep sidebar drawer open for this node (safe fallback)
   const handleNodeDoubleClick = (node: ActiveModalNode, e: React.MouseEvent) => {
     e.stopPropagation();
     if (e.shiftKey) {
       return;
     }
-
-    // TOGGLE OFF: If double-clicking the node that is already active/open in sidebar, CLOSE IT!
-    const isSameNode =
-      Boolean(activeModalNode && node) &&
-      activeModalNode?.type === node?.type &&
-      (node?.type === 'ai-box'
-        ? (activeModalNode as any).boxId === (node as any).boxId
-        : node?.type === 'combine'
-          ? (activeModalNode as any).combineId === (node as any).combineId
-          : node?.type === 'destination'
-            ? (activeModalNode as any).destinationId === (node as any).destinationId
-            : activeModalNode?.type === node?.type);
-
-    if (isSameNode) {
-      handleCloseModal();
-      return;
-    }
-
-    handleToggleGeneralSettings(false);
-    setConnectDrawerNode(null);
-    setQuickAddPopover(null);
-    setViewingPromptTemplate(null);
-    setShowPhotoCropSettingsSidebox(false);
-    setShowFBHeroSettingsSidebox(false);
-    setShowCombineMediaSidebox(false);
-    setShowGoogleSheetSettingsSidebox(false);
-    setActiveModalNode(node);
-
-    if (node) {
-      let nodeId = '';
-      if (node.type === 'trigger') nodeId = 'trigger';
-      else if (node.type === 'get-content') nodeId = 'get-content';
-      else if (node.type === 'get-images') nodeId = 'get-images';
-      else if (node.type === 'ai-box') nodeId = node.boxId;
-      else if (node.type === 'combine') nodeId = node.combineId || (node as any).id;
-      else if (node.type === 'destination') nodeId = node.destinationId || 'destination';
-      if (nodeId) {
-        setSelectedNodeIds(new Set([nodeId]));
-        setSelectedBoxId(nodeId);
-      }
-    }
+    handleNodeClick(node, e);
   };
 
   // Bezier curve generator with strictly horizontal socket tangency and smooth curvature
@@ -9183,9 +9212,11 @@ export const FacebookWorkflowCanvas = forwardRef<
 
 
 
-        {/* Floating Zoom Controls Bar */}
+        {/* Floating Zoom & Canvas Controls Dock (Expands smoothly on hover like Figma / Miro / Freeform) */}
         <div
           className="canvas-control"
+          onMouseEnter={handleZoomDockEnter}
+          onMouseLeave={handleZoomDockLeave}
           style={{
             position: 'absolute',
             bottom: '16px',
@@ -9193,118 +9224,281 @@ export const FacebookWorkflowCanvas = forwardRef<
             zIndex: 30,
             display: 'flex',
             alignItems: 'center',
-            gap: '0.375rem',
-            backgroundColor: isDark ? 'rgba(22, 27, 34, 0.85)' : 'rgba(255, 255, 255, 0.92)',
-            backdropFilter: 'blur(8px)',
-            padding: '4px 6px',
-            borderRadius: '0.5rem',
-            border: '1px solid var(--border-color)',
-            boxShadow: isDark ? '0 4px 12px rgba(0, 0, 0, 0.4)' : '0 4px 12px rgba(0, 0, 0, 0.08)',
+            height: '36px',
+            padding: isZoomDockHovered ? '2px 6px' : '2px 10px',
+            borderRadius: '18px',
+            backgroundColor: isDark ? 'rgba(21, 27, 35, 0.85)' : 'rgba(255, 255, 255, 0.9)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(0, 0, 0, 0.12)',
+            boxShadow: 'none',
+            overflow: 'hidden',
+            transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+            gap: isZoomDockHovered ? '4px' : '0px',
+            userSelect: 'none',
           }}
         >
-          <button
-            type="button"
-            onClick={() => setConfig((prev) => ({ ...prev, zoom: Math.min(prev.zoom + 0.1, 1.6) }))}
-            title="Zoom In"
+          {/* Zoom In Button (Shown when hovered) */}
+          <div
             style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              padding: '4px',
-              borderRadius: '4px',
               display: 'flex',
               alignItems: 'center',
+              maxWidth: isZoomDockHovered ? '32px' : '0px',
+              opacity: isZoomDockHovered ? 1 : 0,
+              transform: isZoomDockHovered ? 'scale(1)' : 'scale(0.85)',
+              overflow: 'hidden',
+              transition: 'all 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
           >
-            <FiZoomIn style={{ fontSize: '15px' }} />
-          </button>
-          <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', minWidth: '38px', textAlign: 'center' }}>
+            <button
+              type="button"
+              onClick={() => setConfig((prev) => ({ ...prev, zoom: Math.min(prev.zoom + 0.1, 1.6) }))}
+              data-tooltip="Zoom In"
+              data-tooltip-position="top"
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background-color 0.15s ease, color 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)';
+                e.currentTarget.style.color = 'var(--text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
+            >
+              <FiZoomIn style={{ fontSize: '15px' }} />
+            </button>
+          </div>
+
+          {/* Current Zoom Percentage Pill (Clickable to reset to 100%) */}
+          <button
+            type="button"
+            onClick={() => setConfig((prev) => ({ ...prev, zoom: 1 }))}
+            data-tooltip="Reset Zoom (100%)"
+            data-tooltip-position="top"
+            style={{
+              padding: '0 6px',
+              height: '28px',
+              borderRadius: '6px',
+              background: 'transparent',
+              border: 'none',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              color: isZoomDockHovered ? 'var(--text-primary)' : 'var(--text-secondary)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: '42px',
+              transition: 'background-color 0.15s ease, color 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+          >
             {Math.round(config.zoom * 100)}%
-          </span>
-          <button
-            type="button"
-            onClick={() => setConfig((prev) => ({ ...prev, zoom: Math.max(prev.zoom - 0.1, 0.45) }))}
-            title="Zoom Out"
+          </button>
+
+          {/* Zoom Out Button (Shown when hovered) */}
+          <div
             style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              padding: '4px',
-              borderRadius: '4px',
               display: 'flex',
               alignItems: 'center',
+              maxWidth: isZoomDockHovered ? '32px' : '0px',
+              opacity: isZoomDockHovered ? 1 : 0,
+              transform: isZoomDockHovered ? 'scale(1)' : 'scale(0.85)',
+              overflow: 'hidden',
+              transition: 'all 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
           >
-            <FiZoomOut style={{ fontSize: '15px' }} />
-          </button>
-          <button
-            type="button"
-            onClick={handleResetLayout}
-            title="Auto-Align Layout (n8n Style)"
+            <button
+              type="button"
+              onClick={() => setConfig((prev) => ({ ...prev, zoom: Math.max(prev.zoom - 0.1, 0.45) }))}
+              data-tooltip="Zoom Out"
+              data-tooltip-position="top"
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background-color 0.15s ease, color 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)';
+                e.currentTarget.style.color = 'var(--text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
+            >
+              <FiZoomOut style={{ fontSize: '15px' }} />
+            </button>
+          </div>
+
+          {/* Auto-Align Grid Button (Shown when hovered) */}
+          <div
             style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              padding: '4px',
-              borderRadius: '4px',
               display: 'flex',
               alignItems: 'center',
+              maxWidth: isZoomDockHovered ? '32px' : '0px',
+              opacity: isZoomDockHovered ? 1 : 0,
+              transform: isZoomDockHovered ? 'scale(1)' : 'scale(0.85)',
+              overflow: 'hidden',
+              transition: 'all 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
           >
-            <FiGrid style={{ fontSize: '14px' }} />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const vWidth = (canvasRef.current && canvasRef.current.clientWidth > 0)
-                ? canvasRef.current.clientWidth
-                : (typeof window !== 'undefined' ? window.innerWidth - 56 : 1200);
-              const vHeight = (canvasRef.current && canvasRef.current.clientHeight > 0)
-                ? canvasRef.current.clientHeight
-                : (typeof window !== 'undefined' ? window.innerHeight - 56 : 800);
-              const bounds = getWorkflowBounds(config);
-              const contentWidth = Math.max(bounds.width, 400);
-              const contentHeight = Math.max(bounds.height, 300);
-              const fitZoomX = (vWidth - 160) / contentWidth;
-              const fitZoomY = (vHeight - 120) / contentHeight;
-              const zoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.55), 0.88);
-              const panOffset = calculateCenteredPanOffset(config, vWidth, vHeight, zoom);
-              setConfig((prev) => ({ ...prev, zoom, panOffset }));
-            }}
-            title="Reset Pan & Zoom"
+            <button
+              type="button"
+              onClick={handleResetLayout}
+              data-tooltip="Align Grid"
+              data-tooltip-position="top"
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background-color 0.15s ease, color 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)';
+                e.currentTarget.style.color = 'var(--text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
+            >
+              <FiGrid style={{ fontSize: '14px' }} />
+            </button>
+          </div>
+
+          {/* Reset Pan & Zoom / Fit to View (Shown when hovered) */}
+          <div
             style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              padding: '4px',
-              borderRadius: '4px',
               display: 'flex',
               alignItems: 'center',
+              maxWidth: isZoomDockHovered ? '32px' : '0px',
+              opacity: isZoomDockHovered ? 1 : 0,
+              transform: isZoomDockHovered ? 'scale(1)' : 'scale(0.85)',
+              overflow: 'hidden',
+              transition: 'all 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
           >
-            <FiCrosshair style={{ fontSize: '14px' }} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsFullscreen(!isFullscreen)}
-            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+            <button
+              type="button"
+              onClick={() => {
+                const vWidth = (canvasRef.current && canvasRef.current.clientWidth > 0)
+                  ? canvasRef.current.clientWidth
+                  : (typeof window !== 'undefined' ? window.innerWidth - 56 : 1200);
+                const vHeight = (canvasRef.current && canvasRef.current.clientHeight > 0)
+                  ? canvasRef.current.clientHeight
+                  : (typeof window !== 'undefined' ? window.innerHeight - 56 : 800);
+                const bounds = getWorkflowBounds(config);
+                const contentWidth = Math.max(bounds.width, 400);
+                const contentHeight = Math.max(bounds.height, 300);
+                const fitZoomX = (vWidth - 160) / contentWidth;
+                const fitZoomY = (vHeight - 120) / contentHeight;
+                const zoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.55), 0.88);
+                const panOffset = calculateCenteredPanOffset(config, vWidth, vHeight, zoom);
+                setConfig((prev) => ({ ...prev, zoom, panOffset }));
+              }}
+              data-tooltip="Fit to View"
+              data-tooltip-position="top"
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background-color 0.15s ease, color 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)';
+                e.currentTarget.style.color = 'var(--text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
+            >
+              <FiCrosshair style={{ fontSize: '14px' }} />
+            </button>
+          </div>
+
+          {/* Fullscreen Toggle Button (Shown when hovered) */}
+          <div
             style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              padding: '4px',
-              borderRadius: '4px',
               display: 'flex',
               alignItems: 'center',
+              maxWidth: isZoomDockHovered ? '32px' : '0px',
+              opacity: isZoomDockHovered ? 1 : 0,
+              transform: isZoomDockHovered ? 'scale(1)' : 'scale(0.85)',
+              overflow: 'hidden',
+              transition: 'all 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
           >
-            {isFullscreen ? <FiMinimize2 style={{ fontSize: '14px' }} /> : <FiMaximize2 style={{ fontSize: '14px' }} />}
-          </button>
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              data-tooltip={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+              data-tooltip-position="top"
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background-color 0.15s ease, color 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)';
+                e.currentTarget.style.color = 'var(--text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
+            >
+              {isFullscreen ? <FiMinimize2 style={{ fontSize: '14px' }} /> : <FiMaximize2 style={{ fontSize: '14px' }} />}
+            </button>
+          </div>
         </div>
 
         {/* Transformable Canvas Group: SVGs and Nodes */}

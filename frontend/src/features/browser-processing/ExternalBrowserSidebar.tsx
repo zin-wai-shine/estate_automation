@@ -33,6 +33,7 @@ import {
   FiSearch,
   FiSquare,
   FiMaximize2,
+  FiTrash2,
 } from 'react-icons/fi';
 import { FaChrome } from 'react-icons/fa';
 import { Button } from '../../components/ui/Button';
@@ -244,6 +245,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const [isRegettingImages, setIsRegettingImages] = useState(false);
   const [regetFeedback, setRegetFeedback] = useState<string | null>(null);
   const [regettingSinglePos, setRegettingSinglePos] = useState<number | null>(null);
+  const [deletingPos, setDeletingPos] = useState<number | null>(null);
   const [cacheBustTimestamp, setCacheBustTimestamp] = useState<number>(() => Date.now());
 
   // 4. Prompt Template State (Persisted uniquely per node)
@@ -937,6 +939,34 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       console.warn(`Failed to re-get image #${position}:`, e);
     } finally {
       setRegettingSinglePos(null);
+    }
+  };
+
+  // Delete a single enhanced image from disk, cache, and state
+  const handleDeleteEnhancedImage = async (img: EnhancedDownloadedImage) => {
+    const pos = img.position || 1;
+    setDeletingPos(pos);
+    try {
+      await fetch('http://127.0.0.1:9224/delete-enhanced-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: img.filename,
+          position: pos,
+          listing_code: (propertyContext?.listingCode || '').trim(),
+        }),
+      });
+      // Remove from enhancedImages in state
+      setEnhancedImages((prev) => prev.filter((item) => (item.position || 1) !== pos));
+      if (onEnhancedPhotosUpdate) {
+        onEnhancedPhotosUpdate({ [pos - 1]: '' });
+      }
+      setRegetFeedback('Deleted');
+      setTimeout(() => setRegetFeedback(null), 2000);
+    } catch (e) {
+      console.warn(`Failed to delete image #${pos}:`, e);
+    } finally {
+      setDeletingPos(null);
     }
   };
 
@@ -1806,11 +1836,13 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     ];
   }, [propertyContext?.upstreamPrompts]);
 
-  // Missing positions for Enhance automation
+  // Missing positions for Enhance automation: all expected photos that are not yet downloaded as enhanced images
   const missingPositions = useMemo(() => {
-    const allPositions = queueJobs.length > 0
+    const allPositions = activeImages.length > 0
+      ? activeImages.map((img, i) => (typeof img.index === 'number' && img.index > 0 ? img.index : i + 1))
+      : queueJobs.length > 0
       ? queueJobs.map((j) => j.original_position || 1)
-      : activeImages.map((img, i) => (typeof img.index === 'number' && img.index > 0 ? img.index : i + 1));
+      : [];
     const downloadedPositions = new Set(enhancedImages.map((img) => img.position));
     return allPositions.filter((pos) => !downloadedPositions.has(pos)).sort((a, b) => a - b);
   }, [queueJobs, activeImages, enhancedImages]);
@@ -5486,7 +5518,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   width: '18px',
                   height: '18px',
                   borderRadius: '50%',
-                  backgroundColor: '#10B981',
+                  backgroundColor: missingPositions.length > 0 && enhancedImages.length === 0 ? '#F59E0B' : '#10B981',
                   color: '#FFFFFF',
                   display: 'flex',
                   alignItems: 'center',
@@ -5496,18 +5528,34 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   flexShrink: 0,
                 }}
               >
-                ✓
+                {missingPositions.length > 0 && enhancedImages.length === 0 ? '!' : '✓'}
               </div>
               <span
                 style={{
                   fontSize: '0.75rem',
                   fontWeight: 700,
-                  color: '#10B981',
+                  color: missingPositions.length > 0 ? '#F59E0B' : '#10B981',
                   whiteSpace: 'nowrap',
                 }}
               >
-                Enhanced Images ({enhancedImages.length} Photos)
+                Enhanced Images ({enhancedImages.length}
+                {activeImages.length > 0 && enhancedImages.length < activeImages.length ? ` of ${activeImages.length}` : ''} Photos)
               </span>
+              {missingPositions.length > 0 && (
+                <span
+                  style={{
+                    fontSize: '0.625rem',
+                    fontWeight: 700,
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                    color: '#F59E0B',
+                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                  }}
+                >
+                  {missingPositions.length} Missing
+                </span>
+              )}
             </div>
             <div
               style={{
@@ -5518,6 +5566,33 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 marginLeft: 'auto',
               }}
             >
+              {missingPositions.length > 0 && !isAutomating && !isRunningTwoStage && !isHeroNode && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
+                    handleStartGroupAutomation(missingPositions);
+                  }}
+                  style={{
+                    padding: '2px 7px',
+                    fontSize: '0.625rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    borderColor: 'rgba(245, 158, 11, 0.5)',
+                    color: '#F59E0B',
+                    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                    fontWeight: 700,
+                  }}
+                  title={`Queue & enhance ${missingPositions.length} missing photo(s): ${missingPositions.map((p) => '#' + p).join(', ')}`}
+                >
+                  <FiPlay size={9} />
+                  <span>Regenerate Missing ({missingPositions.length})</span>
+                </Button>
+              )}
               {missingPositions.length > 0 && enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && (
                 <Button
                   size="sm"
@@ -5526,7 +5601,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   onClick={async () => {
                     setIsRecovering(true);
                     try {
-                      // 1. Fast serial download recovery from memorized tabs & open ChatGPT tabs
                       await fetch('http://127.0.0.1:9224/recover-missing-images', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -5539,7 +5613,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                           autoWorkMissing: false,
                         }),
                       });
-                      // Poll for newly recovered images across up to 6 seconds
                       for (let i = 0; i < 6; i++) {
                         await new Promise((r) => setTimeout(r, 1000));
                         const refreshedList = await fetchEnhancedDownloadedImages(propertyContext?.id, propertyContext?.listingCode);
@@ -5639,7 +5712,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             </div>
           </div>
 
-          {/* Grid of Enhanced Images */}
+          {/* Grid of Enhanced and Missing Images */}
           <div
             style={{
               display: 'grid',
@@ -5650,161 +5723,321 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               paddingRight: '2px',
             }}
           >
-            {enhancedImages.map((img, idx) => {
-              const displayUrl = img.url
-                ? img.url.includes('?')
-                  ? `${img.url}&_cb=${cacheBustTimestamp}`
-                  : `${img.url}?_cb=${cacheBustTimestamp}`
-                : '';
-              return (
-                <div
-                  key={`${img.filename || idx}-${img.size || 0}-${cacheBustTimestamp}`}
-                  style={{
-                    position: 'relative',
-                    borderRadius: '8px',
-                    overflow: 'hidden',
-                    border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid var(--border-color)',
-                    backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                  }}
-                >
-                  {/* Image Thumbnail with 4:5 aspect ratio */}
+            {(() => {
+              const enhancedMap = new Map<number, EnhancedDownloadedImage>();
+              enhancedImages.forEach((img) => enhancedMap.set(img.position || 1, img));
+
+              const cardItems: Array<{
+                position: number;
+                enhanced?: EnhancedDownloadedImage;
+                sourceImage?: { url: string; index?: number };
+                isMissing: boolean;
+              }> = [];
+
+              if (activeImages.length > 0 && !isHeroNode) {
+                activeImages.forEach((srcImg, idx) => {
+                  const pos = typeof srcImg.index === 'number' && srcImg.index > 0 ? srcImg.index : idx + 1;
+                  const enh = enhancedMap.get(pos);
+                  cardItems.push({
+                    position: pos,
+                    enhanced: enh,
+                    sourceImage: srcImg,
+                    isMissing: !enh,
+                  });
+                });
+              } else {
+                enhancedImages.forEach((enh, idx) => {
+                  cardItems.push({
+                    position: enh.position || idx + 1,
+                    enhanced: enh,
+                    isMissing: false,
+                  });
+                });
+              }
+
+              return cardItems.map((item) => {
+                if (item.isMissing) {
+                  return (
+                    <div
+                      key={`missing-pos-${item.position}`}
+                      style={{
+                        position: 'relative',
+                        borderRadius: '8px',
+                        overflow: 'hidden',
+                        border: '1px dashed #F59E0B',
+                        backgroundColor: isDark ? 'rgba(245, 158, 11, 0.04)' : '#FFFBEB',
+                        display: 'flex',
+                        flexDirection: 'column',
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: 'relative',
+                          width: '100%',
+                          aspectRatio: '4/5',
+                          backgroundColor: isDark ? '#1E293B' : '#FEF3C7',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {item.sourceImage?.url && (
+                          <img
+                            src={item.sourceImage.url}
+                            alt={`Photo #${item.position}`}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                              display: 'block',
+                              opacity: 0.55,
+                              filter: 'grayscale(30%)',
+                            }}
+                          />
+                        )}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '6px',
+                            left: '6px',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                            color: '#FFFFFF',
+                            fontSize: '0.625rem',
+                            fontWeight: 700,
+                            backdropFilter: 'blur(4px)',
+                          }}
+                        >
+                          #{item.position}
+                        </div>
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '6px',
+                            right: '6px',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            backgroundColor: '#F59E0B',
+                            color: '#FFFFFF',
+                            fontSize: '0.5625rem',
+                            fontWeight: 700,
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
+                          }}
+                        >
+                          ⚠️ Missing
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '5px 6px',
+                          backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : '#FEF3C7',
+                        }}
+                      >
+                        <span style={{ fontSize: '0.5625rem', fontWeight: 600, color: '#F59E0B' }}>
+                          Not downloaded
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
+                            handleStartGroupAutomation([item.position]);
+                          }}
+                          disabled={isAutomating || isRunningTwoStage}
+                          style={{
+                            background: '#F59E0B',
+                            border: 'none',
+                            borderRadius: '4px',
+                            color: '#000000',
+                            fontSize: '0.625rem',
+                            fontWeight: 700,
+                            padding: '3px 8px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                          }}
+                          title={`Queue & enhance missing Photo #${item.position}`}
+                        >
+                          <FiPlay size={9} />
+                          <span>Regenerate</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                const img = item.enhanced!;
+                const displayUrl = img.url
+                  ? img.url.includes('?')
+                    ? `${img.url}&_cb=${cacheBustTimestamp}`
+                    : `${img.url}?_cb=${cacheBustTimestamp}`
+                  : '';
+                return (
                   <div
+                    key={`${img.filename || item.position}-${img.size || 0}-${cacheBustTimestamp}`}
                     style={{
                       position: 'relative',
-                      width: '100%',
-                      aspectRatio: '4/5',
-                      backgroundColor: isDark ? '#1E293B' : '#E2E8F0',
+                      borderRadius: '8px',
                       overflow: 'hidden',
-                    }}
-                  >
-                    <img
-                      src={displayUrl}
-                      key={displayUrl}
-                      alt={img.filename}
-                      loading="eager"
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        display: 'block',
-                      }}
-                    />
-                  {/* Position Badge */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: '6px',
-                      left: '6px',
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                      color: '#FFFFFF',
-                      fontSize: '0.625rem',
-                      fontWeight: 700,
-                      backdropFilter: 'blur(4px)',
-                    }}
-                  >
-                    #{img.position || idx + 1}
-                  </div>
-                  {/* Enhanced Status Pill */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: '6px',
-                      right: '6px',
-                      padding: '2px 5px',
-                      borderRadius: '4px',
-                      backgroundColor: '#10B981',
-                      color: '#FFFFFF',
-                      fontSize: '0.5625rem',
-                      fontWeight: 700,
+                      border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid var(--border-color)',
+                      backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
                       display: 'flex',
-                      alignItems: 'center',
-                      gap: '2px',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
+                      flexDirection: 'column',
+                      transition: 'transform 0.15s ease, box-shadow 0.15s ease',
                     }}
                   >
-                    ✓ Enhanced
-                  </div>
-                </div>
-
-                {/* Footer Actions */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '4px 6px',
-                    fontSize: '0.625rem',
-                    color: 'var(--text-secondary)',
-                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.3)' : '#F1F5F9',
-                  }}
-                >
-                  <span style={{ fontSize: '0.5625rem', fontWeight: 500 }}>
-                    {Math.round(((img as any).size_bytes || img.size || 0) / 1024)} KB
-                  </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <button
-                      type="button"
-                      onClick={() => handleRegetSingleImage(img.position || idx + 1)}
-                      disabled={regettingSinglePos === (img.position || idx + 1)}
+                    <div
                       style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'inherit',
-                        cursor: 'pointer',
-                        padding: '2px',
-                        display: 'flex',
-                        alignItems: 'center',
+                        position: 'relative',
+                        width: '100%',
+                        aspectRatio: '4/5',
+                        backgroundColor: isDark ? '#1E293B' : '#E2E8F0',
+                        overflow: 'hidden',
                       }}
-                      title={`Re-get photo #${img.position || idx + 1} from drive`}
                     >
-                      <FiRefreshCw
-                        size={10}
-                        className={regettingSinglePos === (img.position || idx + 1) ? 'animate-spin' : ''}
+                      <img
+                        src={displayUrl}
+                        key={displayUrl}
+                        alt={img.filename}
+                        loading="eager"
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          display: 'block',
+                        }}
                       />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(img.filename)}`).catch(() => {});
-                      }}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '6px',
+                          left: '6px',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                          color: '#FFFFFF',
+                          fontSize: '0.625rem',
+                          fontWeight: 700,
+                          backdropFilter: 'blur(4px)',
+                        }}
+                      >
+                        #{img.position || item.position}
+                      </div>
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '6px',
+                          right: '6px',
+                          padding: '2px 5px',
+                          borderRadius: '4px',
+                          backgroundColor: '#10B981',
+                          color: '#FFFFFF',
+                          fontSize: '0.5625rem',
+                          fontWeight: 700,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '2px',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
+                        }}
+                      >
+                        ✓ Enhanced
+                      </div>
+                    </div>
+
+                    <div
                       style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'inherit',
-                        cursor: 'pointer',
-                        padding: '2px',
                         display: 'flex',
                         alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '4px 6px',
+                        fontSize: '0.625rem',
+                        color: 'var(--text-secondary)',
+                        backgroundColor: isDark ? 'rgba(0, 0, 0, 0.3)' : '#F1F5F9',
                       }}
-                      title="Reveal in Finder"
                     >
-                      <FiFolder size={11} />
-                    </button>
-                    <a
-                      href={displayUrl || img.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{
-                        color: '#10B981',
-                        display: 'flex',
-                        alignItems: 'center',
-                        textDecoration: 'none',
-                        padding: '2px',
-                      }}
-                      title="View Full Resolution"
-                    >
-                      <FiExternalLink size={11} />
-                    </a>
+                      <span style={{ fontSize: '0.5625rem', fontWeight: 500 }}>
+                        {Math.round(((img as any).size_bytes || img.size || 0) / 1024)} KB
+                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleRegetSingleImage(img.position || item.position)}
+                          disabled={regettingSinglePos === (img.position || item.position)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'inherit',
+                            cursor: 'pointer',
+                            padding: '2px',
+                            display: 'flex',
+                            alignItems: 'center',
+                          }}
+                          title={`Re-get photo #${img.position || item.position} from drive`}
+                        >
+                          <FiRefreshCw
+                            size={10}
+                            className={regettingSinglePos === (img.position || item.position) ? 'animate-spin' : ''}
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(img.filename)}`).catch(() => {});
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'inherit',
+                            cursor: 'pointer',
+                            padding: '2px',
+                            display: 'flex',
+                            alignItems: 'center',
+                          }}
+                          title="Reveal in Finder"
+                        >
+                          <FiFolder size={11} />
+                        </button>
+                        <a
+                          href={displayUrl || img.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            color: '#10B981',
+                            display: 'flex',
+                            alignItems: 'center',
+                            textDecoration: 'none',
+                            padding: '2px',
+                          }}
+                          title="View Full Resolution"
+                        >
+                          <FiExternalLink size={11} />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteEnhancedImage(img)}
+                          disabled={deletingPos === (img.position || item.position)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#EF4444',
+                            cursor: 'pointer',
+                            padding: '2px',
+                            display: 'flex',
+                            alignItems: 'center',
+                          }}
+                          title={`Delete photo #${img.position || item.position}`}
+                        >
+                          <FiTrash2 size={11} />
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            );
-          })}
+                );
+              });
+            })()}
           </div>
         </div>
       )}
