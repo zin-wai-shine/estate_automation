@@ -77,6 +77,7 @@ import { AIImageStudio } from './AIImageStudio';
 import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
 import { getPersistedReferenceImage, isReferenceImageExplicitlyDeleted } from '../browser-processing/referenceImageStorage';
 import { FBHeroSettingsSidebox, extractCleanCondoNameFromAiText } from '../browser-processing/FBHeroSettingsSidebox';
+import { ChromeTabGroupConnectDrawer } from '../browser-processing/ChromeTabGroupConnectDrawer';
 import { GoogleSheetSettingsSidebox } from './GoogleSheetSettingsSidebox';
 import { PhotoCropSettingsSidebox } from './PhotoCropSettingsSidebox';
 import { focusBrowserTabGroup, fetchBrowserProfiles, fetchTabGroups, fetchEnhancedDownloadedImages, stopAutomation } from '../browser-processing/browserAutomationService';
@@ -335,10 +336,6 @@ export interface DynamicAIBoxConfig {
   condoImages?: any[];
   condoPhotos?: any[];
   useCondoImages?: boolean;
-  condoImagesCount?: number;
-  useEnhancedImages?: boolean;
-  enhancedImagesSource?: 'enhanced' | 'get_images';
-  enhancedImagesCount?: number;
   showImagesToEnhance?: boolean;
   downloadFolder?: string;
   showCondoProjectCard?: boolean;
@@ -8754,31 +8751,46 @@ export const FacebookWorkflowCanvas = forwardRef<
     setActiveModalNode(null);
   };
 
-  // Connect dedicated Chrome Tab Group Box from Chrome Profile node
-  const handleConnectChromeTabGroupBox = (fromNodeId: string, group: Partial<BrowserGroupItem> & { name: string }) => {
+  // Connect dedicated Chrome Tab Group Box from Chrome Profile node (with optional custom flow configuration)
+  const handleConnectChromeTabGroupBox = (
+    fromNodeId: string,
+    group: Partial<BrowserGroupItem> & { name: string },
+    customConfig?: Record<string, any>
+  ) => {
     const parentBox = config.aiBoxes.find((b) => b.id === fromNodeId);
-    const newId = `ai-box-tabgroup-${(group.name || 'group').toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}`;
+    const boxTitle = customConfig?.title || group.name || 'Tab Group';
+    const newId = `ai-box-tabgroup-${boxTitle.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}`;
     const parentX = parentBox?.x ?? 520;
     const parentY = parentBox?.y ?? 340;
 
+    // Calculate spread X so newly connected child boxes don't overlap existing child boxes under this parent
+    const existingChildren = (config.connections || [])
+      .filter((c) => c.fromNodeId === fromNodeId)
+      .map((c) => config.aiBoxes.find((b) => b.id === c.toNodeId))
+      .filter(Boolean);
+    const countIndex = existingChildren.length;
+    const offsetX = Math.ceil(countIndex / 2) * 160 * (countIndex % 2 === 1 ? 1 : -1);
+    const computedX = parentX + (countIndex > 0 ? offsetX : 0);
+
     const newBox: DynamicAIBoxConfig = {
       id: newId,
-      title: group.name || 'Tab Group',
-      subtitle: `${group.tabs?.length || group.tabs_count || 0} Tabs`,
+      title: boxTitle,
+      subtitle: `${group.tabs?.length || group.tabs_count || customConfig?.workerTabCount || 1} Tabs`,
       processType: 'chrome_tab_group',
       provider: 'external_browser' as any,
       model: 'chrome-tab-group',
       templateId: 'chrome-tab-group',
-      templateText: `Tab Group: ${group.name}`,
+      templateText: `Tab Group: ${boxTitle}`,
       customPrompt: '',
       enabled: true,
-      x: parentX,
+      x: computedX,
       y: parentY + 190,
       browserProfileId: parentBox?.browserProfileId,
       browserProfileKey: parentBox?.browserProfileKey,
       browserProfileName: parentBox?.browserProfileName,
-      browserGroupName: group.name,
+      browserGroupName: group.name || boxTitle,
       browserGroupTabUrls: (group.tabs || []).map((t) => t.url).filter(Boolean),
+      ...customConfig,
     };
 
     const nextBoxes = [...config.aiBoxes, newBox];
@@ -8789,6 +8801,11 @@ export const FacebookWorkflowCanvas = forwardRef<
         fromNodeId: fromNodeId,
         toNodeId: newId,
       },
+      ...(customConfig?.selectedUpstreamAiId ? [{
+        id: `wire-${customConfig.selectedUpstreamAiId}-${newId}-${Date.now() + 1}`,
+        fromNodeId: customConfig.selectedUpstreamAiId,
+        toNodeId: newId,
+      }] : []),
     ];
 
     const nextConfig = {
@@ -18261,13 +18278,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 upstreamPrompts: effectiveUpstreamPrompts,
                                 upstreamTabGroups,
                                 images: effectiveBrowserImages,
-                                enhancedImages: Object.entries(allEnhancedPhotos)
-                                  .filter(([_, u]) => Boolean(u))
-                                  .map(([idx, u]) => ({
-                                    index: Number(idx),
-                                    url: typeof u === 'string' ? u : (u as any).url || (u as any).stored_url || '',
-                                    filename: `Enhanced Photo #${idx}`,
-                                  })),
                               }}
                               rawPostContent={effectiveRawContent || ''}
                               onRunCondoNameStep={handleRunCondoNameStep}
@@ -18296,13 +18306,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 upstreamPrompts: effectiveUpstreamPrompts,
                                 upstreamTabGroups,
                                 images: effectiveBrowserImages,
-                                enhancedImages: Object.entries(allEnhancedPhotos)
-                                  .filter(([_, u]) => Boolean(u))
-                                  .map(([idx, u]) => ({
-                                    index: Number(idx),
-                                    url: typeof u === 'string' ? u : (u as any).url || (u as any).stored_url || '',
-                                    filename: `Enhanced Photo #${idx}`,
-                                  })),
                               }}
                             />
                           </>
@@ -20621,245 +20624,51 @@ export const FacebookWorkflowCanvas = forwardRef<
         // If clicking [+] from Chrome Profile node:
         // Show Chrome Tab Groups to connect as a dedicated Chrome Tab Group box!
         if (connectDrawerNode.platform === 'chrome-tab-group') {
+          const fromBox = config.aiBoxes.find((b) => b.id === fromNodeId);
+          const upstreamPrompts = config.aiBoxes
+            .filter((b) => b.id !== fromNodeId && (isTextFormatAIBox(b) || isTextAIBox(b) || b.processType === 'ai_processor' || b.title?.toLowerCase().includes('prompt')))
+            .map((b) => ({
+              id: b.id,
+              title: b.title || 'AI Model Prompt',
+              text: b.customPrompt || b.templateText || '',
+              generatedOutput: (b as any).generatedOutput || (b as any).output || (aiGeneratedOutputs && aiGeneratedOutputs[b.id]) || '',
+              templateId: b.templateId,
+            }));
+
+          const derivedCondoName =
+            _projectName && _projectName !== 'Facebook Property Post' && _projectName !== 'Featured Property Listing'
+              ? _projectName
+              : 'Regent Home Bangna';
+
+          const formattedPropertyImages = (images || []).map((img: any, i: number) => ({
+            url: typeof img === 'string' ? img : (img?.url || img?.src || ''),
+            index: i + 1,
+            filename: img?.filename || `Photo #${i + 1}`,
+          }));
+
+          const formattedEnhancedImages = Object.entries(allEnhancedPhotos || {}).map(([_k, url], i) => ({
+            url: String(url),
+            index: i + 1,
+            filename: `Enhanced Photo #${i + 1}`,
+          }));
+
           return (
-            <aside
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                position: 'absolute',
-                top: 0,
-                right: 0,
-                bottom: 0,
-                width: '380px',
-                maxWidth: '100%',
-                backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                borderLeft: '1px solid var(--border-color)',
-                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
-                  ? 'none'
-                  : isDark
-                    ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
-                    : '-3px 0 16px rgba(0, 0, 0, 0.06)',
-                transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
-                zIndex: 170,
-                display: 'flex',
-                flexDirection: 'column',
-                animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+            <ChromeTabGroupConnectDrawer
+              isOpen={true}
+              onClose={() => setConnectDrawerNode(null)}
+              isDark={isDark}
+              fromNodeId={fromNodeId}
+              fromTitle={fromTitle}
+              browserProfileName={fromBox?.browserProfileName || fromTitle}
+              discoveredTabGroups={browserTabGroupsList}
+              upstreamAiBoxes={upstreamPrompts}
+              condoName={derivedCondoName}
+              propertyImages={formattedPropertyImages}
+              enhancedImages={formattedEnhancedImages}
+              onConnectTabGroup={(group: any, customConfig) => {
+                handleConnectChromeTabGroupBox(fromNodeId, group, customConfig);
               }}
-            >
-              {/* Header */}
-              <div
-                style={{
-                  padding: '0.875rem 1rem',
-                  borderBottom: '1px solid var(--border-color)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  background: isDark
-                    ? 'linear-gradient(180deg, #161B22 0%, #0D1117 100%)'
-                    : '#FFFFFF',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                  <div
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '8px',
-                      backgroundColor: 'rgba(6, 182, 212, 0.15)',
-                      color: '#06B6D4',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '16px',
-                    }}
-                  >
-                    <FiLayers size={18} />
-                  </div>
-                  <div>
-                    <h3
-                      style={{
-                        margin: 0,
-                        fontSize: '0.875rem',
-                        fontWeight: 700,
-                        color: 'var(--text-primary)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      Connect Chrome Tab Group
-                    </h3>
-                    <p style={{ margin: '2px 0 0', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                      Attach worker tab group to {fromTitle}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setConnectDrawerNode(null)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--text-muted)',
-                    cursor: 'pointer',
-                    padding: '4px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: '6px',
-                  }}
-                >
-                  <FiX size={14} />
-                </button>
-              </div>
-
-              {/* Scrollable Content Body */}
-              <div
-                style={{
-                  flex: 1,
-                  overflowY: 'auto',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.75rem',
-                  padding: '0.875rem',
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      fontSize: '0.6875rem',
-                      fontWeight: 600,
-                      color: isDark ? '#8B949E' : '#64748B',
-                      marginBottom: '0.35rem',
-                    }}
-                  >
-                    Discovered Tab Groups
-                  </div>
-                  <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginBottom: '0.65rem' }}>
-                    Select a tab group from this Chrome profile to connect directly below on the canvas:
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {browserTabGroupsList.map((g) => (
-                      <div
-                        key={g.id || g.name}
-                        onClick={() => {
-                          handleConnectChromeTabGroupBox(fromNodeId, g);
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '0.65rem 0.75rem',
-                          borderRadius: '8px',
-                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                          backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = '#06B6D4';
-                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(6, 182, 212, 0.12)' : '#ECFEFF';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
-                          e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
-                          <div
-                            style={{
-                              width: '32px',
-                              height: '32px',
-                              borderRadius: '6px',
-                              background: 'linear-gradient(135deg, #06B6D4, #0891B2)',
-                              color: '#FFFFFF',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              flexShrink: 0,
-                            }}
-                          >
-                            <FiLayers size={16} />
-                          </div>
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                              <span
-                                style={{
-                                  fontSize: '0.78125rem',
-                                  fontWeight: 700,
-                                  color: 'var(--text-primary)',
-                                  whiteSpace: 'nowrap',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                }}
-                              >
-                                {g.name}
-                              </span>
-                              <span
-                                style={{
-                                  fontSize: '0.5625rem',
-                                  padding: '1px 5px',
-                                  borderRadius: '3px',
-                                  backgroundColor: isDark ? '#30363D' : '#E2E8F0',
-                                  color: isDark ? '#8B949E' : '#64748B',
-                                  fontWeight: 600,
-                                }}
-                              >
-                                {g.tabs?.length || g.tabs_count || 0} tabs
-                              </span>
-                            </div>
-                            <div
-                              style={{
-                                fontSize: '0.625rem',
-                                color: 'var(--text-muted)',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                                marginTop: '1px',
-                              }}
-                            >
-                              {(g.tabs || []).map((t) => t.title || t.url).slice(0, 2).join(' • ') || 'Active worker tabs'}
-                            </div>
-                          </div>
-                        </div>
-
-                        <span
-                          style={{
-                            fontSize: '0.625rem',
-                            padding: '4px 9px',
-                            borderRadius: '5px',
-                            backgroundColor: '#06B6D4',
-                            color: '#FFFFFF',
-                            fontWeight: 700,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            flexShrink: 0,
-                          }}
-                        >
-                          <FiPlus size={11} /> Connect Group
-                        </span>
-                      </div>
-                    ))}
-                    {browserTabGroupsList.length === 0 && (
-                      <div
-                        style={{
-                          fontSize: '0.6875rem',
-                          color: 'var(--text-muted)',
-                          textAlign: 'center',
-                          padding: '1.5rem',
-                          border: '1px dashed var(--border-color)',
-                          borderRadius: '8px',
-                        }}
-                      >
-                        No Chrome tab groups found in this profile.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </aside>
+            />
           );
         }
 
