@@ -24639,15 +24639,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                 transition: 'background-color 0.15s ease',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(56, 189, 248, 0.12)' : '#F0F9FF';
-                e.currentTarget.style.color = '#38BDF8';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = 'transparent';
-                e.currentTarget.style.color = isDark ? '#F0F6FC' : '#1E293B';
               }}
             >
-              <FiPlay size={13} style={{ fill: 'currentColor', flexShrink: 0 }} />
+              <FiPlay size={13} style={{ fill: 'currentColor', flexShrink: 0, opacity: 0.85 }} />
               <span>Run</span>
             </button>
           )}
@@ -24697,69 +24695,76 @@ export const FacebookWorkflowCanvas = forwardRef<
                 transition: 'background-color 0.15s ease',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(139, 92, 246, 0.12)' : '#F5F3FF';
-                e.currentTarget.style.color = '#8B5CF6';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = 'transparent';
-                e.currentTarget.style.color = isDark ? '#F0F6FC' : '#1E293B';
               }}
             >
-              <FiPlus size={14} style={{ flexShrink: 0 }} />
+              <FiPlus size={14} style={{ flexShrink: 0, opacity: 0.85 }} />
               <span>Connect Next</span>
             </button>
           )}
 
           {/* 3. Delete */}
           {contextMenu.canDelete && (
-            <button
-              type="button"
-              className="context-menu-item"
-              onClick={() => {
-                const item = contextMenu;
-                setContextMenu(null);
-                if (item.nodeType === 'ai-box') {
-                  handleDeleteAIBox(item.nodeId);
-                } else if (item.nodeType === 'combine') {
-                  handleDeleteCombineBox(item.nodeId);
-                } else if (item.nodeType === 'destination' && item.destId) {
-                  handleDeleteDestination(undefined, item.destId);
-                } else if (item.nodeType === 'trigger') {
-                  handleDeleteTrigger();
-                } else if (item.nodeType === 'get-content') {
-                  handleDeleteGetContent();
-                } else if (item.nodeType === 'get-images') {
-                  handleDeleteGetImages();
-                }
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                width: '100%',
-                padding: '7px 9px',
-                borderRadius: '5px',
-                border: 'none',
-                background: 'transparent',
-                color: isDark ? '#F87171' : '#EF4444',
-                fontSize: '0.75rem',
-                fontWeight: 500,
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: 'background-color 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEE2E2';
-                e.currentTarget.style.color = '#EF4444';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent';
-                e.currentTarget.style.color = isDark ? '#F87171' : '#EF4444';
-              }}
-            >
-              <FiTrash2 size={13} style={{ flexShrink: 0 }} />
-              <span>Delete</span>
-            </button>
+            <>
+              <div
+                style={{
+                  height: '1px',
+                  backgroundColor: isDark ? '#30363D' : '#E2E8F0',
+                  margin: '4px 2px',
+                }}
+              />
+              <button
+                type="button"
+                className="context-menu-item"
+                onClick={() => {
+                  const item = contextMenu;
+                  setContextMenu(null);
+                  if (item.nodeType === 'ai-box') {
+                    handleDeleteAIBox(item.nodeId);
+                  } else if (item.nodeType === 'combine') {
+                    handleDeleteCombineBox(item.nodeId);
+                  } else if (item.nodeType === 'destination' && item.destId) {
+                    handleDeleteDestination(undefined, item.destId);
+                  } else if (item.nodeType === 'trigger') {
+                    handleDeleteTrigger();
+                  } else if (item.nodeType === 'get-content') {
+                    handleDeleteGetContent();
+                  } else if (item.nodeType === 'get-images') {
+                    handleDeleteGetImages();
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  width: '100%',
+                  padding: '7px 9px',
+                  borderRadius: '5px',
+                  border: 'none',
+                  background: 'transparent',
+                  color: isDark ? '#F0F6FC' : '#1E293B',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'background-color 0.15s ease, color 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2';
+                  e.currentTarget.style.color = isDark ? '#F87171' : '#EF4444';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.color = isDark ? '#F0F6FC' : '#1E293B';
+                }}
+              >
+                <FiTrash2 size={13} style={{ flexShrink: 0, opacity: 0.85 }} />
+                <span>Delete</span>
+              </button>
+            </>
           )}
         </div>
       )}
