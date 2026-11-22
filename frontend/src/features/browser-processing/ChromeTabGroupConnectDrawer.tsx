@@ -773,54 +773,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                             </div>
                           </div>
                         ) : (
-                          /* No Reference Image Selected Yet */
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <button
-                              type="button"
-                              onClick={() => refFileInputRef.current?.click()}
-                              style={{
-                                height: '32px',
-                                padding: '0 12px',
-                                borderRadius: '4px',
-                                fontSize: '0.6875rem',
-                                fontWeight: 500,
-                                backgroundColor: isDark ? '#21262D' : '#E2E8F0',
-                                color: isDark ? '#E6EDF3' : '#334155',
-                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              <FiUpload size={12} />
-                              <span>Upload</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => setShowFolderImagePicker(!showFolderImagePicker)}
-                              style={{
-                                height: '32px',
-                                padding: '0 12px',
-                                borderRadius: '4px',
-                                fontSize: '0.6875rem',
-                                fontWeight: 500,
-                                backgroundColor: isDark ? '#21262D' : '#E2E8F0',
-                                color: isDark ? '#E6EDF3' : '#334155',
-                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              <FiFolder size={12} />
-                              <span>Choose Image</span>
-                            </button>
-
+                          /* No Reference Image Selected Yet: Clean input + Folder & Upload action buttons */
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <input
                               type="text"
                               value={referenceImageUrl}
@@ -828,9 +782,10 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                 setReferenceImageUrl(e.target.value);
                                 setReferenceImageName('URL Image');
                               }}
-                              placeholder="or paste image URL..."
+                              placeholder="Paste image URL or choose..."
                               style={{
                                 flex: 1,
+                                minWidth: 0,
                                 height: '32px',
                                 padding: '0 10px',
                                 borderRadius: '4px',
@@ -839,8 +794,59 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                 color: isDark ? '#F0F6FC' : '#0F172A',
                                 fontSize: '0.6875rem',
                                 outline: 'none',
+                                boxSizing: 'border-box',
                               }}
                             />
+
+                            <button
+                              type="button"
+                              onClick={() => setShowFolderImagePicker(!showFolderImagePicker)}
+                              title="Choose reference photo from property images"
+                              style={{
+                                height: '32px',
+                                padding: '0 10px',
+                                borderRadius: '4px',
+                                fontSize: '0.65625rem',
+                                fontWeight: 500,
+                                backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                                color: isDark ? '#E6EDF3' : '#334155',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <FiFolder size={12} />
+                              <span>Folder</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => refFileInputRef.current?.click()}
+                              title="Upload reference photo from local drive"
+                              style={{
+                                height: '32px',
+                                padding: '0 10px',
+                                borderRadius: '4px',
+                                fontSize: '0.65625rem',
+                                fontWeight: 500,
+                                backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                                color: isDark ? '#E6EDF3' : '#334155',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <FiUpload size={12} />
+                              <span>Upload</span>
+                            </button>
                           </div>
                         )}
 
@@ -978,9 +984,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
 
                     {useCondoImages && (
                       <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'nowrap' }}>
                           {/* Manual Number Input */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                             <span style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>Count:</span>
                             <input
                               type="number"
@@ -996,7 +1002,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                 }
                               }}
                               style={{
-                                width: '48px',
+                                width: '38px',
                                 height: '28px',
                                 textAlign: 'center',
                                 borderRadius: '4px',
@@ -1012,13 +1018,13 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                           </div>
 
                           {/* Quick Presets */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
                             {[
-                              { count: 1, label: '1 Photo' },
-                              { count: 2, label: '2 Photos' },
-                              { count: 3, label: '3 Photos' },
-                              { count: 5, label: '5 Photos' },
-                              { count: 10, label: '10 (Max)' },
+                              { count: 1, label: '1' },
+                              { count: 2, label: '2' },
+                              { count: 3, label: '3' },
+                              { count: 5, label: '5' },
+                              { count: 10, label: '10' },
                             ].map((opt) => {
                               const isSel = condoImagesCount === opt.count;
                               return (
@@ -1053,7 +1059,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
 
                         {/* Manual Folder Input */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Folder:</span>
+                          <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', width: '38px', flexShrink: 0 }}>Folder:</span>
                           <input
                             type="text"
                             value={condoFolderName}
@@ -1668,9 +1674,11 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                           {referenceImageUrl ? (
                             <img src={referenceImageUrl} alt="Ref" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           ) : (
-                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B949E', fontSize: '9px' }}>Ref</div>
+                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isDark ? '#8B949E' : '#64748B' }}>
+                              <FiImage size={13} />
+                            </div>
                           )}
-                          <span style={{ position: 'absolute', bottom: 1, right: 1, backgroundColor: 'rgba(0,0,0,0.7)', color: '#fff', fontSize: '7px', padding: '1px 2px', borderRadius: '2px' }}>#1</span>
+                          <span style={{ position: 'absolute', bottom: 1, right: 1, backgroundColor: 'rgba(0,0,0,0.75)', color: '#fff', fontSize: '7px', padding: '1px 3px', borderRadius: '2px' }}>#1</span>
                         </div>
                       )}
                       {useCondoImages && Array.from({ length: Math.min(10, Math.max(1, condoImagesCount)) }).map((_, i) => {
@@ -1692,11 +1700,11 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                             {img?.url ? (
                               <img src={img.url} alt={`Condo ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             ) : (
-                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B949E', fontSize: '9px' }}>
-                                C{i + 1}
+                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isDark ? '#8B949E' : '#64748B' }}>
+                                <FiFolder size={12} />
                               </div>
                             )}
-                            <span style={{ position: 'absolute', bottom: 1, right: 1, backgroundColor: 'rgba(0,0,0,0.7)', color: '#fff', fontSize: '7px', padding: '1px 2px', borderRadius: '2px' }}>C{i + 1}</span>
+                            <span style={{ position: 'absolute', bottom: 1, right: 1, backgroundColor: 'rgba(0,0,0,0.75)', color: '#fff', fontSize: '7px', padding: '1px 3px', borderRadius: '2px' }}>C{i + 1}</span>
                           </div>
                         );
                       })}
