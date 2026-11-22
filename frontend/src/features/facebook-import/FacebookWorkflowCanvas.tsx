@@ -1954,10 +1954,10 @@ export const checkCropHasSpaceAbove = (
   const cropY = typeof cropBox.y === 'number' ? cropBox.y : 485;
   const cropCenterX = cropX + 108;
 
-  // 1. If crop studio is placed too high on canvas (< 300px), no clearance above for 150px arch + headers
-  if (cropY < 300) return false;
+  // 1. If crop studio is placed too high on canvas (< 400px), no clearance above for 150px arch + headers
+  if (cropY < 400) return false;
 
-  // 2. Check if any node is placed above cropBox (within Y: [cropY - 240, cropY - 20] and horizontal overlap)
+  // 2. Check if any node is placed above cropBox (within Y: [cropY - 320, cropY - 15] and horizontal overlap)
   const hasNodeAbove = allBoxes.some((b) => {
     if (b.id === cropBox.id || isWatermarkAIBox(b)) return false;
     const bx = typeof b.x === 'number' ? b.x : 520;
@@ -1965,8 +1965,8 @@ export const checkCropHasSpaceAbove = (
     const isWide = isExternalBrowserAIBox(b) || isTextAIBox(b, connections) || isCropStudioBox(b);
     const bWidth = isWide ? 216 : 72;
     const bCenterX = bx + bWidth / 2;
-    const horizontalOverlap = Math.abs(bCenterX - cropCenterX) < 185;
-    const isDirectlyAbove = by >= (cropY - 240) && by <= (cropY - 20);
+    const horizontalOverlap = Math.abs(bCenterX - cropCenterX) < 220;
+    const isDirectlyAbove = by >= (cropY - 320) && by <= (cropY - 15);
     return horizontalOverlap && isDirectlyAbove;
   });
   if (hasNodeAbove) return false;
@@ -1984,8 +1984,8 @@ export const checkCropHasSpaceAbove = (
       const minX = Math.min(fromNode.x, toNode.x);
       const maxX = Math.max(fromNode.x, toNode.x);
       const avgY = (fromNode.y + toNode.y) / 2;
-      const crossesHorizontal = minX < cropCenterX && maxX > cropCenterX;
-      const inAboveZone = avgY >= (cropY - 220) && avgY <= (cropY - 20);
+      const crossesHorizontal = minX < (cropCenterX + 120) && maxX > (cropCenterX - 120);
+      const inAboveZone = avgY >= (cropY - 320) && avgY <= (cropY - 15);
       if (crossesHorizontal && inAboveZone) return true;
     }
     return false;
@@ -11196,12 +11196,18 @@ export const FacebookWorkflowCanvas = forwardRef<
             const centralCropStudioBox = config.aiBoxes.find((b) => isCropStudioBox(b));
             const hasCentralCropStudio = Boolean(centralCropStudioBox);
             const isAttachedCropFormat = hasCentralCropStudio && isWatermark;
+            const attachedCropFormats = config.aiBoxes.filter((b) => isWatermarkAIBox(b));
+            const hasAttachedCropFormats = attachedCropFormats.length > 0;
             const cropHasSpaceAbove = centralCropStudioBox
               ? checkCropHasSpaceAbove(centralCropStudioBox, config.aiBoxes, config.connections || [])
               : true;
+            // Always determine side based on actual attached presets if they exist, or available space if none yet
+            const cropFormatsAreBelow = hasAttachedCropFormats && centralCropStudioBox
+              ? attachedCropFormats.some((b) => (b.y ?? 0) >= (centralCropStudioBox.y ?? 0))
+              : !cropHasSpaceAbove;
             const isThisFormatBelow = centralCropStudioBox
               ? (box.y ?? 0) >= (centralCropStudioBox.y ?? 0)
-              : !cropHasSpaceAbove;
+              : cropFormatsAreBelow;
             const textAIBoxes = config.aiBoxes.filter((b) => isTextAIBox(b, config.connections));
             const textAIIndex = textAIBoxes.findIndex((b) => b.id === box.id);
             const isTextAI = textAIIndex !== -1 && !isTextFormat && !isCropStudio;
@@ -11259,8 +11265,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   hasReceiver={boxHasReceiver}
                   hasSource={boxHasSource}
                   showAddButton={!isChromeProfile && !isChromeTabGroup && !isTextFormat && !isAttachedCropFormat}
-                  showTopAddButton={isTextAI || (isCropStudio && cropHasSpaceAbove)}
-                  showBottomAddButton={isExternalBrowser || (isCropStudio && !cropHasSpaceAbove)}
+                  showTopAddButton={isTextAI || (isCropStudio && !cropFormatsAreBelow)}
+                  showBottomAddButton={isExternalBrowser || (isCropStudio && cropFormatsAreBelow)}
                   onAddClick={(e) => {
                     e.stopPropagation();
                     setDragWire(null);
@@ -11273,11 +11279,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                   onTopAddClick={isTextAI ? (e) => {
                     e.stopPropagation();
                     handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'AI Model', 'ai-format');
-                  } : (isCropStudio && cropHasSpaceAbove) ? (e) => {
+                  } : (isCropStudio && !cropFormatsAreBelow) ? (e) => {
                     e.stopPropagation();
                     handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'Photo Format & Crop', 'crop-format');
                   } : undefined}
-                  onBottomAddClick={(isCropStudio && !cropHasSpaceAbove) ? (e) => {
+                  onBottomAddClick={(isCropStudio && cropFormatsAreBelow) ? (e) => {
                     e.stopPropagation();
                     handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'Photo Format & Crop', 'crop-format');
                   } : undefined}
