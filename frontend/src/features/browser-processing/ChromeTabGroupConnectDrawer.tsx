@@ -1797,8 +1797,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                             )}
 
                             {step.sourceType === 'upload' && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                                   <label
                                     style={{
                                       height: '28px',
@@ -1806,17 +1806,20 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                       borderRadius: '4px',
                                       fontSize: '0.65625rem',
                                       fontWeight: 500,
-                                      backgroundColor: isDark ? '#21262D' : '#E2E8F0',
-                                      color: isDark ? '#E6EDF3' : '#334155',
+                                      backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                      color: isDark ? '#F0F6FC' : '#0F172A',
                                       border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                                       cursor: 'pointer',
                                       display: 'inline-flex',
                                       alignItems: 'center',
-                                      gap: '5px',
+                                      gap: '6px',
+                                      whiteSpace: 'nowrap',
+                                      flexShrink: 0,
+                                      transition: 'all 0.12s ease',
                                     }}
                                   >
-                                    <FiUpload size={12} />
-                                    <span>Choose Files ({step.uploadedUrls?.length || 0}/{step.count})</span>
+                                    <FiUpload size={12} style={{ color: isDark ? '#58A6FF' : '#2563EB' }} />
+                                    <span>{step.uploadedUrls?.length ? `${step.uploadedUrls.length}/${step.count} Selected` : 'Choose Files'}</span>
                                     <input
                                       type="file"
                                       multiple
@@ -1841,17 +1844,66 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                       style={{ display: 'none' }}
                                     />
                                   </label>
-                                  <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                                    {step.uploadedUrls?.length ? `${step.uploadedUrls.length} file(s) ready` : `Select up to ${step.count} image(s)`}
+
+                                  <span
+                                    style={{
+                                      fontSize: '0.625rem',
+                                      color: isDark ? '#8B949E' : '#64748B',
+                                      whiteSpace: 'nowrap',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      flex: 1,
+                                    }}
+                                  >
+                                    {step.uploadedUrls?.length ? `${step.uploadedUrls.length} file(s) ready` : `Max ${step.count} image(s)`}
                                   </span>
+
+                                  {renderCountStepper(step)}
                                 </div>
-                                {renderCountStepper(step)}
+
+                                {/* Thumbnail previews for uploaded files */}
+                                {step.uploadedUrls && step.uploadedUrls.length > 0 && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', padding: '2px 0' }}>
+                                    {step.uploadedUrls.map((url, uIdx) => (
+                                      <div
+                                        key={uIdx}
+                                        style={{
+                                          width: '42px',
+                                          height: '42px',
+                                          borderRadius: '4px',
+                                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                          overflow: 'hidden',
+                                          position: 'relative',
+                                          flexShrink: 0,
+                                          backgroundColor: isDark ? '#161B22' : '#F1F5F9',
+                                        }}
+                                      >
+                                        <img src={url} alt={`Upload ${uIdx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        <span
+                                          style={{
+                                            position: 'absolute',
+                                            bottom: 1,
+                                            right: 1,
+                                            backgroundColor: 'rgba(37,99,235,0.85)',
+                                            color: '#fff',
+                                            fontSize: '7px',
+                                            fontWeight: 600,
+                                            padding: '1px 3px',
+                                            borderRadius: '2px',
+                                          }}
+                                        >
+                                          #{uIdx + 1}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             )}
 
                             {step.sourceType === 'enhanced' && (
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   Will pull {step.count} enhanced room photo(s) from Canvas AI processor.
                                 </div>
                                 {renderCountStepper(step)}
