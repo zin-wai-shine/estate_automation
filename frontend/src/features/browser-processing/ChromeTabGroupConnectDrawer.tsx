@@ -207,15 +207,15 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
   };
 
   const renderCountStepper = (s: typeof attachmentSteps[0]) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Count:</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Attach:</span>
       <div
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          backgroundColor: isDark ? 'rgba(0, 0, 0, 0.4)' : '#F1F5F9',
-          borderRadius: '5px',
-          border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+          borderRadius: '4px',
+          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
           height: '24px',
           padding: '0 2px',
         }}
@@ -241,7 +241,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
           }}
           onMouseEnter={(e) => {
             if (s.count > 1) {
-              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0';
+              e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#E2E8F0';
               e.currentTarget.style.color = isDark ? '#F0F6FC' : '#0F172A';
             }
           }}
@@ -298,7 +298,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
           }}
           onMouseEnter={(e) => {
             if (s.count < 10) {
-              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0';
+              e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#E2E8F0';
               e.currentTarget.style.color = isDark ? '#F0F6FC' : '#0F172A';
             }
           }}
@@ -1500,20 +1500,27 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                           height: '28px',
                                           borderRadius: '4px',
                                           border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                          backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                                          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
                                           color: isDark ? '#8B949E' : '#64748B',
                                           display: 'flex',
                                           alignItems: 'center',
                                           justifyContent: 'center',
                                           cursor: 'pointer',
                                           flexShrink: 0,
+                                          transition: 'all 0.12s ease',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.color = isDark ? '#58A6FF' : '#2563EB';
+                                          e.currentTarget.style.borderColor = isDark ? '#58A6FF' : '#2563EB';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.color = isDark ? '#8B949E' : '#64748B';
+                                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
                                         }}
                                       >
                                         <FiRefreshCw size={11} />
                                       </button>
                                     )}
-
-                                    {renderCountStepper(step)}
                                   </div>
 
                                   {/* Dropdown Menu */}
@@ -1645,9 +1652,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                       <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
                                         Found {step.folderImages.length} photo{step.folderImages.length > 1 ? 's' : ''} in {step.folderName}
                                       </span>
-                                      <span style={{ fontSize: '0.59375rem', fontWeight: 500, color: isDark ? '#58A6FF' : '#2563EB' }}>
-                                        Attaching {Math.min(step.count, step.folderImages.length)} photo{Math.min(step.count, step.folderImages.length) > 1 ? 's' : ''}
-                                      </span>
+                                      {renderCountStepper(step)}
                                     </div>
 
                                     {/* Real photo thumbnails grid */}
@@ -1709,27 +1714,30 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                 ) : (
                                   /* Manual Mode when no condo folder selected yet */
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', width: '38px', flexShrink: 0 }}>
-                                        Image:
-                                      </span>
-                                      <input
-                                        type="text"
-                                        value={step.imageSelection || ''}
-                                        onChange={(e) => handleUpdateStep(step.id, { imageSelection: e.target.value })}
-                                        placeholder="Specific photo name (e.g. 1.png, 2.png) or choose manual..."
-                                        style={{
-                                          flex: 1,
-                                          height: '26px',
-                                          padding: '0 8px',
-                                          borderRadius: '4px',
-                                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                                          color: isDark ? '#F0F6FC' : '#0F172A',
-                                          fontSize: '0.65625rem',
-                                          outline: 'none',
-                                        }}
-                                      />
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                                        <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', width: '38px', flexShrink: 0 }}>
+                                          Image:
+                                        </span>
+                                        <input
+                                          type="text"
+                                          value={step.imageSelection || ''}
+                                          onChange={(e) => handleUpdateStep(step.id, { imageSelection: e.target.value })}
+                                          placeholder="Specific photo name (e.g. 1.png, 2.png) or choose manual..."
+                                          style={{
+                                            flex: 1,
+                                            height: '26px',
+                                            padding: '0 8px',
+                                            borderRadius: '4px',
+                                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                            color: isDark ? '#F0F6FC' : '#0F172A',
+                                            fontSize: '0.65625rem',
+                                            outline: 'none',
+                                          }}
+                                        />
+                                      </div>
+                                      {renderCountStepper(step)}
                                     </div>
 
                                     {/* Manual selection from listing photos if available */}
