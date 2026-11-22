@@ -20652,6 +20652,73 @@ export const FacebookWorkflowCanvas = forwardRef<
             filename: `Enhanced Photo #${i + 1}`,
           }));
 
+          // Connected workflow image sources
+          const workflowImageNodes: Array<{
+            id: string;
+            title: string;
+            nodeType?: string;
+            images?: Array<{ url: string; index?: number; filename?: string }>;
+            count?: number;
+            description?: string;
+          }> = [];
+
+          const isGetImagesConnected = (config.connections || []).some(
+            (c) => c.fromNodeId === 'get-images' || c.toNodeId === 'get-images'
+          ) || config.getImages?.enabled !== false;
+
+          if (isGetImagesConnected || formattedPropertyImages.length > 0) {
+            workflowImageNodes.push({
+              id: 'get-images',
+              title: (config.getImages as any)?.title || 'Get Images (All Media)',
+              nodeType: 'get-images',
+              images: formattedPropertyImages,
+              count: formattedPropertyImages.length,
+              description: `${formattedPropertyImages.length} listing photos`,
+            });
+          }
+
+          const connectedImageBoxes = config.aiBoxes.filter((b) => {
+            if (b.id === fromNodeId) return false;
+            const isConn = (config.connections || []).some(
+              (c) => c.fromNodeId === b.id || c.toNodeId === b.id
+            );
+            return (
+              isConn &&
+              (isImageAIBox(b, config.connections) ||
+               isEnhanceAIBox(b, config.connections) ||
+               isCropStudioBox(b) ||
+               isWatermarkAIBox(b) ||
+               isExternalBrowserAIBox(b) ||
+               b.processType === 'image_enhance' ||
+               b.title?.toLowerCase().includes('enhance') ||
+               b.title?.toLowerCase().includes('image'))
+            );
+          });
+
+          connectedImageBoxes.forEach((b) => {
+            const isEnhance = isEnhanceAIBox(b, config.connections) || b.processType === 'image_enhance' || b.title?.toLowerCase().includes('enhance') || isExternalBrowserAIBox(b);
+            const imgs = isEnhance && formattedEnhancedImages.length > 0 ? formattedEnhancedImages : formattedPropertyImages;
+            workflowImageNodes.push({
+              id: b.id,
+              title: b.title || 'Enhance IMG',
+              nodeType: isCropStudioBox(b) ? 'crop' : isWatermarkAIBox(b) ? 'watermark' : 'enhance',
+              images: imgs,
+              count: imgs.length,
+              description: isEnhance ? `${imgs.length} enhanced photos` : `${imgs.length} photos`,
+            });
+          });
+
+          if (!workflowImageNodes.some((n) => n.nodeType === 'enhance' || n.id.includes('enhance'))) {
+            workflowImageNodes.push({
+              id: 'enhanced-images',
+              title: 'Enhance IMG (AI Processor)',
+              nodeType: 'enhance',
+              images: formattedEnhancedImages,
+              count: formattedEnhancedImages.length,
+              description: `${formattedEnhancedImages.length} enhanced photos`,
+            });
+          }
+
           return (
             <ChromeTabGroupConnectDrawer
               isOpen={true}
@@ -20665,6 +20732,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               condoName={derivedCondoName}
               propertyImages={formattedPropertyImages}
               enhancedImages={formattedEnhancedImages}
+              workflowImageNodes={workflowImageNodes}
               onConnectTabGroup={(group: any, customConfig) => {
                 handleConnectChromeTabGroupBox(fromNodeId, group, customConfig);
               }}

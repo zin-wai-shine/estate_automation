@@ -27,6 +27,15 @@ import { Select } from '../../components/ui/Select';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import type { BrowserGroupItem } from './types';
 
+export interface WorkflowImageSource {
+  id: string;
+  title: string;
+  nodeType?: string;
+  images?: Array<{ url: string; index?: number; filename?: string }>;
+  count?: number;
+  description?: string;
+}
+
 interface ChromeTabGroupConnectDrawerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -39,6 +48,7 @@ interface ChromeTabGroupConnectDrawerProps {
   condoName?: string;
   propertyImages?: Array<{ url: string; index?: number; filename?: string }>;
   enhancedImages?: Array<{ url: string; index?: number; filename?: string }>;
+  workflowImageNodes?: WorkflowImageSource[];
   onConnectTabGroup: (
     group: Partial<BrowserGroupItem> & { name: string },
     customConfig?: Record<string, any>
@@ -57,10 +67,45 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
   condoName = '',
   propertyImages = [],
   enhancedImages = [],
+  workflowImageNodes = [],
   onConnectTabGroup,
 }) => {
   // Navigation: 'custom_flow' vs 'discovered_groups'
   const [activeTab, setActiveTab] = useState<'custom_flow' | 'discovered_groups'>('custom_flow');
+
+  // Resolved workflow image sources
+  const activeWorkflowSources = useMemo<WorkflowImageSource[]>(() => {
+    if (workflowImageNodes && workflowImageNodes.length > 0) {
+      return workflowImageNodes;
+    }
+    const defs: WorkflowImageSource[] = [];
+    if (propertyImages && propertyImages.length > 0) {
+      defs.push({
+        id: 'get-images',
+        title: 'Get Images (All Media)',
+        nodeType: 'get-images',
+        images: propertyImages,
+        count: propertyImages.length,
+        description: `${propertyImages.length} listing photos`,
+      });
+    }
+    defs.push({
+      id: 'enhanced-images',
+      title: 'Enhance IMG (AI Processor)',
+      nodeType: 'enhance',
+      images: enhancedImages,
+      count: enhancedImages.length,
+      description: `${enhancedImages.length} enhanced room photos`,
+    });
+    return defs;
+  }, [workflowImageNodes, propertyImages, enhancedImages]);
+
+  const workflowSourceOptions = useMemo(() => {
+    return activeWorkflowSources.map((src) => ({
+      value: src.id,
+      label: `${src.title}${src.count !== undefined ? ` (${src.count} photo${src.count !== 1 ? 's' : ''})` : ''}`,
+    }));
+  }, [activeWorkflowSources]);
 
   // Custom Flow Configuration State
   const [flowName, setFlowName] = useState<string>(() => `Flow-${Math.floor(1000 + Math.random() * 9000)}`);
@@ -87,7 +132,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
     id: string;
     title: string;
     count: number;
-    sourceType: 'folder' | 'upload' | 'enhanced';
+    sourceType: 'folder' | 'upload' | 'workflow' | 'enhanced';
+    workflowSourceId?: string;
     folderName: string;
     folderImages?: Array<{ filename: string; data_url?: string; full_path?: string; index?: number }>;
     imageSelection?: string;
@@ -99,6 +145,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
       title: 'Group 1',
       count: 1,
       sourceType: 'upload',
+      workflowSourceId: 'get-images',
       folderName: condoName || '',
       imageSelection: '',
       enabled: true,
@@ -179,6 +226,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
         title: `Group ${nextIdx}`,
         count: 1,
         sourceType: 'upload',
+        workflowSourceId: activeWorkflowSources[0]?.id || 'get-images',
         folderName: initialFolder,
         imageSelection: '',
         enabled: true,
@@ -198,7 +246,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
     updates: Partial<{
       title: string;
       count: number;
-      sourceType: 'folder' | 'upload' | 'enhanced';
+      sourceType: 'folder' | 'upload' | 'workflow' | 'enhanced';
+      workflowSourceId?: string;
       folderName: string;
       folderImages?: Array<{ filename: string; data_url?: string; full_path?: string; index?: number }>;
       imageSelection?: string;
@@ -404,7 +453,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
     const finalName = flowName.trim() || (tabGroupMode === 'generate' ? 'FB Hero' : 'Enhance IMG');
     const enabledSteps = (tabGroupMode === 'generate' && useCondoImages) ? attachmentSteps.filter((s) => s.enabled) : [];
     const primaryFolderStep = enabledSteps.find((s) => s.sourceType === 'folder');
-    const primaryEnhancedStep = enabledSteps.find((s) => s.sourceType === 'enhanced');
+    const primaryWorkflowStep = enabledSteps.find((s) => s.sourceType === 'workflow' || s.sourceType === 'enhanced');
 
     const customConfig: Record<string, any> = {
       title: finalName,
@@ -424,9 +473,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
       useCondoImages: tabGroupMode === 'generate' ? useCondoImages : false,
       condoImagesCount: tabGroupMode === 'generate' ? (primaryFolderStep ? primaryFolderStep.count : 0) : 0,
       condoFolderName: tabGroupMode === 'generate' ? (primaryFolderStep?.folderName || condoName || 'Regent Home Bangna') : undefined,
-      useEnhancedImages: tabGroupMode === 'generate' ? Boolean(primaryEnhancedStep) : false,
-      enhancedImagesSource: 'enhanced',
-      enhancedImagesCount: tabGroupMode === 'generate' ? (primaryEnhancedStep ? primaryEnhancedStep.count : 0) : 0,
+      useEnhancedImages: tabGroupMode === 'generate' ? Boolean(primaryWorkflowStep) : false,
+      enhancedImagesSource: primaryWorkflowStep?.workflowSourceId || 'workflow',
+      enhancedImagesCount: tabGroupMode === 'generate' ? (primaryWorkflowStep ? primaryWorkflowStep.count : 0) : 0,
       selectedUpstreamAiId: selectedPromptSource === 'upstream_ai' ? selectedUpstreamAiId : undefined,
       promptSourceMode: selectedPromptSource,
       browserCustomPrompt: selectedPromptSource === 'custom' ? customPromptText : undefined,
@@ -1490,13 +1539,19 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                     border: isDark ? '1px solid rgba(255, 255, 255, 0.04)' : '1px solid rgba(0, 0, 0, 0.04)',
                                   }}
                                 >
-                                  {(['folder', 'upload', 'enhanced'] as const).map((st) => {
-                                    const isSel = step.sourceType === st;
+                                  {(['folder', 'upload', 'workflow'] as const).map((st) => {
+                                    const isSel = step.sourceType === st || (st === 'workflow' && step.sourceType === 'enhanced');
+                                    const label = st === 'workflow' ? 'Workflow' : st === 'upload' ? 'Upload' : 'Folder';
                                     return (
                                       <button
                                         key={st}
                                         type="button"
-                                        onClick={() => handleUpdateStep(step.id, { sourceType: st })}
+                                        onClick={() => {
+                                          handleUpdateStep(step.id, {
+                                            sourceType: st,
+                                            workflowSourceId: st === 'workflow' ? (step.workflowSourceId || activeWorkflowSources[0]?.id || 'get-images') : step.workflowSourceId,
+                                          });
+                                        }}
                                         style={{
                                           padding: '2px 8px',
                                           borderRadius: '3px',
@@ -1511,11 +1566,10 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                           border: 'none',
                                           boxShadow: isSel ? (isDark ? '0 1px 2px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.08)') : 'none',
                                           cursor: 'pointer',
-                                          textTransform: 'capitalize',
                                           transition: 'all 0.12s ease',
                                         }}
                                       >
-                                        {st}
+                                        {label}
                                       </button>
                                     );
                                   })}
@@ -2031,14 +2085,101 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                               </div>
                             )}
 
-                            {step.sourceType === 'enhanced' && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  Will pull {step.count} enhanced room photo(s) from Canvas AI processor.
+                            {(step.sourceType === 'workflow' || step.sourceType === 'enhanced') && (() => {
+                              const selectedSource = activeWorkflowSources.find((s) => s.id === (step.workflowSourceId || activeWorkflowSources[0]?.id)) || activeWorkflowSources[0];
+                              const sourceImages = selectedSource?.images && selectedSource.images.length > 0
+                                ? selectedSource.images
+                                : (selectedSource?.nodeType === 'enhance' ? enhancedImages : propertyImages);
+
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <Select
+                                        options={workflowSourceOptions}
+                                        value={step.workflowSourceId || activeWorkflowSources[0]?.id || ''}
+                                        onChange={(val) => handleUpdateStep(step.id, { workflowSourceId: String(val) })}
+                                        height="28px"
+                                      />
+                                    </div>
+                                    {renderCountStepper(step)}
+                                  </div>
+
+                                  {/* Real photo thumbnails grid for selected workflow node */}
+                                  {sourceImages && sourceImages.length > 0 ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', padding: '2px 0' }}>
+                                        {sourceImages.slice(0, 10).map((img, tIdx) => {
+                                          const isSelected = tIdx < step.count;
+                                          return (
+                                            <div
+                                              key={tIdx}
+                                              onClick={() => {
+                                                const otherGroupsCount = attachmentSteps
+                                                  .filter((other) => other.id !== step.id && other.enabled)
+                                                  .reduce((acc, other) => acc + other.count, 0);
+                                                const maxAllowed = Math.max(1, 10 - otherGroupsCount);
+                                                handleUpdateStep(step.id, { count: Math.min(maxAllowed, tIdx + 1) });
+                                              }}
+                                              title={`Click to select up to photo #${tIdx + 1}`}
+                                              style={{
+                                                width: '42px',
+                                                height: '42px',
+                                                borderRadius: '4px',
+                                                border: isSelected
+                                                  ? (isDark ? '1.5px solid #58A6FF' : '1.5px solid #2563EB')
+                                                  : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
+                                                opacity: isSelected ? 1 : 0.4,
+                                                overflow: 'hidden',
+                                                position: 'relative',
+                                                flexShrink: 0,
+                                                cursor: 'pointer',
+                                                backgroundColor: isDark ? '#161B22' : '#F1F5F9',
+                                                transition: 'all 0.15s ease',
+                                              }}
+                                            >
+                                              {img.url ? (
+                                                <img
+                                                  src={img.url}
+                                                  alt={`Photo #${tIdx + 1}`}
+                                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                />
+                                              ) : (
+                                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isDark ? '#8B949E' : '#64748B' }}>
+                                                  <FiImage size={13} />
+                                                </div>
+                                              )}
+                                              <span
+                                                style={{
+                                                  position: 'absolute',
+                                                  bottom: 1,
+                                                  right: 1,
+                                                  backgroundColor: isSelected ? 'rgba(37,99,235,0.85)' : 'rgba(0,0,0,0.65)',
+                                                  color: '#fff',
+                                                  fontSize: '7px',
+                                                  fontWeight: 600,
+                                                  padding: '1px 3px',
+                                                  borderRadius: '2px',
+                                                }}
+                                              >
+                                                {isSelected ? `✓ #${tIdx + 1}` : `#${tIdx + 1}`}
+                                              </span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                      <span style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                        Pulling {step.count} photo(s) from {selectedSource?.title || 'workflow'}.
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                      Will pull {step.count} photo(s) from {selectedSource?.title || 'connected workflow node'}.
+                                    </div>
+                                  )}
                                 </div>
-                                {renderCountStepper(step)}
-                              </div>
-                            )}
+                              );
+                            })()}
                           </div>
                         ))}
 
@@ -2468,8 +2609,16 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                       )}
 
                       {useCondoImages && attachmentSteps.filter((s) => s.enabled).map((step, sIdx) => {
+                        const selectedSrc = activeWorkflowSources.find((w) => w.id === step.workflowSourceId) || activeWorkflowSources[0];
+                        const sourceImages = selectedSrc?.images && selectedSrc.images.length > 0
+                          ? selectedSrc.images
+                          : (selectedSrc?.nodeType === 'enhance' ? enhancedImages : propertyImages);
+
                         return Array.from({ length: Math.min(10, Math.max(1, step.count)) }).map((_, i) => {
-                          const img = step.uploadedUrls?.[i] || (step.sourceType === 'enhanced' ? enhancedImages[i]?.url : (step.folderImages?.[i]?.data_url || propertyImages[i]?.url));
+                          const img = step.uploadedUrls?.[i] ||
+                            ((step.sourceType === 'workflow' || step.sourceType === 'enhanced')
+                              ? sourceImages?.[i]?.url
+                              : (step.folderImages?.[i]?.data_url || propertyImages[i]?.url));
                           const stepBadge = `G${sIdx + 1}-${i + 1}`;
                           return (
                             <div
