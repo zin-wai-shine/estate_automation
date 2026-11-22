@@ -146,7 +146,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   onOpenTabGroupNode,
   onAddTabGroupNode,
   onRunningChange,
-  onOpenSettingsSidebox,
+  onOpenSettingsSidebox: _onOpenSettingsSidebox,
   onCloseSettingsSidebox,
   isSettingsSideboxOpen,
   rawPostContent,
@@ -3710,76 +3710,26 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           /* 🍏 APPLE CLEAN DESIGN FOR FB HERO                                   */
           /* ═════════════════════════════════════════════════════════════════════ */
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {/* Context Card: Project Name + Profile + Settings */}
+            {/* Condo Name */}
             {boxConfig.showCondoProjectCard !== false && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0.65rem 0.875rem',
-                borderRadius: '10px',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
-                border: '1px solid var(--border-color)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '9px', minWidth: 0 }}>
-                <div
-                  style={{
-                    width: '30px',
-                    height: '30px',
-                    borderRadius: '8px',
-                    background: 'linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#FFFFFF',
-                    flexShrink: 0,
-                  }}
-                >
-                  <FiZap size={15} />
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {condoName || boxConfig.title || 'FB Hero'}
-                  </div>
-                  <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '5px', marginTop: '1px' }}>
-                    <span>Profile: {boxConfig.browserProfileName || 'Hsu'}</span>
-                    <span>•</span>
-                    <span style={{ color: '#10B981', fontWeight: 600 }}>● Active</span>
-                  </div>
-                </div>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.6rem 0.875rem',
+                  borderRadius: '8px',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
+                  Condo Name
+                </span>
+                <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                  {condoName || condoSearchQuery || boxConfig.browserCondoName || boxConfig.title || 'Aspire Erawan Prime'}
+                </span>
               </div>
-
-              {onOpenSettingsSidebox && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPromptViewSidebox(false);
-                    onOpenSettingsSidebox();
-                  }}
-                  title="Configure in Settings"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '3px 8px',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(245, 158, 11, 0.35)',
-                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                    color: '#F59E0B',
-                    fontSize: '0.625rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    flexShrink: 0,
-                  }}
-                >
-                  <FiSettings size={11} />
-                  <span>Settings</span>
-                </button>
-              )}
-            </div>
             )}
 
             {/* ── NEW FLOW MODULES FOR HERO NODE ── */}
@@ -3791,32 +3741,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     Prompt
                   </label>
 
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <FiFileText size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
-                      <div>
-                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                          Connected Prompt
-                        </div>
-                        <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                          AI prompt from canvas
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Current Prompt Source Badge */}
-                    <span
-                      style={{
-                        fontSize: '0.5625rem',
-                        fontWeight: 600,
-                        padding: '2px 7px',
-                        borderRadius: '10px',
-                        backgroundColor: isDark ? 'rgba(88, 166, 255, 0.1)' : '#EFF6FF',
-                        color: isDark ? '#58A6FF' : '#2563EB',
-                        border: isDark ? '1px solid rgba(88, 166, 255, 0.3)' : '1px solid #CBD5E1',
-                      }}
-                    >
-                      {promptSourceMode === 'custom' ? 'Custom' : 'Canvas AI'}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FiFileText size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                    <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                      Connected Prompt
                     </span>
                   </div>
 
