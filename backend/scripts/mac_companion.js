@@ -1569,7 +1569,7 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     } else {
-      const q = url.searchParams.get('condo_name') || url.searchParams.get('condoName') || url.searchParams.get('q') || '';
+      const q = url.searchParams.get('condo_name') || url.searchParams.get('condoName') || url.searchParams.get('folder') || url.searchParams.get('folder_name') || url.searchParams.get('q') || '';
       const customBase = url.searchParams.get('base_dir') || url.searchParams.get('target_folder') || '';
       const customFolder = url.searchParams.get('folder_path') || url.searchParams.get('folderPath') || '';
       return handleCondoRequest(q, customBase, customFolder);

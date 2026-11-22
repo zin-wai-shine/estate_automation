@@ -211,7 +211,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
   const fetchImagesForStep = async (stepId: string, folder: string) => {
     try {
       const resp = await fetch(
-        `http://127.0.0.1:9224/condo-images?folder=${encodeURIComponent(folder)}&base_dir=${encodeURIComponent(baseCondoDirectory)}`
+        `http://127.0.0.1:9224/condo-images?condo_name=${encodeURIComponent(folder)}&folder=${encodeURIComponent(folder)}&base_dir=${encodeURIComponent(baseCondoDirectory)}`
       );
       const data = await resp.json();
       if (data?.status === 'success' && Array.isArray(data.images)) {
@@ -733,61 +733,122 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                       </button>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                        Found {step.folderImages?.length || 0} photos in {condoName || step.folderName || 'folder'}
-                      </span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                        <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          Found {step.folderImages?.length || 0} photos in {condoName || step.folderName || 'folder'}
+                        </span>
+                        {step.folderImages && step.folderImages.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setManualChooseModalStepId(step.id)}
+                            style={{
+                              padding: '2px 7px',
+                              borderRadius: '3px',
+                              fontSize: '0.59375rem',
+                              fontWeight: 600,
+                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              backgroundColor: (step.selectedIndices && step.selectedIndices.length > 0)
+                                ? (isDark ? '#1F3554' : '#DBEAFE')
+                                : (isDark ? '#21262D' : '#F1F5F9'),
+                              color: (step.selectedIndices && step.selectedIndices.length > 0)
+                                ? '#58A6FF'
+                                : (isDark ? '#C9D1D9' : '#475569'),
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiCheckSquare size={11} />
+                            <span>
+                              {step.selectedIndices && step.selectedIndices.length > 0
+                                ? `Manual: ${step.selectedIndices.length} Chosen`
+                                : 'Manual Choose'}
+                            </span>
+                          </button>
+                        )}
+                      </div>
                       {renderCountStepper(step)}
                     </div>
 
-                    {step.folderImages && step.folderImages.length > 0 && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflowX: 'auto', padding: '2px 0' }}>
-                        {step.folderImages.slice(0, 10).map((img, idx) => {
-                          const isSel = idx < step.count;
-                          return (
-                            <div
-                              key={idx}
-                              onClick={() => handleUpdateStep(step.id, { count: idx + 1 })}
-                              style={{
-                                width: '38px',
-                                height: '38px',
-                                borderRadius: '4px',
-                                border: isSel ? '1.5px solid #58A6FF' : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
-                                opacity: isSel ? 1 : 0.4,
-                                overflow: 'hidden',
-                                position: 'relative',
-                                flexShrink: 0,
-                                cursor: 'pointer',
-                                backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
-                              }}
-                            >
-                              {img.data_url ? (
-                                <img src={img.data_url} alt={`#${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                              ) : (
-                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                  <FiImage size={11} color={isDark ? '#8B949E' : '#64748B'} />
-                                </div>
-                              )}
-                              <span
+                    {step.folderImages && step.folderImages.length > 0 && (() => {
+                      const targetCount = Math.max(1, step.count || 1);
+                      const currentSelected = (step.selectedIndices && step.selectedIndices.length > 0)
+                        ? step.selectedIndices
+                        : Array.from({ length: Math.min(targetCount, step.folderImages.length) }, (_, i) => i);
+
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', padding: '2px 0' }}>
+                          {step.folderImages.map((img, idx) => {
+                            const isSelected = currentSelected.includes(idx);
+                            const selectionOrder = currentSelected.indexOf(idx) + 1;
+
+                            return (
+                              <div
+                                key={idx}
+                                onClick={() => {
+                                  let updated = [...currentSelected];
+                                  if (updated.includes(idx)) {
+                                    if (targetCount === 1) {
+                                      // only 1 allowed, keep selected
+                                    } else if (updated.length > 1) {
+                                      updated = updated.filter((i) => i !== idx);
+                                    }
+                                  } else {
+                                    if (targetCount === 1) {
+                                      updated = [idx];
+                                    } else if (updated.length < targetCount) {
+                                      updated.push(idx);
+                                    } else {
+                                      // At setup count: replace first pick with new pick
+                                      updated = [...updated.slice(1), idx];
+                                    }
+                                  }
+                                  handleUpdateStep(step.id, { selectedIndices: updated });
+                                }}
                                 style={{
-                                  position: 'absolute',
-                                  bottom: 1,
-                                  right: 1,
-                                  backgroundColor: isSel ? 'rgba(37,99,235,0.85)' : 'rgba(0,0,0,0.65)',
-                                  color: '#fff',
-                                  fontSize: '7px',
-                                  fontWeight: 600,
-                                  padding: '1px 3px',
-                                  borderRadius: '2px',
+                                  width: '42px',
+                                  height: '42px',
+                                  borderRadius: '4px',
+                                  border: isSelected ? '1.5px solid #58A6FF' : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
+                                  opacity: isSelected ? 1 : 0.4,
+                                  overflow: 'hidden',
+                                  position: 'relative',
+                                  flexShrink: 0,
+                                  cursor: 'pointer',
+                                  backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
                                 }}
                               >
-                                {isSel ? `✓ #${idx + 1}` : `#${idx + 1}`}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                                {img.data_url ? (
+                                  <img src={img.data_url} alt={`#${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : (
+                                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <FiImage size={11} color={isDark ? '#8B949E' : '#64748B'} />
+                                  </div>
+                                )}
+                                <span
+                                  style={{
+                                    position: 'absolute',
+                                    bottom: 1,
+                                    right: 1,
+                                    backgroundColor: isSelected ? 'rgba(37,99,235,0.9)' : 'rgba(0,0,0,0.65)',
+                                    color: '#fff',
+                                    fontSize: '7px',
+                                    fontWeight: 600,
+                                    padding: '1px 3px',
+                                    borderRadius: '2px',
+                                  }}
+                                >
+                                  {isSelected ? `✓ #${selectionOrder}` : `#${idx + 1}`}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -1211,15 +1272,18 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
       {manualChooseModalStepId && (() => {
         const modalStep = steps.find((s) => s.id === manualChooseModalStepId);
         if (!modalStep) return null;
+        const isFolder = modalStep.sourceType === 'folder';
         const selectedSrc = activeSources.find((s) => s.id === modalStep.workflowSourceId) || activeSources[0];
-        const imagesList = selectedSrc?.images && selectedSrc.images.length > 0
-          ? selectedSrc.images
-          : (selectedSrc?.nodeType === 'enhance' ? enhancedImages : propertyImages);
+        const imagesList = isFolder
+          ? (modalStep.folderImages || []).map((f, i) => ({ url: f.data_url || f.full_path || '', filename: f.filename || `Photo #${i + 1}` }))
+          : (selectedSrc?.images && selectedSrc.images.length > 0
+              ? selectedSrc.images
+              : (selectedSrc?.nodeType === 'enhance' ? enhancedImages : propertyImages));
 
         const otherGroupsCount = steps
           .filter((o) => o.id !== modalStep.id && o.enabled)
           .reduce((acc, o) => acc + o.count, 0);
-        const maxAllowed = Math.max(1, 10 - otherGroupsCount);
+        const maxAllowed = isFolder ? Math.max(1, modalStep.count || 1) : Math.max(1, 10 - otherGroupsCount);
 
         const currentSelected = modalStep.selectedIndices && modalStep.selectedIndices.length > 0
           ? [...modalStep.selectedIndices]
@@ -1272,7 +1336,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                       Manual Choose Photos
                     </div>
                     <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                      Select up to {maxAllowed} images from {selectedSrc?.title || 'Workflow'}
+                      Select up to {maxAllowed} images from {isFolder ? (condoName || modalStep.folderName || 'Condo Folder') : (selectedSrc?.title || 'Workflow')}
                     </div>
                   </div>
                 </div>
@@ -1304,7 +1368,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                     type="button"
                     onClick={() => {
                       const firstN = Array.from({ length: Math.min(modalStep.count, imagesList.length) }, (_, i) => i);
-                      handleUpdateStep(modalStep.id, { selectedIndices: firstN, count: firstN.length });
+                      handleUpdateStep(modalStep.id, isFolder ? { selectedIndices: firstN } : { selectedIndices: firstN, count: firstN.length });
                     }}
                     style={{
                       padding: '3px 8px',
@@ -1318,27 +1382,29 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                   >
                     Select First {modalStep.count}
                   </button>
+                  {!isFolder && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const all = Array.from({ length: Math.min(maxAllowed, imagesList.length) }, (_, i) => i);
+                        handleUpdateStep(modalStep.id, { selectedIndices: all, count: all.length });
+                      }}
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                        backgroundColor: isDark ? '#21262D' : '#FFFFFF',
+                        color: isDark ? '#C9D1D9' : '#334155',
+                        fontSize: '0.625rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Select All
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => {
-                      const all = Array.from({ length: Math.min(maxAllowed, imagesList.length) }, (_, i) => i);
-                      handleUpdateStep(modalStep.id, { selectedIndices: all, count: all.length });
-                    }}
-                    style={{
-                      padding: '3px 8px',
-                      borderRadius: '4px',
-                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                      backgroundColor: isDark ? '#21262D' : '#FFFFFF',
-                      color: isDark ? '#C9D1D9' : '#334155',
-                      fontSize: '0.625rem',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Select All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleUpdateStep(modalStep.id, { selectedIndices: [0], count: 1 })}
+                    onClick={() => handleUpdateStep(modalStep.id, isFolder ? { selectedIndices: [0] } : { selectedIndices: [0], count: 1 })}
                     style={{
                       padding: '3px 8px',
                       borderRadius: '4px',
@@ -1374,16 +1440,35 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                       key={idx}
                       onClick={() => {
                         let updated = [...currentSelected];
-                        if (isChosen) {
-                          if (updated.length > 1) {
-                            updated = updated.filter((i) => i !== idx);
+                        if (isFolder) {
+                          if (isChosen) {
+                            if (modalStep.count === 1) {
+                              // keep selected
+                            } else if (updated.length > 1) {
+                              updated = updated.filter((i) => i !== idx);
+                            }
+                          } else {
+                            if (modalStep.count === 1) {
+                              updated = [idx];
+                            } else if (updated.length < modalStep.count) {
+                              updated.push(idx);
+                            } else {
+                              updated = [...updated.slice(1), idx];
+                            }
                           }
+                          handleUpdateStep(modalStep.id, { selectedIndices: updated });
                         } else {
-                          if (updated.length < maxAllowed) {
-                            updated.push(idx);
+                          if (isChosen) {
+                            if (updated.length > 1) {
+                              updated = updated.filter((i) => i !== idx);
+                            }
+                          } else {
+                            if (updated.length < maxAllowed) {
+                              updated.push(idx);
+                            }
                           }
+                          handleUpdateStep(modalStep.id, { selectedIndices: updated, count: updated.length });
                         }
-                        handleUpdateStep(modalStep.id, { selectedIndices: updated, count: updated.length });
                       }}
                       style={{
                         aspectRatio: '1',
