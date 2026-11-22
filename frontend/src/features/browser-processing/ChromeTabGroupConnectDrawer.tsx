@@ -594,30 +594,18 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
 
               {/* 3. Pipeline Settings */}
               {tabGroupMode === 'generate' ? (
-                /* GENERATE MODE PIPELINE */
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                  {/* Card 1: Reference Photo */}
-                  <div
-                    style={{
-                      padding: '8px 10px',
-                      borderRadius: '6px',
-                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                      backgroundColor: isDark ? '#161B22' : '#F8FAFC',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '6px',
-                    }}
-                  >
+                /* GENERATE MODE PIPELINE (CLEAN UNBOXED ROWS: ICON + TITLE, SPACE, ITEMS) */
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {/* Item 1: Reference Layout */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '12px', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{ width: '24px', height: '24px', borderRadius: '5px', backgroundColor: isDark ? '#21262D' : '#F1F5F9', border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0', color: isDark ? '#E6EDF3' : '#1E293B', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <FiImage size={12} />
-                        </div>
+                        <FiImage size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
                         <div>
-                          <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
                             Reference Layout (1st in Chat)
                           </div>
-                          <div style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
                             Example design attached first to guide composition
                           </div>
                         </div>
@@ -631,7 +619,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     </div>
 
                     {useReferenceImage && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingTop: '4px', borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0' }}>
+                      <div style={{ paddingLeft: '23px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <input
                           type="text"
                           value={referenceImageUrl}
@@ -639,13 +627,13 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                           placeholder="Paste reference image URL or leave blank..."
                           style={{
                             flex: 1,
-                            height: '28px',
+                            height: '30px',
                             padding: '0 8px',
                             borderRadius: '4px',
                             border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                            backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
                             color: isDark ? '#F0F6FC' : '#0F172A',
-                            fontSize: '0.625rem',
+                            fontSize: '0.6875rem',
                             outline: 'none',
                           }}
                         />
@@ -656,10 +644,10 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                             if (sample) setReferenceImageUrl(sample);
                           }}
                           style={{
-                            height: '28px',
-                            padding: '0 8px',
+                            height: '30px',
+                            padding: '0 10px',
                             borderRadius: '4px',
-                            fontSize: '0.625rem',
+                            fontSize: '0.6875rem',
                             fontWeight: 500,
                             backgroundColor: isDark ? '#21262D' : '#E2E8F0',
                             color: isDark ? '#E6EDF3' : '#334155',
@@ -674,28 +662,16 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     )}
                   </div>
 
-                  {/* Card 2: Condo Building Photos */}
-                  <div
-                    style={{
-                      padding: '8px 10px',
-                      borderRadius: '6px',
-                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                      backgroundColor: isDark ? '#161B22' : '#F8FAFC',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '6px',
-                    }}
-                  >
+                  {/* Item 2: Condo Building Photos */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '12px', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{ width: '24px', height: '24px', borderRadius: '5px', backgroundColor: isDark ? '#21262D' : '#F1F5F9', border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0', color: isDark ? '#E6EDF3' : '#1E293B', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <FiFolder size={12} />
-                        </div>
+                        <FiFolder size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
                         <div>
-                          <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
                             Condo Building Photos (2nd in Chat)
                           </div>
-                          <div style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
                             From Condo Building subfolder
                           </div>
                         </div>
@@ -709,9 +685,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     </div>
 
                     {useCondoImages && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '4px', borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0' }}>
-                        <span style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>Photos to attach:</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <div style={{ paddingLeft: '23px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>Photos to attach:</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           {[
                             { count: 1, label: '1 Photo (#1)' },
                             { count: 2, label: '2 Photos (#1 & #2)' },
@@ -724,9 +700,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                 type="button"
                                 onClick={() => setCondoImagesCount(opt.count)}
                                 style={{
-                                  padding: '2px 7px',
+                                  padding: '3px 9px',
                                   borderRadius: '4px',
-                                  fontSize: '0.59375rem',
+                                  fontSize: '0.625rem',
                                   fontWeight: isSel ? 600 : 400,
                                   backgroundColor: isSel
                                     ? (isDark ? '#21262D' : '#E2E8F0')
@@ -749,28 +725,16 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     )}
                   </div>
 
-                  {/* Card 3: Interior / Enhanced Photos */}
-                  <div
-                    style={{
-                      padding: '8px 10px',
-                      borderRadius: '6px',
-                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                      backgroundColor: isDark ? '#161B22' : '#F8FAFC',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '6px',
-                    }}
-                  >
+                  {/* Item 3: Interior / Enhanced Photos */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '12px', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{ width: '24px', height: '24px', borderRadius: '5px', backgroundColor: isDark ? '#21262D' : '#F1F5F9', border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0', color: isDark ? '#E6EDF3' : '#1E293B', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <FiLayers size={12} />
-                        </div>
+                        <FiLayers size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
                         <div>
-                          <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
                             Interior / Enhanced Photos (3rd in Chat)
                           </div>
-                          <div style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
                             Enhanced room photos attached together
                           </div>
                         </div>
@@ -784,17 +748,17 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     </div>
 
                     {useEnhancedImages && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingTop: '4px', borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0' }}>
+                      <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>Source:</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>Source:</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <button
                               type="button"
                               onClick={() => setEnhancedImagesSource('enhanced')}
                               style={{
-                                padding: '2px 7px',
+                                padding: '3px 9px',
                                 borderRadius: '4px',
-                                fontSize: '0.59375rem',
+                                fontSize: '0.625rem',
                                 fontWeight: enhancedImagesSource === 'enhanced' ? 600 : 400,
                                 backgroundColor: enhancedImagesSource === 'enhanced'
                                   ? (isDark ? '#21262D' : '#E2E8F0')
@@ -814,9 +778,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                               type="button"
                               onClick={() => setEnhancedImagesSource('get_images')}
                               style={{
-                                padding: '2px 7px',
+                                padding: '3px 9px',
                                 borderRadius: '4px',
-                                fontSize: '0.59375rem',
+                                fontSize: '0.625rem',
                                 fontWeight: enhancedImagesSource === 'get_images' ? 600 : 400,
                                 backgroundColor: enhancedImagesSource === 'get_images'
                                   ? (isDark ? '#21262D' : '#E2E8F0')
@@ -835,9 +799,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '2px' }}>
-                          <span style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>Photos to attach:</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>Photos to attach:</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             {[1, 3, 5, 99].map((count) => {
                               const isSel = enhancedImagesCount === count;
                               return (
@@ -846,9 +810,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                   type="button"
                                   onClick={() => setEnhancedImagesCount(count)}
                                   style={{
-                                    padding: '2px 6px',
+                                    padding: '3px 8px',
                                     borderRadius: '4px',
-                                    fontSize: '0.5625rem',
+                                    fontSize: '0.625rem',
                                     fontWeight: isSel ? 600 : 400,
                                     backgroundColor: isSel
                                       ? (isDark ? '#21262D' : '#E2E8F0')
@@ -872,20 +836,28 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     )}
                   </div>
 
-                  {/* Card 4: Connected Prompt & Selection */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  {/* Item 4: Connected Prompt & Selection */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Connected Prompt
-                      </label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <FiFileText size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                        <div>
+                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                            Connected Prompt
+                          </div>
+                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                            Select AI model prompt from canvas or custom text
+                          </div>
+                        </div>
+                      </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <button
                           type="button"
                           onClick={() => setSelectedPromptSource('upstream_ai')}
                           style={{
-                            padding: '2px 6px',
-                            borderRadius: '3px',
-                            fontSize: '0.59375rem',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.625rem',
                             fontWeight: selectedPromptSource === 'upstream_ai' ? 600 : 400,
                             backgroundColor: selectedPromptSource === 'upstream_ai'
                               ? (isDark ? '#21262D' : '#E2E8F0')
@@ -905,9 +877,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                           type="button"
                           onClick={() => setSelectedPromptSource('custom')}
                           style={{
-                            padding: '2px 6px',
-                            borderRadius: '3px',
-                            fontSize: '0.59375rem',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.625rem',
                             fontWeight: selectedPromptSource === 'custom' ? 600 : 400,
                             backgroundColor: selectedPromptSource === 'custom'
                               ? (isDark ? '#21262D' : '#E2E8F0')
@@ -926,151 +898,173 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                       </div>
                     </div>
 
-                    {selectedPromptSource === 'upstream_ai' ? (
-                      <Select
-                        options={cleanPromptOptions}
-                        value={selectedUpstreamAiId}
-                        onChange={(val) => setSelectedUpstreamAiId(String(val))}
-                        height="34px"
-                      />
-                    ) : (
-                      <textarea
-                        rows={2}
-                        value={customPromptText}
-                        onChange={(e) => setCustomPromptText(e.target.value)}
-                        placeholder="Enter custom generation prompt..."
-                        style={{
-                          width: '100%',
-                          padding: '6px 8px',
-                          borderRadius: '6px',
-                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                          color: isDark ? '#F0F6FC' : '#0F172A',
-                          fontSize: '0.6875rem',
-                          boxSizing: 'border-box',
-                          outline: 'none',
-                        }}
-                      />
-                    )}
+                    <div style={{ paddingLeft: '23px' }}>
+                      {selectedPromptSource === 'upstream_ai' ? (
+                        <Select
+                          options={cleanPromptOptions}
+                          value={selectedUpstreamAiId}
+                          onChange={(val) => setSelectedUpstreamAiId(String(val))}
+                          height="34px"
+                        />
+                      ) : (
+                        <textarea
+                          rows={2}
+                          value={customPromptText}
+                          onChange={(e) => setCustomPromptText(e.target.value)}
+                          placeholder="Enter custom generation prompt..."
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            borderRadius: '6px',
+                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                            color: isDark ? '#F0F6FC' : '#0F172A',
+                            fontSize: '0.6875rem',
+                            boxSizing: 'border-box',
+                            outline: 'none',
+                          }}
+                        />
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : (
-                /* ENHANCE MODE PIPELINE */
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                /* ENHANCE MODE PIPELINE (CLEAN UNBOXED ROWS) */
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   {/* Worker Tabs Count */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: '6px', border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0', backgroundColor: isDark ? '#161B22' : '#F8FAFC' }}>
-                    <div>
-                      <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                        Worker Tabs Count
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '12px', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <FiSliders size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                        <div>
+                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                            Worker Tabs Count
+                          </div>
+                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                            Parallel Chrome tabs for batch processing
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                        Parallel Chrome tabs for batch processing
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {[1, 2, 4, 6].map((count) => {
+                          const isSel = workerTabsCount === count;
+                          return (
+                            <button
+                              key={count}
+                              type="button"
+                              onClick={() => setWorkerTabsCount(count)}
+                              style={{
+                                padding: '3px 9px',
+                                borderRadius: '4px',
+                                fontSize: '0.625rem',
+                                fontWeight: isSel ? 600 : 400,
+                                backgroundColor: isSel
+                                  ? (isDark ? '#21262D' : '#E2E8F0')
+                                  : 'transparent',
+                                color: isSel
+                                  ? (isDark ? '#F0F6FC' : '#0F172A')
+                                  : (isDark ? '#8B949E' : '#64748B'),
+                                border: isSel
+                                  ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
+                                  : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {count} {count === 1 ? 'Tab' : 'Tabs'}
+                            </button>
+                          );
+                        })}
                       </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      {[1, 2, 4, 6].map((count) => {
-                        const isSel = workerTabsCount === count;
-                        return (
-                          <button
-                            key={count}
-                            type="button"
-                            onClick={() => setWorkerTabsCount(count)}
-                            style={{
-                              padding: '3px 8px',
-                              borderRadius: '4px',
-                              fontSize: '0.625rem',
-                              fontWeight: isSel ? 600 : 400,
-                              backgroundColor: isSel
-                                ? (isDark ? '#21262D' : '#E2E8F0')
-                                : 'transparent',
-                              color: isSel
-                                ? (isDark ? '#F0F6FC' : '#0F172A')
-                                : (isDark ? '#8B949E' : '#64748B'),
-                              border: isSel
-                                ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                                : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                              cursor: 'pointer',
-                            }}
-                          >
-                            {count} {count === 1 ? 'Tab' : 'Tabs'}
-                          </button>
-                        );
-                      })}
                     </div>
                   </div>
 
                   {/* Enhancement Template */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      Enhancement Preset Template
-                    </label>
-                    <Select
-                      options={[
-                        { label: 'Photo Retouch & Architectural Straightening', value: 'photo_retouch' },
-                        { label: 'Clean & Bright Interior Enhancement', value: 'clean_interior' },
-                        { label: 'Architectural Exterior Retouch', value: 'architectural' },
-                      ]}
-                      value={enhancePromptPreset}
-                      onChange={(val) => setEnhancePromptPreset(String(val))}
-                      height="34px"
-                    />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '12px', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <FiFileText size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                          Enhancement Preset Template
+                        </div>
+                        <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                          Instruction prompt sent to each worker tab
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ paddingLeft: '23px' }}>
+                      <Select
+                        options={[
+                          { label: 'Photo Retouch & Architectural Straightening', value: 'photo_retouch' },
+                          { label: 'Clean & Bright Interior Enhancement', value: 'clean_interior' },
+                          { label: 'Architectural Exterior Retouch', value: 'architectural' },
+                        ]}
+                        value={enhancePromptPreset}
+                        onChange={(val) => setEnhancePromptPreset(String(val))}
+                        height="34px"
+                      />
+                    </div>
                   </div>
 
                   {/* Input Source */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: '6px', border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0', backgroundColor: isDark ? '#161B22' : '#F8FAFC' }}>
-                    <div>
-                      <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                        Input Images Source
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <FiFolder size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                        <div>
+                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                            Input Images Source
+                          </div>
+                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                            Photos from Get Images node
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                        From Get Images node on canvas
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setEnhancePhotoSource('all')}
+                          style={{
+                            padding: '3px 9px',
+                            borderRadius: '4px',
+                            fontSize: '0.625rem',
+                            fontWeight: enhancePhotoSource === 'all' ? 600 : 400,
+                            backgroundColor: enhancePhotoSource === 'all'
+                              ? (isDark ? '#21262D' : '#E2E8F0')
+                              : 'transparent',
+                            color: enhancePhotoSource === 'all'
+                              ? (isDark ? '#F0F6FC' : '#0F172A')
+                              : (isDark ? '#8B949E' : '#64748B'),
+                            border: enhancePhotoSource === 'all'
+                              ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
+                              : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                            cursor: 'pointer',
+                          }}
+                        >
+                          All Photos ({propertyImages.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEnhancePhotoSource('hero_only')}
+                          style={{
+                            padding: '3px 9px',
+                            borderRadius: '4px',
+                            fontSize: '0.625rem',
+                            fontWeight: enhancePhotoSource === 'hero_only' ? 600 : 400,
+                            backgroundColor: enhancePhotoSource === 'hero_only'
+                              ? (isDark ? '#21262D' : '#E2E8F0')
+                              : 'transparent',
+                            color: enhancePhotoSource === 'hero_only'
+                              ? (isDark ? '#F0F6FC' : '#0F172A')
+                              : (isDark ? '#8B949E' : '#64748B'),
+                            border: enhancePhotoSource === 'hero_only'
+                              ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
+                              : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Hero Only (#1)
+                        </button>
                       </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <button
-                        type="button"
-                        onClick={() => setEnhancePhotoSource('all')}
-                        style={{
-                          padding: '3px 8px',
-                          borderRadius: '4px',
-                          fontSize: '0.625rem',
-                          fontWeight: enhancePhotoSource === 'all' ? 600 : 400,
-                          backgroundColor: enhancePhotoSource === 'all'
-                            ? (isDark ? '#21262D' : '#E2E8F0')
-                            : 'transparent',
-                          color: enhancePhotoSource === 'all'
-                            ? (isDark ? '#F0F6FC' : '#0F172A')
-                            : (isDark ? '#8B949E' : '#64748B'),
-                          border: enhancePhotoSource === 'all'
-                            ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                            : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                          cursor: 'pointer',
-                        }}
-                      >
-                        All Photos ({propertyImages.length})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEnhancePhotoSource('hero_only')}
-                        style={{
-                          padding: '3px 8px',
-                          borderRadius: '4px',
-                          fontSize: '0.625rem',
-                          fontWeight: enhancePhotoSource === 'hero_only' ? 600 : 400,
-                          backgroundColor: enhancePhotoSource === 'hero_only'
-                            ? (isDark ? '#21262D' : '#E2E8F0')
-                            : 'transparent',
-                          color: enhancePhotoSource === 'hero_only'
-                            ? (isDark ? '#F0F6FC' : '#0F172A')
-                            : (isDark ? '#8B949E' : '#64748B'),
-                          border: enhancePhotoSource === 'hero_only'
-                            ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                            : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Hero Only (#1)
-                      </button>
                     </div>
                   </div>
                 </div>
