@@ -285,7 +285,6 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
             type="button"
             disabled={s.count <= 1}
             onClick={() => handleUpdateStep(s.id, { count: Math.max(1, s.count - 1) })}
-            title="Decrease count"
             style={{
               width: '20px',
               height: '20px',
@@ -342,7 +341,6 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
             type="button"
             disabled={isAtMax}
             onClick={() => handleUpdateStep(s.id, { count: Math.min(maxAllowed, s.count + 1) })}
-            title={isAtMax ? `Max 10 total photos across all groups (${totalCondoImagesCount}/10)` : 'Increase count'}
             style={{
               width: '20px',
               height: '20px',
@@ -1579,7 +1577,6 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                   <button
                                     type="button"
                                     onClick={() => handleRemoveStep(step.id)}
-                                    title={`Remove Group ${idx + 1}`}
                                     style={{
                                       width: '20px',
                                       height: '20px',
@@ -1847,7 +1844,6 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                               const maxAllowed = Math.max(1, 10 - otherGroupsCount);
                                               handleUpdateStep(step.id, { count: Math.min(maxAllowed, tIdx + 1) });
                                             }}
-                                            title={`Click to select up to photo #${tIdx + 1} (${img.filename})`}
                                             style={{
                                               width: '42px',
                                               height: '42px',
@@ -1937,7 +1933,6 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                               <div
                                                 key={pImg.url || pIdx}
                                                 onClick={() => handleUpdateStep(step.id, { count: pIdx + 1, imageSelection: pImg.filename || `Photo #${pIdx + 1}` })}
-                                                title={`Click to select up to photo #${pIdx + 1}`}
                                                 style={{
                                                   width: '38px',
                                                   height: '38px',
@@ -2121,7 +2116,6 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                                 const maxAllowed = Math.max(1, 10 - otherGroupsCount);
                                                 handleUpdateStep(step.id, { count: Math.min(maxAllowed, tIdx + 1) });
                                               }}
-                                              title={`Click to select up to photo #${tIdx + 1}`}
                                               style={{
                                                 width: '42px',
                                                 height: '42px',
