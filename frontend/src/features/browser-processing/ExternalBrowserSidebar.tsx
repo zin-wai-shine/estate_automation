@@ -2500,34 +2500,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         </span>
       </div>
 
-      <Select
-        options={[
-          { value: 'all', label: `All Photos from "Get Images" (${receivedImages.length})` },
-          { value: 'hero_only', label: 'Primary Hero Photo Only (Photo #1)' },
-          { value: 'selected', label: `Select Specific Photos (${selectedImageIndices.length} picked)` },
-        ]}
-        value={
-          imageSourceMode === 'hero_only'
-            ? 'hero_only'
-            : imageSourceMode === 'selected'
-            ? 'selected'
-            : 'all'
-        }
-        onChange={(val) => {
-          setImageSourceMode(val as any);
-          if (val === 'all') {
-            const allIdx = receivedImages.map((_, i) => i + 1);
-            setSelectedImageIndices(allIdx);
-            updateMultiConfig({ imageSourceMode: 'all', selectedImageIndices: allIdx });
-          } else if (val === 'hero_only') {
-            setSelectedImageIndices([1]);
-            updateMultiConfig({ imageSourceMode: 'hero_only', selectedImageIndices: [1] });
-          } else {
-            updateConfig('imageSourceMode', val);
-          }
-        }}
-      />
-
       {receivedImages.length > 0 ? (
         <div
           style={{
@@ -2549,22 +2521,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             return (
               <div
                 key={idx}
-                onClick={() => {
-                  let nextIndices: number[];
-                  if (isChecked) {
-                    nextIndices = selectedImageIndices.length > 1
-                      ? selectedImageIndices.filter((n) => n !== photoNum)
-                      : selectedImageIndices;
-                  } else {
-                    nextIndices = [...selectedImageIndices, photoNum].sort((a, b) => a - b);
-                  }
-                  setSelectedImageIndices(nextIndices);
-                  setImageSourceMode('selected');
-                  updateMultiConfig({
-                    selectedImageIndices: nextIndices,
-                    imageSourceMode: 'selected',
-                  });
-                }}
                 style={{
                   position: 'relative',
                   width: '100%',
@@ -2574,12 +2530,12 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   overflow: 'hidden',
                   border: isChecked ? '2px solid #10B981' : isDark ? '1px solid #334155' : '1px solid #CBD5E1',
                   background: isDark ? '#1E293B' : '#E2E8F0',
-                  cursor: 'pointer',
+                  cursor: 'default',
                   opacity: isChecked ? 1 : 0.45,
                   transition: 'all 0.15s ease',
                   flexShrink: 0,
                 }}
-                title={`Photo #${photoNum} — Click to toggle`}
+                title={`Photo #${photoNum}`}
               >
                 <img
                   src={img.url}
@@ -4240,13 +4196,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextMode = promptSourceMode === 'custom' ? 'preset' : 'custom';
-                    setPromptSourceMode(nextMode);
-                    updateConfig('promptSourceMode', nextMode);
-                  }}
+                <span
                   style={{
                     fontSize: '0.5625rem',
                     fontWeight: 700,
@@ -4255,59 +4205,35 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     backgroundColor: promptSourceMode === 'custom' ? 'rgba(139, 92, 246, 0.15)' : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
                     color: promptSourceMode === 'custom' ? '#8B5CF6' : 'var(--text-secondary)',
                     border: promptSourceMode === 'custom' ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid var(--border-color)',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
                     letterSpacing: '0.02em',
                   }}
-                  title="Click to toggle Custom / Preset mode"
                 >
                   {promptSourceMode === 'custom' ? 'Custom' : 'Preset'}
-                </button>
+                </span>
               </div>
 
-              {promptSourceMode !== 'custom' ? (
-                <Select
-                  options={promptOptions.map((p) => ({
-                    value: p.id,
-                    label: p.name,
-                  }))}
-                  value={effectivePromptKey}
-                  onChange={(val) => {
-                    const strVal = String(val);
-                    setSelectedPromptKey(strVal);
-                    const found = promptOptions.find(
-                      (p) => String(p.id).trim().toLowerCase() === strVal.trim().toLowerCase() || p.name.trim().toLowerCase() === strVal.trim().toLowerCase()
-                    );
-                    const txt = found ? found.instructions : '';
-                    updateMultiConfig({
-                      browserPromptTemplateKey: strVal,
-                      ...(txt ? { browserPromptText: txt } : {}),
-                    });
-                  }}
-                />
-              ) : (
-                <textarea
-                  rows={3}
-                  value={customPromptText}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setCustomPromptText(val);
-                    setPersistedPromptSelection('custom_prompt', val, val);
-                    updateConfig('browserCustomPrompt', val);
-                  }}
-                  placeholder="Enter custom image enhancement prompt..."
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem 0.65rem',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    background: isDark ? 'rgba(0, 0, 0, 0.25)' : '#FFFFFF',
-                    color: 'var(--text-color)',
-                    fontSize: '0.6875rem',
-                    fontFamily: 'inherit',
-                  }}
-                />
-              )}
+              {/* Clean Read-Only Display of Active Prompt Template (Configured in Settings) */}
+              <div
+                style={{
+                  height: '34px',
+                  borderRadius: '6px',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                  padding: '0 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  fontSize: '0.8125rem',
+                  fontWeight: 500,
+                  color: isDark ? '#C9D1D9' : '#334155',
+                  userSelect: 'none',
+                }}
+              >
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {promptSourceMode === 'custom'
+                    ? (customPromptText || 'Custom Prompt')
+                    : (promptOptions.find((p) => String(p.id).toLowerCase() === selectedPromptKey.toLowerCase())?.name || 'Enhance Image')}
+                </span>
+              </div>
 
               {/* View Prompt Button & Quick Copy Button */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
