@@ -3924,8 +3924,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             transition: 'all 0.15s ease',
           }}
         >
-          <FiZap size={13} />
-          <span>Generate Image (Composite)</span>
+          <FiZap size={13} style={{ flexShrink: 0 }} />
+          <span style={{ whiteSpace: 'nowrap' }}>Generate Image</span>
         </button>
 
         <button
@@ -3961,10 +3961,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               : 'none',
             cursor: 'pointer',
             transition: 'all 0.15s ease',
+            whiteSpace: 'nowrap',
           }}
         >
-          <FiSliders size={13} />
-          <span>Enhance Images (Batch Workers)</span>
+          <FiSliders size={13} style={{ flexShrink: 0 }} />
+          <span style={{ whiteSpace: 'nowrap' }}>Enhance Images</span>
         </button>
       </div>
 
