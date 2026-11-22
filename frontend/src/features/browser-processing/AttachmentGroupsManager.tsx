@@ -790,16 +790,18 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                             type="button"
                             onClick={() => setManualChooseModalStepId(step.id)}
                             style={{
-                              padding: '2px 7px',
-                              borderRadius: '3px',
+                              padding: '2px 8px',
+                              borderRadius: '9999px',
                               fontSize: '0.59375rem',
                               fontWeight: 600,
-                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              border: (step.selectedIndices && step.selectedIndices.length > 0)
+                                ? (isDark ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid #A7F3D0')
+                                : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
                               backgroundColor: (step.selectedIndices && step.selectedIndices.length > 0)
-                                ? (isDark ? '#1F3554' : '#DBEAFE')
+                                ? (isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5')
                                 : (isDark ? '#21262D' : '#F1F5F9'),
                               color: (step.selectedIndices && step.selectedIndices.length > 0)
-                                ? '#58A6FF'
+                                ? (isDark ? '#34D399' : '#059669')
                                 : (isDark ? '#C9D1D9' : '#475569'),
                               cursor: 'pointer',
                               display: 'inline-flex',
@@ -858,15 +860,21 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                 style={{
                                   width: '64px',
                                   height: '64px',
-                                  borderRadius: '6px',
-                                  border: isSelected ? '2px solid #58A6FF' : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
+                                  borderRadius: '8px',
+                                  border: isSelected
+                                    ? (isDark ? '2px solid rgba(16, 185, 129, 0.8)' : '2px solid #10B981')
+                                    : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
                                   opacity: isSelected ? 1 : 0.45,
                                   overflow: 'hidden',
                                   position: 'relative',
                                   flexShrink: 0,
                                   cursor: 'pointer',
-                                  backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
-                                  boxShadow: isSelected ? '0 0 0 1px #58A6FF' : 'none',
+                                  backgroundColor: isSelected
+                                    ? (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.04)')
+                                    : (isDark ? '#0D1117' : '#F1F5F9'),
+                                  boxShadow: isSelected
+                                    ? (isDark ? '0 0 0 1px rgba(16, 185, 129, 0.25), 0 2px 8px rgba(16, 185, 129, 0.2)' : '0 0 0 1px rgba(16, 185, 129, 0.2), 0 2px 8px rgba(16, 185, 129, 0.15)')
+                                    : 'none',
                                   transition: 'all 0.15s ease',
                                 }}
                               >
@@ -877,21 +885,44 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                     <FiImage size={16} color={isDark ? '#8B949E' : '#64748B'} />
                                   </div>
                                 )}
+                                {isSelected && (
+                                  <div
+                                    style={{
+                                      position: 'absolute',
+                                      top: 3,
+                                      right: 3,
+                                      width: '18px',
+                                      height: '18px',
+                                      borderRadius: '50%',
+                                      backgroundColor: '#10B981',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      color: '#FFFFFF',
+                                      fontSize: '10px',
+                                      fontWeight: 700,
+                                      boxShadow: '0 2px 4px rgba(0,0,0,0.35)',
+                                    }}
+                                  >
+                                    ✓
+                                  </div>
+                                )}
                                 <span
                                   style={{
                                     position: 'absolute',
-                                    bottom: 2,
-                                    right: 2,
-                                    backgroundColor: isSelected ? 'rgba(37,99,235,0.92)' : 'rgba(0,0,0,0.7)',
+                                    bottom: 3,
+                                    right: 3,
+                                    backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.95)' : 'rgba(0,0,0,0.65)',
                                     color: '#fff',
                                     fontSize: '8px',
                                     fontWeight: 600,
-                                    padding: '1px 4px',
-                                    borderRadius: '3px',
-                                    backdropFilter: 'blur(2px)',
+                                    padding: '1px 5px',
+                                    borderRadius: '9999px',
+                                    backdropFilter: 'blur(3px)',
+                                    boxShadow: isSelected ? '0 1px 3px rgba(0,0,0,0.3)' : 'none',
                                   }}
                                 >
-                                  {isSelected ? `✓ #${selectionOrder}` : `#${idx + 1}`}
+                                  {isSelected ? `#${selectionOrder}` : `#${idx + 1}`}
                                 </span>
                               </div>
                             );
@@ -1175,16 +1206,18 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                             type="button"
                             onClick={() => setManualChooseModalStepId(step.id)}
                             style={{
-                              padding: '2px 7px',
-                              borderRadius: '3px',
+                              padding: '2px 8px',
+                              borderRadius: '9999px',
                               fontSize: '0.59375rem',
                               fontWeight: 600,
-                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              border: (step.selectedIndices && step.selectedIndices.length > 0)
+                                ? (isDark ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid #A7F3D0')
+                                : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
                               backgroundColor: (step.selectedIndices && step.selectedIndices.length > 0)
-                                ? (isDark ? '#1F3554' : '#DBEAFE')
+                                ? (isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5')
                                 : (isDark ? '#21262D' : '#F1F5F9'),
                               color: (step.selectedIndices && step.selectedIndices.length > 0)
-                                ? '#58A6FF'
+                                ? (isDark ? '#34D399' : '#059669')
                                 : (isDark ? '#C9D1D9' : '#475569'),
                               cursor: 'pointer',
                               display: 'inline-flex',
@@ -1247,15 +1280,21 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                               style={{
                                 width: '64px',
                                 height: '64px',
-                                borderRadius: '6px',
-                                border: isSelected ? '2px solid #58A6FF' : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
+                                borderRadius: '8px',
+                                border: isSelected
+                                  ? (isDark ? '2px solid rgba(16, 185, 129, 0.8)' : '2px solid #10B981')
+                                  : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
                                 opacity: isSelected ? 1 : 0.45,
                                 overflow: 'hidden',
                                 position: 'relative',
                                 flexShrink: 0,
                                 cursor: 'pointer',
-                                backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
-                                boxShadow: isSelected ? '0 0 0 1px #58A6FF' : 'none',
+                                backgroundColor: isSelected
+                                  ? (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.04)')
+                                  : (isDark ? '#0D1117' : '#F1F5F9'),
+                                boxShadow: isSelected
+                                  ? (isDark ? '0 0 0 1px rgba(16, 185, 129, 0.25), 0 2px 8px rgba(16, 185, 129, 0.2)' : '0 0 0 1px rgba(16, 185, 129, 0.2), 0 2px 8px rgba(16, 185, 129, 0.15)')
+                                  : 'none',
                                 transition: 'all 0.15s ease',
                               }}
                             >
@@ -1266,21 +1305,44 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                   <FiImage size={16} color={isDark ? '#8B949E' : '#64748B'} />
                                 </div>
                               )}
+                              {isSelected && (
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    top: 3,
+                                    right: 3,
+                                    width: '18px',
+                                    height: '18px',
+                                    borderRadius: '50%',
+                                    backgroundColor: '#10B981',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: '#FFFFFF',
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.35)',
+                                  }}
+                                >
+                                  ✓
+                                </div>
+                              )}
                               <span
                                 style={{
                                   position: 'absolute',
-                                  bottom: 2,
-                                  right: 2,
-                                  backgroundColor: isSelected ? 'rgba(37,99,235,0.92)' : 'rgba(0,0,0,0.7)',
+                                  bottom: 3,
+                                  right: 3,
+                                  backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.95)' : 'rgba(0,0,0,0.65)',
                                   color: '#fff',
                                   fontSize: '8px',
                                   fontWeight: 600,
-                                  padding: '1px 4px',
-                                  borderRadius: '3px',
-                                  backdropFilter: 'blur(2px)',
+                                  padding: '1px 5px',
+                                  borderRadius: '9999px',
+                                  backdropFilter: 'blur(3px)',
+                                  boxShadow: isSelected ? '0 1px 3px rgba(0,0,0,0.3)' : 'none',
                                 }}
                               >
-                                {isSelected ? `✓ #${selectionIndex}` : `#${tIdx + 1}`}
+                                {isSelected ? `#${selectionIndex}` : `#${tIdx + 1}`}
                               </span>
                             </div>
                           );
@@ -1388,8 +1450,8 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                       width: '32px',
                       height: '32px',
                       borderRadius: '8px',
-                      backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                      color: '#58A6FF',
+                      backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                      color: '#10B981',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -1427,7 +1489,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                 }}
               >
                 <span style={{ fontSize: '0.71875rem', fontWeight: 500, color: isDark ? '#C9D1D9' : '#334155' }}>
-                  Selected: <strong style={{ color: '#58A6FF', fontSize: '0.8125rem' }}>{currentSelected.length}</strong> / {maxAllowed} max
+                  Selected: <strong style={{ color: '#10B981', fontSize: '0.8125rem' }}>{currentSelected.length}</strong> / {maxAllowed} max
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <button
@@ -1542,13 +1604,19 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                       style={{
                         aspectRatio: '1',
                         borderRadius: '8px',
-                        border: isChosen ? '2.5px solid #3B82F6' : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                        boxShadow: isChosen ? '0 0 0 1px #3B82F6, 0 4px 12px rgba(59,130,246,0.25)' : 'none',
+                        border: isChosen
+                          ? (isDark ? '2px solid rgba(16, 185, 129, 0.85)' : '2px solid #10B981')
+                          : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                        boxShadow: isChosen
+                          ? (isDark ? '0 0 0 1px rgba(16, 185, 129, 0.25), 0 4px 12px rgba(16, 185, 129, 0.2)' : '0 0 0 1px rgba(16, 185, 129, 0.2), 0 4px 12px rgba(16, 185, 129, 0.15)')
+                          : 'none',
                         opacity: isChosen ? 1 : 0.6,
                         overflow: 'hidden',
                         position: 'relative',
                         cursor: 'pointer',
-                        backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
+                        backgroundColor: isChosen
+                          ? (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.04)')
+                          : (isDark ? '#0D1117' : '#F1F5F9'),
                         transition: 'all 0.15s ease',
                       }}
                     >
@@ -1566,15 +1634,15 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                           right: 6,
                           width: '22px',
                           height: '22px',
-                          borderRadius: '5px',
-                          backgroundColor: isChosen ? '#2563EB' : 'rgba(0,0,0,0.5)',
+                          borderRadius: '50%',
+                          backgroundColor: isChosen ? '#10B981' : 'rgba(0,0,0,0.5)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           color: '#fff',
                           fontSize: '11px',
                           fontWeight: 700,
-                          boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                          boxShadow: isChosen ? '0 2px 6px rgba(16,185,129,0.4)' : '0 2px 4px rgba(0,0,0,0.3)',
                         }}
                       >
                         {isChosen ? '✓' : ''}
@@ -1585,12 +1653,12 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                           bottom: 5,
                           left: 5,
                           right: 5,
-                          backgroundColor: 'rgba(0,0,0,0.75)',
+                          backgroundColor: isChosen ? 'rgba(16, 185, 129, 0.92)' : 'rgba(0,0,0,0.75)',
                           backdropFilter: 'blur(3px)',
                           color: '#fff',
                           fontSize: '9px',
-                          padding: '3px 6px',
-                          borderRadius: '4px',
+                          padding: '3px 8px',
+                          borderRadius: '9999px',
                           fontWeight: 600,
                           display: 'flex',
                           alignItems: 'center',
@@ -1602,7 +1670,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                         <span
                           style={{
                             fontSize: '8px',
-                            opacity: 0.85,
+                            opacity: 0.9,
                             maxWidth: '75px',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -1633,13 +1701,14 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                   onClick={() => setManualChooseModalStepId(null)}
                   style={{
                     padding: '6px 14px',
-                    borderRadius: '4px',
-                    backgroundColor: '#2563EB',
+                    borderRadius: '5px',
+                    backgroundColor: '#10B981',
                     color: '#FFFFFF',
                     border: 'none',
                     fontSize: '0.6875rem',
                     fontWeight: 600,
                     cursor: 'pointer',
+                    boxShadow: '0 2px 6px rgba(16,185,129,0.3)',
                   }}
                 >
                   Done ({currentSelected.length} Photos Selected)
