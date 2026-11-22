@@ -22,6 +22,7 @@ import {
   FiSearch,
   FiRefreshCw,
   FiMinus,
+  FiCheckSquare,
 } from 'react-icons/fi';
 import { Select } from '../../components/ui/Select';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
@@ -137,6 +138,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
   const [baseCondoDirectory, setBaseCondoDirectory] = useState<string>('/Users/zinwaishine/Desktop/Condo Building');
   const [activeFolderDropdownStepId, setActiveFolderDropdownStepId] = useState<string | null>(null);
   const [activeWorkflowDropdownStepId, setActiveWorkflowDropdownStepId] = useState<string | null>(null);
+  const [manualChooseModalStepId, setManualChooseModalStepId] = useState<string | null>(null);
   const [folderSearchFilter, setFolderSearchFilter] = useState<string>('');
 
   // Child Attachment Groups inside Condo Photos
@@ -150,6 +152,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
     folderImages?: Array<{ filename: string; data_url?: string; full_path?: string; index?: number }>;
     imageSelection?: string;
     uploadedUrls?: string[];
+    selectedIndices?: number[];
     enabled: boolean;
   }>>([
     {
@@ -264,6 +267,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
       folderImages?: Array<{ filename: string; data_url?: string; full_path?: string; index?: number }>;
       imageSelection?: string;
       uploadedUrls?: string[];
+      selectedIndices?: number[];
       enabled: boolean;
     }>
   ) => {
@@ -296,7 +300,14 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
           <button
             type="button"
             disabled={s.count <= 1}
-            onClick={() => handleUpdateStep(s.id, { count: Math.max(1, s.count - 1) })}
+            onClick={() => {
+              const newCount = Math.max(1, s.count - 1);
+              const updates: any = { count: newCount };
+              if (s.selectedIndices && s.selectedIndices.length > 0) {
+                updates.selectedIndices = s.selectedIndices.slice(0, newCount);
+              }
+              handleUpdateStep(s.id, updates);
+            }}
             style={{
               width: '20px',
               height: '20px',
@@ -331,7 +342,12 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
             value={s.count}
             onChange={(e) => {
               const val = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10);
-              handleUpdateStep(s.id, { count: isNaN(val) ? 1 : Math.min(maxAllowed, Math.max(1, val)) });
+              const newCount = isNaN(val) ? 1 : Math.min(maxAllowed, Math.max(1, val));
+              const updates: any = { count: newCount };
+              if (s.selectedIndices && s.selectedIndices.length > 0) {
+                updates.selectedIndices = s.selectedIndices.slice(0, newCount);
+              }
+              handleUpdateStep(s.id, updates);
             }}
             style={{
               width: '22px',
@@ -352,7 +368,20 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
           <button
             type="button"
             disabled={isAtMax}
-            onClick={() => handleUpdateStep(s.id, { count: Math.min(maxAllowed, s.count + 1) })}
+            onClick={() => {
+              if (s.count < maxAllowed) {
+                const newCount = s.count + 1;
+                const updates: any = { count: newCount };
+                if (s.selectedIndices && s.selectedIndices.length > 0) {
+                  const allIdxs = Array.from({ length: 25 }, (_, i) => i);
+                  const nextUnselected = allIdxs.find((idx) => !s.selectedIndices!.includes(idx));
+                  if (nextUnselected !== undefined) {
+                    updates.selectedIndices = [...s.selectedIndices, nextUnselected];
+                  }
+                }
+                handleUpdateStep(s.id, updates);
+              }
+            }}
             style={{
               width: '20px',
               height: '20px',
@@ -2340,21 +2369,62 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                     )}
                                   </div>
 
-                                  {/* Sub-bar with Live Count and Stepper */}
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                                      {sourceImages.length > 0
-                                        ? `Found ${sourceImages.length} photo${sourceImages.length !== 1 ? 's' : ''} in ${selectedSource?.title || 'Workflow'}`
-                                        : `Pulling from ${selectedSource?.title || 'Workflow'}`}
-                                    </span>
+                                   {/* Sub-bar with Live Count, Manual Choose button and Stepper */}
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                                      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {sourceImages.length > 0
+                                          ? `Found ${sourceImages.length} photo${sourceImages.length !== 1 ? 's' : ''} in ${selectedSource?.title || 'Workflow'}`
+                                          : `Pulling from ${selectedSource?.title || 'Workflow'}`}
+                                      </span>
+                                      {sourceImages.length > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setManualChooseModalStepId(step.id)}
+                                          style={{
+                                            padding: '2px 7px',
+                                            borderRadius: '3px',
+                                            fontSize: '0.59375rem',
+                                            fontWeight: 600,
+                                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                            backgroundColor: (step.selectedIndices && step.selectedIndices.length > 0)
+                                              ? (isDark ? '#1F3554' : '#DBEAFE')
+                                              : (isDark ? '#21262D' : '#F1F5F9'),
+                                            color: (step.selectedIndices && step.selectedIndices.length > 0)
+                                              ? '#58A6FF'
+                                              : (isDark ? '#C9D1D9' : '#475569'),
+                                            cursor: 'pointer',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            flexShrink: 0,
+                                            transition: 'all 0.12s ease',
+                                          }}
+                                          title="Manually choose which specific photos to attach"
+                                        >
+                                          <FiCheckSquare size={11} />
+                                          <span>
+                                            {step.selectedIndices && step.selectedIndices.length > 0
+                                              ? `Manual: ${step.selectedIndices.length} Chosen`
+                                              : 'Manual Choose'}
+                                          </span>
+                                        </button>
+                                      )}
+                                    </div>
                                     {renderCountStepper(step)}
                                   </div>
 
-                                  {/* Real photo thumbnails grid for selected workflow node */}
+                                  {/* Real photo thumbnails grid with toggleable manual selection */}
                                   {sourceImages && sourceImages.length > 0 && (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', padding: '2px 0' }}>
-                                      {sourceImages.slice(0, 10).map((img, tIdx) => {
-                                        const isSelected = tIdx < step.count;
+                                      {sourceImages.slice(0, 15).map((img, tIdx) => {
+                                        const isSelected = step.selectedIndices && step.selectedIndices.length > 0
+                                          ? step.selectedIndices.includes(tIdx)
+                                          : tIdx < step.count;
+                                        const selectionIndex = step.selectedIndices && step.selectedIndices.length > 0
+                                          ? step.selectedIndices.indexOf(tIdx) + 1
+                                          : (tIdx < step.count ? tIdx + 1 : null);
+
                                         return (
                                           <div
                                             key={tIdx}
@@ -2363,7 +2433,25 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                                 .filter((other) => other.id !== step.id && other.enabled)
                                                 .reduce((acc, other) => acc + other.count, 0);
                                               const maxAllowed = Math.max(1, 10 - otherGroupsCount);
-                                              handleUpdateStep(step.id, { count: Math.min(maxAllowed, tIdx + 1) });
+
+                                              let currentSelected = step.selectedIndices
+                                                ? [...step.selectedIndices]
+                                                : Array.from({ length: Math.min(step.count, sourceImages.length) }, (_, i) => i);
+
+                                              if (currentSelected.includes(tIdx)) {
+                                                if (currentSelected.length > 1) {
+                                                  currentSelected = currentSelected.filter((idx) => idx !== tIdx);
+                                                }
+                                              } else {
+                                                if (currentSelected.length < maxAllowed) {
+                                                  currentSelected.push(tIdx);
+                                                }
+                                              }
+
+                                              handleUpdateStep(step.id, {
+                                                selectedIndices: currentSelected,
+                                                count: currentSelected.length,
+                                              });
                                             }}
                                             style={{
                                               width: '42px',
@@ -2405,7 +2493,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                                 borderRadius: '2px',
                                               }}
                                             >
-                                              {isSelected ? `✓ #${tIdx + 1}` : `#${tIdx + 1}`}
+                                              {isSelected ? `✓ #${selectionIndex}` : `#${tIdx + 1}`}
                                             </span>
                                           </div>
                                         );
@@ -2853,10 +2941,14 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                           ? selectedSrc.images
                           : (selectedSrc?.nodeType === 'enhance' ? enhancedImages : (selectedSrc?.nodeType === 'hero' ? (selectedSrc?.images || []) : propertyImages));
 
+                        const chosenImages = (step.selectedIndices && step.selectedIndices.length > 0)
+                          ? step.selectedIndices.map((idx) => sourceImages[idx]).filter(Boolean)
+                          : sourceImages.slice(0, step.count);
+
                         return Array.from({ length: Math.min(10, Math.max(1, step.count)) }).map((_, i) => {
                           const img = step.uploadedUrls?.[i] ||
                             ((step.sourceType === 'workflow' || step.sourceType === 'enhanced')
-                              ? sourceImages?.[i]?.url
+                              ? chosenImages?.[i]?.url
                               : (step.folderImages?.[i]?.data_url || propertyImages[i]?.url));
                           const stepBadge = `G${sIdx + 1}-${i + 1}`;
                           return (
@@ -3077,6 +3169,294 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
           </button>
         </div>
       </div>
+
+      {/* Manual Choose Photos Modal */}
+      {manualChooseModalStepId && (() => {
+        const modalStep = attachmentSteps.find((s) => s.id === manualChooseModalStepId);
+        if (!modalStep) return null;
+        const selectedSrc = activeWorkflowSources.find((s) => s.id === modalStep.workflowSourceId) ||
+          activeWorkflowSources.find((s) => s.id === activeWorkflowSources[0]?.id) ||
+          activeWorkflowSources[0];
+        const imagesList = selectedSrc?.images && selectedSrc.images.length > 0
+          ? selectedSrc.images
+          : (selectedSrc?.nodeType === 'enhance' ? enhancedImages : propertyImages);
+
+        const otherGroupsCount = attachmentSteps
+          .filter((o) => o.id !== modalStep.id && o.enabled)
+          .reduce((acc, o) => acc + o.count, 0);
+        const maxAllowed = Math.max(1, 10 - otherGroupsCount);
+
+        const currentSelected = modalStep.selectedIndices && modalStep.selectedIndices.length > 0
+          ? [...modalStep.selectedIndices]
+          : Array.from({ length: Math.min(modalStep.count, imagesList.length) }, (_, i) => i);
+
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 100,
+              backgroundColor: 'rgba(0,0,0,0.7)',
+              backdropFilter: 'blur(3px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '16px',
+            }}
+            onClick={() => setManualChooseModalStepId(null)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '540px',
+                maxWidth: '92vw',
+                maxHeight: '85vh',
+                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                borderRadius: '8px',
+                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FiCheckSquare size={16} style={{ color: '#58A6FF' }} />
+                  <div>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                      Manual Choose Photos
+                    </div>
+                    <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                      Select up to {maxAllowed} images from {selectedSrc?.title || 'Workflow'}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setManualChooseModalStepId(null)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: isDark ? '#8B949E' : '#64748B',
+                    cursor: 'pointer',
+                    padding: '4px',
+                  }}
+                >
+                  <FiX size={16} />
+                </button>
+              </div>
+
+              {/* Action toolbar */}
+              <div
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                  borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <span style={{ fontSize: '0.6875rem', fontWeight: 500, color: isDark ? '#C9D1D9' : '#334155' }}>
+                  Selected: <strong style={{ color: '#58A6FF' }}>{currentSelected.length}</strong> / {maxAllowed} max
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const firstN = Array.from({ length: Math.min(modalStep.count, imagesList.length) }, (_, i) => i);
+                      handleUpdateStep(modalStep.id, { selectedIndices: firstN, count: firstN.length });
+                    }}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                      backgroundColor: isDark ? '#21262D' : '#FFFFFF',
+                      color: isDark ? '#C9D1D9' : '#334155',
+                      fontSize: '0.625rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Select First {modalStep.count}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const all = Array.from({ length: Math.min(maxAllowed, imagesList.length) }, (_, i) => i);
+                      handleUpdateStep(modalStep.id, { selectedIndices: all, count: all.length });
+                    }}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                      backgroundColor: isDark ? '#21262D' : '#FFFFFF',
+                      color: isDark ? '#C9D1D9' : '#334155',
+                      fontSize: '0.625rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleUpdateStep(modalStep.id, { selectedIndices: [0], count: 1 });
+                    }}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                      backgroundColor: isDark ? '#21262D' : '#FFFFFF',
+                      color: isDark ? '#C9D1D9' : '#334155',
+                      fontSize: '0.625rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+
+              {/* Image Grid */}
+              <div
+                style={{
+                  padding: '16px',
+                  overflowY: 'auto',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))',
+                  gap: '10px',
+                  flex: 1,
+                  maxHeight: '400px',
+                }}
+              >
+                {imagesList.map((img, idx) => {
+                  const isChosen = currentSelected.includes(idx);
+                  const orderNum = currentSelected.indexOf(idx) + 1;
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => {
+                        let updated = [...currentSelected];
+                        if (isChosen) {
+                          if (updated.length > 1) {
+                            updated = updated.filter((i) => i !== idx);
+                          }
+                        } else {
+                          if (updated.length < maxAllowed) {
+                            updated.push(idx);
+                          }
+                        }
+                        handleUpdateStep(modalStep.id, {
+                          selectedIndices: updated,
+                          count: updated.length,
+                        });
+                      }}
+                      style={{
+                        aspectRatio: '1',
+                        borderRadius: '6px',
+                        border: isChosen
+                          ? '2px solid #58A6FF'
+                          : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                        opacity: isChosen ? 1 : 0.5,
+                        overflow: 'hidden',
+                        position: 'relative',
+                        cursor: 'pointer',
+                        backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {img.url ? (
+                        <img
+                          src={img.url}
+                          alt={img.filename || `Photo #${idx + 1}`}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isDark ? '#8B949E' : '#64748B' }}>
+                          <FiImage size={20} />
+                        </div>
+                      )}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 4,
+                          right: 4,
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '4px',
+                          backgroundColor: isChosen ? '#2563EB' : 'rgba(0,0,0,0.5)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#fff',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {isChosen ? `✓` : ''}
+                      </div>
+                      <span
+                        style={{
+                          position: 'absolute',
+                          bottom: 3,
+                          left: 3,
+                          backgroundColor: 'rgba(0,0,0,0.7)',
+                          color: '#fff',
+                          fontSize: '8px',
+                          padding: '1px 4px',
+                          borderRadius: '2px',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {isChosen ? `#${orderNum} (Img ${idx + 1})` : `Img #${idx + 1}`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Footer */}
+              <div
+                style={{
+                  padding: '10px 16px',
+                  borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  gap: '8px',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setManualChooseModalStepId(null)}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '4px',
+                    backgroundColor: '#2563EB',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Done ({currentSelected.length} Photos Selected)
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </aside>
   );
 };

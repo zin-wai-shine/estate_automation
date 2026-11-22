@@ -20713,25 +20713,33 @@ export const FacebookWorkflowCanvas = forwardRef<
           );
 
           // 1. Child: Enhance IMG
+          const hasEnhanced = formattedEnhancedImages.length > 0;
+          const enhanceCandidateImages = hasEnhanced ? formattedEnhancedImages : formattedPropertyImages;
           workflowImageNodes.push({
             id: enhanceTabBox?.id || 'tabgroup-enhance-img',
             title: enhanceTabBox?.title || 'Enhance IMG',
             groupTitle: externalBrowserTitle,
             nodeType: 'enhance',
-            images: formattedEnhancedImages,
-            count: formattedEnhancedImages.length,
-            description: `${formattedEnhancedImages.length} enhanced photos`,
+            images: enhanceCandidateImages,
+            count: enhanceCandidateImages.length,
+            description: hasEnhanced
+              ? `${formattedEnhancedImages.length} enhanced photos`
+              : `${formattedPropertyImages.length} listing photos (to enhance)`,
           });
 
           // 2. Child: FB Hero
+          const hasHero = formattedHeroImages.length > 0;
+          const heroCandidateImages = hasHero ? formattedHeroImages : formattedPropertyImages.slice(0, 1);
           workflowImageNodes.push({
             id: heroTabBox?.id || 'tabgroup-fb-hero',
             title: heroTabBox?.title || 'FB Hero',
             groupTitle: externalBrowserTitle,
             nodeType: 'hero',
-            images: formattedHeroImages,
-            count: formattedHeroImages.length,
-            description: `${formattedHeroImages.length} hero photo${formattedHeroImages.length !== 1 ? 's' : ''}`,
+            images: heroCandidateImages,
+            count: heroCandidateImages.length,
+            description: hasHero
+              ? `${formattedHeroImages.length} hero photo${formattedHeroImages.length !== 1 ? 's' : ''}`
+              : `1 hero candidate photo`,
           });
 
           // 3. Any additional connected image tab groups
