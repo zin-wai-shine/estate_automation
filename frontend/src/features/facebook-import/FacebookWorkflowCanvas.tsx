@@ -1451,26 +1451,56 @@ export const buildAlignedLayout = (
   // Horizontally aligned straight with the primary image node (e.g. Chrome Enhance IMG at 440)
   const getImagesY = numImageCol2 > 0 ? imageTopY : imageTopY;
 
-  // Watermarks (Column 3 or Column 2)
-  const numWatermark = watermarkBoxes.length;
-  const hasCol3InTextLane = numTextFormat > 0;
-  const shouldWatermarkBeInColumn3 = numImageCol2 > 0 || hasCol3InTextLane;
-  const watermarkColX = shouldWatermarkBeInColumn3 ? effectiveColFormatX : COL_AI_X;
+  // 2B. Crop Studio & Watermark / Format Boxes
+  if (cropStudioBoxes.length > 0) {
+    const primaryCrop = cropStudioBoxes[0];
+    const cropX = numImageCol2 > 0 ? effectiveColFormatX : COL_AI_X;
+    const cropY = getImagesY;
+    xById[primaryCrop.id] = cropX;
+    yById[primaryCrop.id] = cropY;
 
-  if (numWatermark === 1) {
-    xById[watermarkBoxes[0].id] = watermarkColX;
-    yById[watermarkBoxes[0].id] = getImagesY;
-  } else if (numWatermark > 1) {
-    const wmTopY = Math.round(getImagesY - ((numWatermark - 1) * NODE_V_STEP) / 2);
-    watermarkBoxes.forEach((b, idx) => {
-      xById[b.id] = watermarkColX;
-      yById[b.id] = wmTopY + idx * NODE_V_STEP;
-    });
+    // Child crop formats attached below Crop Studio
+    if (watermarkBoxes.length > 0) {
+      const cropCenterX = cropX + 108;
+      const CROP_COL_WIDTH = 155;
+      const totalWidth = (watermarkBoxes.length - 1) * CROP_COL_WIDTH;
+      const startLeft = cropCenterX - totalWidth / 2;
+      watermarkBoxes.forEach((w, idx) => {
+        xById[w.id] = Math.round(startLeft + idx * CROP_COL_WIDTH - 36);
+        yById[w.id] = cropY + 175;
+      });
+    }
+  } else {
+    // Watermarks (Column 3 or Column 2 when no crop studio box)
+    const numWatermark = watermarkBoxes.length;
+    const hasCol3InTextLane = numTextFormat > 0;
+    const shouldWatermarkBeInColumn3 = numImageCol2 > 0 || hasCol3InTextLane;
+    const watermarkColX = shouldWatermarkBeInColumn3 ? effectiveColFormatX : COL_AI_X;
+
+    if (numWatermark === 1) {
+      xById[watermarkBoxes[0].id] = watermarkColX;
+      yById[watermarkBoxes[0].id] = getImagesY;
+    } else if (numWatermark > 1) {
+      const wmTopY = Math.round(getImagesY - ((numWatermark - 1) * NODE_V_STEP) / 2);
+      watermarkBoxes.forEach((b, idx) => {
+        xById[b.id] = watermarkColX;
+        yById[b.id] = wmTopY + idx * NODE_V_STEP;
+      });
+    }
   }
 
-  // 3. Other boxes (if any)
+  // 3. Other boxes (e.g. Google Sheet or custom nodes)
+  const googleSheetBoxes = otherBoxes.filter((b) => isGoogleSheetBox(b));
+  const nonSheetOtherBoxes = otherBoxes.filter((b) => !isGoogleSheetBox(b));
+
+  googleSheetBoxes.forEach((b, idx) => {
+    xById[b.id] = COL_AI_X;
+    yById[b.id] = Math.round((getContentY + getImagesY) / 2) + idx * NODE_V_STEP;
+  });
+
+  const shouldWatermarkBeInColumn3 = cropStudioBoxes.length > 0 || numImageCol2 > 0 || numTextFormat > 0;
   const otherColX = shouldWatermarkBeInColumn3 ? (effectiveColFormatX + 220) : (hasWideCol2 ? (COL_AI_X + 380) : (COL_AI_X + 220));
-  otherBoxes.forEach((b, idx) => {
+  nonSheetOtherBoxes.forEach((b, idx) => {
     xById[b.id] = otherColX;
     yById[b.id] = TOP_MARGIN + idx * NODE_V_STEP;
   });
@@ -2351,7 +2381,7 @@ export const sanitizeAndResolveCollisions = (
       ['get-images', imagesX],
     ]);
 
-    // 1. Auto-heal Format Presets attached to central Text AI Model into a clean, non-overlapping crown arch
+    // 1. Auto-heal Format Presets attached to central Text AI Model into a clean, non-overlapping crown arch (for unplaced presets)
     const primaryAi = finalAiBoxes.find((b) => isTextAIBox(b, nextConnections));
     const formatBoxes = finalAiBoxes.filter((b) => isTextFormatAIBox(b));
     const alignedCoordsById = new Map<string, { x: number; y: number }>();
@@ -2366,17 +2396,19 @@ export const sanitizeAndResolveCollisions = (
       const apexY = (primaryAi.y ?? 245) - 148;
 
       sortedFormats.forEach((b, idx) => {
-        const distFromCenter = Math.abs(idx - centerIdx);
-        const normalizedDist = centerIdx > 0 ? distFromCenter / centerIdx : 0;
-        const archDrop = Math.round(Math.pow(normalizedDist, 1.8) * 34);
-        alignedCoordsById.set(b.id, {
-          x: Math.round(startLeft + idx * FORMAT_COL_WIDTH - 36),
-          y: apexY + archDrop,
-        });
+        if (typeof b.x !== 'number' || typeof b.y !== 'number') {
+          const distFromCenter = Math.abs(idx - centerIdx);
+          const normalizedDist = centerIdx > 0 ? distFromCenter / centerIdx : 0;
+          const archDrop = Math.round(Math.pow(normalizedDist, 1.8) * 34);
+          alignedCoordsById.set(b.id, {
+            x: Math.round(startLeft + idx * FORMAT_COL_WIDTH - 36),
+            y: apexY + archDrop,
+          });
+        }
       });
     }
 
-    // 1B. Auto-heal Crop Format Presets attached to central Crop Studio Box into a clean crown arch
+    // 1B. Auto-heal Crop Format Presets attached to central Crop Studio Box into a clean crown arch (for unplaced presets)
     const primaryCrop = finalAiBoxes.find((b) => isCropStudioBox(b));
     const cropFormatBoxes = finalAiBoxes.filter((b) => isWatermarkAIBox(b));
 
@@ -2391,7 +2423,9 @@ export const sanitizeAndResolveCollisions = (
       if (Math.abs(cropY - 350) < 30 || Math.abs(cropY - 360) < 30 || cropY < 400) {
         cropY = parentY;
       }
-      alignedCoordsById.set(primaryCrop.id, { x: cropX, y: cropY });
+      if (typeof primaryCrop.x !== 'number' || typeof primaryCrop.y !== 'number') {
+        alignedCoordsById.set(primaryCrop.id, { x: cropX, y: cropY });
+      }
 
       if (cropFormatBoxes.length > 0) {
         const sortedCropFormats = [...cropFormatBoxes].sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
@@ -2409,18 +2443,20 @@ export const sanitizeAndResolveCollisions = (
         const apexY = hasSpaceAbove ? (cropY - 148) : (cropY + 160);
 
         sortedCropFormats.forEach((b, idx) => {
-          const distFromCenter = Math.abs(idx - centerIdx);
-          const normalizedDist = centerIdx > 0 ? distFromCenter / centerIdx : 0;
-          const archDrop = Math.round(Math.pow(normalizedDist, 1.8) * 34);
-          alignedCoordsById.set(b.id, {
-            x: Math.round(startLeft + idx * FORMAT_COL_WIDTH - 36),
-            y: apexY + archDrop,
-          });
+          if (typeof b.x !== 'number' || typeof b.y !== 'number') {
+            const distFromCenter = Math.abs(idx - centerIdx);
+            const normalizedDist = centerIdx > 0 ? distFromCenter / centerIdx : 0;
+            const archDrop = Math.round(Math.pow(normalizedDist, 1.8) * 34);
+            alignedCoordsById.set(b.id, {
+              x: Math.round(startLeft + idx * FORMAT_COL_WIDTH - 36),
+              y: apexY + archDrop,
+            });
+          }
         });
       }
     }
 
-    // 2. Auto-heal Chrome Profile and Tab Group clusters under External Browser
+    // 2. Auto-heal Chrome Profile and Tab Group clusters under External Browser (for unplaced nodes)
     const ebBoxes = finalAiBoxes.filter((b) => isExternalBrowserAIBox(b));
     const profileBoxes = finalAiBoxes.filter((b) => isChromeProfileAIBox(b));
     const tabGroupBoxes = finalAiBoxes.filter((b) => isChromeTabGroupAIBox(b));
@@ -2468,24 +2504,30 @@ export const sanitizeAndResolveCollisions = (
         profileClusterData.forEach(({ profile, tabGroups, clusterWidth }) => {
           const clusterCenterX = currentLeft + clusterWidth / 2;
 
-          alignedCoordsById.set(profile.id, {
-            x: Math.round(clusterCenterX - 36),
-            y: parentY + PROFILE_V_GAP,
-          });
+          if (typeof profile.x !== 'number' || typeof profile.y !== 'number') {
+            alignedCoordsById.set(profile.id, {
+              x: Math.round(clusterCenterX - 36),
+              y: parentY + PROFILE_V_GAP,
+            });
+          }
 
           const numTG = tabGroups.length;
           if (numTG === 1) {
-            alignedCoordsById.set(tabGroups[0].id, {
-              x: Math.round(clusterCenterX - 36),
-              y: parentY + PROFILE_V_GAP + TG_V_GAP,
-            });
+            if (typeof tabGroups[0].x !== 'number' || typeof tabGroups[0].y !== 'number') {
+              alignedCoordsById.set(tabGroups[0].id, {
+                x: Math.round(clusterCenterX - 36),
+                y: parentY + PROFILE_V_GAP + TG_V_GAP,
+              });
+            }
           } else if (numTG > 1) {
             tabGroups.forEach((tg, tgIdx) => {
               const tgCenterX = currentLeft + (tgIdx + 0.5) * TAB_GROUP_COL_WIDTH;
-              alignedCoordsById.set(tg.id, {
-                x: Math.round(tgCenterX - 36),
-                y: parentY + PROFILE_V_GAP + TG_V_GAP,
-              });
+              if (typeof tg.x !== 'number' || typeof tg.y !== 'number') {
+                alignedCoordsById.set(tg.id, {
+                  x: Math.round(tgCenterX - 36),
+                  y: parentY + PROFILE_V_GAP + TG_V_GAP,
+                });
+              }
             });
           }
 
@@ -2494,16 +2536,31 @@ export const sanitizeAndResolveCollisions = (
       });
     }
 
+    const isVerticalPreset = (nodeId: string) => {
+      const box = finalAiBoxes.find((b) => b.id === nodeId);
+      if (!box) return false;
+      return (
+        isTextFormatAIBox(box) ||
+        isWatermarkAIBox(box) ||
+        isChromeProfileAIBox(box) ||
+        isChromeTabGroupAIBox(box)
+      );
+    };
+
     const resolvedAiBoxes = finalAiBoxes.map((b, idx) => {
       const aligned = alignedCoordsById.get(b.id);
-      let bx = aligned?.x ?? (typeof b.x === 'number' ? b.x : (520 + (idx % 3) * 180));
-      let by = aligned?.y ?? (typeof b.y === 'number' ? b.y : (200 + Math.floor(idx / 3) * 120));
+      let bx = typeof b.x === 'number' ? b.x : (aligned?.x ?? (520 + (idx % 3) * 180));
+      let by = typeof b.y === 'number' ? b.y : (aligned?.y ?? (200 + Math.floor(idx / 3) * 120));
 
-      const incoming = nextConnections.filter((c) => c.toNodeId === b.id);
-      for (const conn of incoming) {
-        const fromX = nodeXMap.get(conn.fromNodeId);
-        if (typeof fromX === 'number' && bx <= fromX && !aligned) {
-          bx = fromX + 220;
+      const isUserPlaced = typeof b.x === 'number' && typeof b.y === 'number';
+      if (!isUserPlaced && !aligned) {
+        const incoming = nextConnections.filter((c) => c.toNodeId === b.id);
+        for (const conn of incoming) {
+          if (isVerticalPreset(conn.fromNodeId)) continue;
+          const fromX = nodeXMap.get(conn.fromNodeId);
+          if (typeof fromX === 'number' && bx <= fromX) {
+            bx = fromX + 220;
+          }
         }
       }
       nodeXMap.set(b.id, bx);
@@ -2514,11 +2571,15 @@ export const sanitizeAndResolveCollisions = (
       let cbx = typeof cb.x === 'number' ? cb.x : (1120 + idx * 240);
       let cby = typeof cb.y === 'number' ? cb.y : 405;
 
-      const incoming = nextConnections.filter((c) => c.toNodeId === cb.id);
-      for (const conn of incoming) {
-        const fromX = nodeXMap.get(conn.fromNodeId);
-        if (typeof fromX === 'number' && cbx <= fromX) {
-          cbx = fromX + 220;
+      const isUserPlaced = typeof cb.x === 'number' && typeof cb.y === 'number';
+      if (!isUserPlaced) {
+        const incoming = nextConnections.filter((c) => c.toNodeId === cb.id);
+        for (const conn of incoming) {
+          if (isVerticalPreset(conn.fromNodeId)) continue;
+          const fromX = nodeXMap.get(conn.fromNodeId);
+          if (typeof fromX === 'number' && cbx <= fromX) {
+            cbx = fromX + 220;
+          }
         }
       }
       nodeXMap.set(cb.id, cbx);
@@ -2529,11 +2590,15 @@ export const sanitizeAndResolveCollisions = (
       let dx = typeof d.x === 'number' ? d.x : (1340 + idx * 240);
       let dy = typeof d.y === 'number' ? d.y : 365;
 
-      const incoming = nextConnections.filter((c) => c.toNodeId === d.id);
-      for (const conn of incoming) {
-        const fromX = nodeXMap.get(conn.fromNodeId);
-        if (typeof fromX === 'number' && dx <= fromX) {
-          dx = fromX + 220;
+      const isUserPlaced = typeof d.x === 'number' && typeof d.y === 'number';
+      if (!isUserPlaced) {
+        const incoming = nextConnections.filter((c) => c.toNodeId === d.id);
+        for (const conn of incoming) {
+          if (isVerticalPreset(conn.fromNodeId)) continue;
+          const fromX = nodeXMap.get(conn.fromNodeId);
+          if (typeof fromX === 'number' && dx <= fromX) {
+            dx = fromX + 220;
+          }
         }
       }
       nodeXMap.set(d.id, dx);
@@ -4271,7 +4336,14 @@ export const FacebookWorkflowCanvas = forwardRef<
             ? getPersistedReferenceImage(b.id)
             : ''
         );
-        let nextBox = b.enabled !== persistedEnabled ? { ...b, enabled: persistedEnabled } : b;
+        // PRESERVE LIVE USER POSITION IF AVAILABLE
+        const userX = prevBox && typeof prevBox.x === 'number' ? prevBox.x : b.x;
+        const userY = prevBox && typeof prevBox.y === 'number' ? prevBox.y : b.y;
+
+        let nextBox = { ...b, x: userX, y: userY };
+        if (b.enabled !== persistedEnabled) {
+          nextBox = { ...nextBox, enabled: persistedEnabled };
+        }
         if (persistedRef && !nextBox.referenceImage) {
           nextBox = {
             ...nextBox,
@@ -4283,8 +4355,40 @@ export const FacebookWorkflowCanvas = forwardRef<
         return nextBox;
       });
 
+      const nextTrigger = prev?.trigger && typeof prev.trigger.x === 'number'
+        ? { ...sanitized.trigger, x: prev.trigger.x, y: prev.trigger.y }
+        : sanitized.trigger;
+      const nextGetContent = prev?.getContent && typeof prev.getContent.x === 'number'
+        ? { ...sanitized.getContent, x: prev.getContent.x, y: prev.getContent.y }
+        : sanitized.getContent;
+      const nextGetImages = prev?.getImages && typeof prev.getImages.x === 'number'
+        ? { ...sanitized.getImages, x: prev.getImages.x, y: prev.getImages.y }
+        : sanitized.getImages;
+
+      const prevCbById = new Map((prev?.combineBoxes || []).map((cb) => [cb.id, cb]));
+      const nextCombineBoxes = (sanitized.combineBoxes || []).map((cb) => {
+        const prevCb = prevCbById.get(cb.id);
+        return prevCb && typeof prevCb.x === 'number' && typeof prevCb.y === 'number'
+          ? { ...cb, x: prevCb.x, y: prevCb.y }
+          : cb;
+      });
+
+      const prevDestById = new Map(getNormalizedDestinations(prev || sanitized).map((d) => [d.id, d]));
+      const nextDestinations = (sanitized.destinations || []).map((d) => {
+        const prevD = prevDestById.get(d.id);
+        return prevD && typeof prevD.x === 'number' && typeof prevD.y === 'number'
+          ? { ...d, x: prevD.x, y: prevD.y }
+          : d;
+      });
+
       const nextCfg = applyPersistedNodeEnabledToConfig({
         ...sanitized,
+        trigger: nextTrigger,
+        getContent: nextGetContent,
+        getImages: nextGetImages,
+        combineBoxes: nextCombineBoxes,
+        destinations: nextDestinations,
+        destination: nextDestinations[0] || sanitized.destination,
         aiBoxes: mergedAiBoxes,
         zoom,
         panOffset,
@@ -11963,17 +12067,51 @@ export const FacebookWorkflowCanvas = forwardRef<
                     Boolean((box as any).outputCopy)
                   );
 
-                  const hasTopWireOrSocket = isChromeProfile || isChromeTabGroup || (isAttachedCropFormat && isThisFormatBelow);
-                  const hasTopLabel = isTextFormat || (isAttachedCropFormat && !isThisFormatBelow);
-                  const playButtonSide: 'top' | 'right' | 'left' = (
-                    isWatermark ||
-                    isTextFormat ||
-                    isAttachedCropFormat ||
+                  const hasIncomingTopWire = (config.connections || []).some((c) => {
+                    if (c.toNodeId !== box.id) return false;
+                    const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
+                    return fromBox ? (fromBox.y ?? 0) < (box.y ?? 0) : true;
+                  });
+
+                  const hasTopWireOrSocket =
                     isChromeProfile ||
                     isChromeTabGroup ||
-                    hasTopWireOrSocket ||
-                    hasTopLabel
-                  ) ? 'left' : 'top';
+                    hasIncomingTopWire ||
+                    (isAttachedCropFormat && isThisFormatBelow) ||
+                    isWatermark;
+
+                  const hasTopLabel = isTextFormat || (isAttachedCropFormat && !isThisFormatBelow);
+
+                  // Check horizontal neighbors within 180px
+                  const hasNeighborOnLeft = config.aiBoxes.some(
+                    (other) =>
+                      other.id !== box.id &&
+                      Math.abs((other.y ?? 0) - (box.y ?? 0)) < 80 &&
+                      (box.x ?? 0) > (other.x ?? 0) &&
+                      (box.x ?? 0) - (other.x ?? 0) < 180
+                  );
+                  const hasNeighborOnRight = config.aiBoxes.some(
+                    (other) =>
+                      other.id !== box.id &&
+                      Math.abs((other.y ?? 0) - (box.y ?? 0)) < 80 &&
+                      (other.x ?? 0) > (box.x ?? 0) &&
+                      (other.x ?? 0) - (box.x ?? 0) < 180
+                  );
+
+                  let playButtonSide: 'top' | 'right' | 'left' = 'top';
+
+                  if (isTextAI || isCropStudio) {
+                    playButtonSide = 'top';
+                  } else if (hasTopWireOrSocket || hasTopLabel) {
+                    // Top is occupied by wires or label! Position on clean clear side:
+                    if (hasNeighborOnLeft && !hasNeighborOnRight) {
+                      playButtonSide = 'right';
+                    } else if (hasNeighborOnRight && !hasNeighborOnLeft) {
+                      playButtonSide = 'left';
+                    } else {
+                      playButtonSide = hasNeighborOnRight ? 'left' : 'right';
+                    }
+                  }
 
                   return (
                     <>
@@ -11993,7 +12131,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     : isGoogleSheetBox(box)
                                       ? '#10B981'
                                       : '#A855F7',
-                          playButtonSide === 'left'
+                          playButtonSide === 'left' || playButtonSide === 'right'
                             ? undefined
                             : isTextAI || (isCropStudio && !cropFormatsAreBelow)
                               ? { left: '24px', top: '-38px', transform: 'none' }
