@@ -163,7 +163,12 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
     });
   }, [availableCondoFolders]);
 
+  const totalCondoImagesCount = useMemo(() => {
+    return attachmentSteps.reduce((acc, s) => acc + (s.enabled ? s.count : 0), 0);
+  }, [attachmentSteps]);
+
   const handleAddStep = () => {
+    if (totalCondoImagesCount >= 10) return;
     const nextIdx = attachmentSteps.length + 1;
     const newStepId = `group-${Date.now()}`;
     const initialFolder = condoName || '';
@@ -206,112 +211,120 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
     );
   };
 
-  const renderCountStepper = (s: typeof attachmentSteps[0]) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
-      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Attach:</span>
-      <div
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-          borderRadius: '4px',
-          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-          height: '24px',
-          padding: '0 2px',
-        }}
-      >
-        <button
-          type="button"
-          disabled={s.count <= 1}
-          onClick={() => handleUpdateStep(s.id, { count: Math.max(1, s.count - 1) })}
-          title="Decrease count"
+  const renderCountStepper = (s: typeof attachmentSteps[0]) => {
+    const otherGroupsCount = attachmentSteps
+      .filter((other) => other.id !== s.id && other.enabled)
+      .reduce((acc, other) => acc + other.count, 0);
+    const maxAllowed = Math.max(1, 10 - otherGroupsCount);
+    const isAtMax = s.count >= maxAllowed;
+
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+        <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Attach:</span>
+        <div
           style={{
-            width: '20px',
-            height: '20px',
-            borderRadius: '3px',
-            border: 'none',
-            backgroundColor: 'transparent',
-            color: s.count <= 1 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155'),
-            cursor: s.count <= 1 ? 'not-allowed' : 'pointer',
-            display: 'flex',
+            display: 'inline-flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            padding: 0,
-            transition: 'all 0.12s ease',
-          }}
-          onMouseEnter={(e) => {
-            if (s.count > 1) {
-              e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#E2E8F0';
-              e.currentTarget.style.color = isDark ? '#F0F6FC' : '#0F172A';
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = 'transparent';
-            e.currentTarget.style.color = s.count <= 1 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155');
+            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+            borderRadius: '4px',
+            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+            height: '24px',
+            padding: '0 2px',
           }}
         >
-          <FiMinus size={10} />
-        </button>
-        <input
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          value={s.count}
-          onChange={(e) => {
-            const val = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10);
-            handleUpdateStep(s.id, { count: isNaN(val) ? 1 : Math.min(10, Math.max(1, val)) });
-          }}
-          style={{
-            width: '22px',
-            height: '20px',
-            textAlign: 'center',
-            border: 'none',
-            backgroundColor: 'transparent',
-            color: isDark ? '#F0F6FC' : '#0F172A',
-            fontSize: '0.75rem',
-            fontWeight: 600,
-            outline: 'none',
-            padding: 0,
-            margin: 0,
-            appearance: 'none',
-            MozAppearance: 'textfield',
-          }}
-        />
-        <button
-          type="button"
-          disabled={s.count >= 10}
-          onClick={() => handleUpdateStep(s.id, { count: Math.min(10, s.count + 1) })}
-          title="Increase count"
-          style={{
-            width: '20px',
-            height: '20px',
-            borderRadius: '3px',
-            border: 'none',
-            backgroundColor: 'transparent',
-            color: s.count >= 10 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155'),
-            cursor: s.count >= 10 ? 'not-allowed' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 0,
-            transition: 'all 0.12s ease',
-          }}
-          onMouseEnter={(e) => {
-            if (s.count < 10) {
-              e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#E2E8F0';
-              e.currentTarget.style.color = isDark ? '#F0F6FC' : '#0F172A';
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = 'transparent';
-            e.currentTarget.style.color = s.count >= 10 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155');
-          }}
-        >
-          <FiPlus size={10} />
-        </button>
+          <button
+            type="button"
+            disabled={s.count <= 1}
+            onClick={() => handleUpdateStep(s.id, { count: Math.max(1, s.count - 1) })}
+            title="Decrease count"
+            style={{
+              width: '20px',
+              height: '20px',
+              borderRadius: '3px',
+              border: 'none',
+              backgroundColor: 'transparent',
+              color: s.count <= 1 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155'),
+              cursor: s.count <= 1 ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0,
+              transition: 'all 0.12s ease',
+            }}
+            onMouseEnter={(e) => {
+              if (s.count > 1) {
+                e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#E2E8F0';
+                e.currentTarget.style.color = isDark ? '#F0F6FC' : '#0F172A';
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+              e.currentTarget.style.color = s.count <= 1 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155');
+            }}
+          >
+            <FiMinus size={10} />
+          </button>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={s.count}
+            onChange={(e) => {
+              const val = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10);
+              handleUpdateStep(s.id, { count: isNaN(val) ? 1 : Math.min(maxAllowed, Math.max(1, val)) });
+            }}
+            style={{
+              width: '22px',
+              height: '20px',
+              textAlign: 'center',
+              border: 'none',
+              backgroundColor: 'transparent',
+              color: isDark ? '#F0F6FC' : '#0F172A',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              outline: 'none',
+              padding: 0,
+              margin: 0,
+              appearance: 'none',
+              MozAppearance: 'textfield',
+            }}
+          />
+          <button
+            type="button"
+            disabled={isAtMax}
+            onClick={() => handleUpdateStep(s.id, { count: Math.min(maxAllowed, s.count + 1) })}
+            title={isAtMax ? `Max 10 total photos across all groups (${totalCondoImagesCount}/10)` : 'Increase count'}
+            style={{
+              width: '20px',
+              height: '20px',
+              borderRadius: '3px',
+              border: 'none',
+              backgroundColor: 'transparent',
+              color: isAtMax ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155'),
+              cursor: isAtMax ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0,
+              transition: 'all 0.12s ease',
+            }}
+            onMouseEnter={(e) => {
+              if (!isAtMax) {
+                e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#E2E8F0';
+                e.currentTarget.style.color = isDark ? '#F0F6FC' : '#0F172A';
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+              e.currentTarget.style.color = isAtMax ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155');
+            }}
+          >
+            <FiPlus size={10} />
+          </button>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // File upload and removal handlers
   const handleReferenceImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1308,11 +1321,30 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <FiFolder size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
                         <div>
-                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                            Condo Photos
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                              Condo Photos
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '0.59375rem',
+                                fontWeight: 600,
+                                color: totalCondoImagesCount >= 10 ? (isDark ? '#F85149' : '#DC2626') : (isDark ? '#58A6FF' : '#2563EB'),
+                                backgroundColor: totalCondoImagesCount >= 10
+                                  ? (isDark ? 'rgba(248, 81, 73, 0.15)' : '#FEF2F2')
+                                  : (isDark ? 'rgba(88, 166, 255, 0.1)' : '#EFF6FF'),
+                                padding: '1px 6px',
+                                borderRadius: '10px',
+                                border: totalCondoImagesCount >= 10
+                                  ? (isDark ? '1px solid rgba(248, 81, 73, 0.3)' : '1px solid #FECACA')
+                                  : 'none',
+                              }}
+                            >
+                              {totalCondoImagesCount}/10 Total
+                            </span>
                           </div>
                           <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                            Exterior & facility photos (10 max total)
+                            Exterior & facility photos (10 max combined across all groups)
                           </div>
                         </div>
                       </div>
@@ -1662,7 +1694,13 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                         return (
                                           <div
                                             key={img.filename || tIdx}
-                                            onClick={() => handleUpdateStep(step.id, { count: tIdx + 1 })}
+                                            onClick={() => {
+                                              const otherGroupsCount = attachmentSteps
+                                                .filter((other) => other.id !== step.id && other.enabled)
+                                                .reduce((acc, other) => acc + other.count, 0);
+                                              const maxAllowed = Math.max(1, 10 - otherGroupsCount);
+                                              handleUpdateStep(step.id, { count: Math.min(maxAllowed, tIdx + 1) });
+                                            }}
                                             title={`Click to select up to photo #${tIdx + 1} (${img.filename})`}
                                             style={{
                                               width: '42px',
@@ -1915,6 +1953,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                         {/* Add Group Button */}
                         <button
                           type="button"
+                          disabled={totalCondoImagesCount >= 10}
                           onClick={handleAddStep}
                           style={{
                             height: '28px',
@@ -1923,8 +1962,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                             fontWeight: 500,
                             backgroundColor: 'transparent',
                             border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
-                            color: isDark ? '#8B949E' : '#64748B',
-                            cursor: 'pointer',
+                            color: totalCondoImagesCount >= 10 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#8B949E' : '#64748B'),
+                            cursor: totalCondoImagesCount >= 10 ? 'not-allowed' : 'pointer',
+                            opacity: totalCondoImagesCount >= 10 ? 0.45 : 1,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -1932,16 +1972,18 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                             transition: 'all 0.12s ease',
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.borderColor = isDark ? '#58A6FF' : '#2563EB';
-                            e.currentTarget.style.color = isDark ? '#58A6FF' : '#2563EB';
+                            if (totalCondoImagesCount < 10) {
+                              e.currentTarget.style.borderColor = isDark ? '#58A6FF' : '#2563EB';
+                              e.currentTarget.style.color = isDark ? '#58A6FF' : '#2563EB';
+                            }
                           }}
                           onMouseLeave={(e) => {
                             e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
-                            e.currentTarget.style.color = isDark ? '#8B949E' : '#64748B';
+                            e.currentTarget.style.color = totalCondoImagesCount >= 10 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#8B949E' : '#64748B');
                           }}
                         >
                           <FiPlus size={11} />
-                          <span>Add Group ({attachmentSteps.length + 1})</span>
+                          <span>{totalCondoImagesCount >= 10 ? 'Max 10 Photos Limit Reached' : `Add Group (${attachmentSteps.length + 1})`}</span>
                         </button>
                       </div>
                     )}
