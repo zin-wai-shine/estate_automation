@@ -872,7 +872,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                   height: '64px',
                                   borderRadius: '8px',
                                   border: isSelected
-                                    ? (isDark ? '2px solid rgba(16, 185, 129, 0.8)' : '2px solid #10B981')
+                                    ? (isDark ? '2px solid rgba(5, 150, 105, 0.95)' : '2px solid #059669')
                                     : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
                                   opacity: isSelected ? 1 : 0.45,
                                   overflow: 'hidden',
@@ -880,10 +880,10 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                   flexShrink: 0,
                                   cursor: 'pointer',
                                   backgroundColor: isSelected
-                                    ? (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.04)')
+                                    ? (isDark ? 'rgba(5, 150, 105, 0.08)' : 'rgba(5, 150, 105, 0.04)')
                                     : (isDark ? '#0D1117' : '#F1F5F9'),
                                   boxShadow: isSelected
-                                    ? (isDark ? '0 0 0 1px rgba(16, 185, 129, 0.25), 0 2px 8px rgba(16, 185, 129, 0.2)' : '0 0 0 1px rgba(16, 185, 129, 0.2), 0 2px 8px rgba(16, 185, 129, 0.15)')
+                                    ? (isDark ? '0 0 0 1px rgba(5, 150, 105, 0.3), 0 2px 8px rgba(5, 150, 105, 0.25)' : '0 0 0 1px rgba(5, 150, 105, 0.2), 0 2px 8px rgba(5, 150, 105, 0.2)')
                                     : 'none',
                                   transition: 'all 0.15s ease',
                                 }}
@@ -904,7 +904,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                       width: '18px',
                                       height: '18px',
                                       borderRadius: '50%',
-                                      backgroundColor: '#10B981',
+                                      backgroundColor: '#059669',
                                       display: 'flex',
                                       alignItems: 'center',
                                       justifyContent: 'center',
@@ -922,7 +922,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                     position: 'absolute',
                                     bottom: 3,
                                     right: 3,
-                                    backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.95)' : 'rgba(0,0,0,0.65)',
+                                    backgroundColor: isSelected ? 'rgba(5, 150, 105, 0.95)' : 'rgba(0,0,0,0.65)',
                                     color: '#fff',
                                     fontSize: '8px',
                                     fontWeight: 600,
@@ -1317,7 +1317,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                 height: '64px',
                                 borderRadius: '8px',
                                 border: isSelected
-                                  ? (isDark ? '2px solid rgba(16, 185, 129, 0.8)' : '2px solid #10B981')
+                                  ? (isDark ? '2px solid rgba(5, 150, 105, 0.95)' : '2px solid #059669')
                                   : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
                                 opacity: isSelected ? 1 : 0.45,
                                 overflow: 'hidden',
@@ -1325,10 +1325,10 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                 flexShrink: 0,
                                 cursor: 'pointer',
                                 backgroundColor: isSelected
-                                  ? (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.04)')
+                                  ? (isDark ? 'rgba(5, 150, 105, 0.08)' : 'rgba(5, 150, 105, 0.04)')
                                   : (isDark ? '#0D1117' : '#F1F5F9'),
                                 boxShadow: isSelected
-                                  ? (isDark ? '0 0 0 1px rgba(16, 185, 129, 0.25), 0 2px 8px rgba(16, 185, 129, 0.2)' : '0 0 0 1px rgba(16, 185, 129, 0.2), 0 2px 8px rgba(16, 185, 129, 0.15)')
+                                  ? (isDark ? '0 0 0 1px rgba(5, 150, 105, 0.3), 0 2px 8px rgba(5, 150, 105, 0.25)' : '0 0 0 1px rgba(5, 150, 105, 0.2), 0 2px 8px rgba(5, 150, 105, 0.2)')
                                   : 'none',
                                 transition: 'all 0.15s ease',
                               }}
@@ -1349,7 +1349,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                     width: '18px',
                                     height: '18px',
                                     borderRadius: '50%',
-                                    backgroundColor: '#10B981',
+                                    backgroundColor: '#059669',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
@@ -1367,7 +1367,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                   position: 'absolute',
                                   bottom: 3,
                                   right: 3,
-                                  backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.95)' : 'rgba(0,0,0,0.65)',
+                                  backgroundColor: isSelected ? 'rgba(5, 150, 105, 0.95)' : 'rgba(0,0,0,0.65)',
                                   color: '#fff',
                                   fontSize: '8px',
                                   fontWeight: 600,
@@ -1641,17 +1641,17 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                         aspectRatio: '1',
                         borderRadius: '8px',
                         border: isChosen
-                          ? (isDark ? '2px solid rgba(16, 185, 129, 0.85)' : '2px solid #10B981')
+                          ? (isDark ? '2px solid rgba(5, 150, 105, 0.95)' : '2px solid #059669')
                           : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
                         boxShadow: isChosen
-                          ? (isDark ? '0 0 0 1px rgba(16, 185, 129, 0.25), 0 4px 12px rgba(16, 185, 129, 0.2)' : '0 0 0 1px rgba(16, 185, 129, 0.2), 0 4px 12px rgba(16, 185, 129, 0.15)')
+                          ? (isDark ? '0 0 0 1px rgba(5, 150, 105, 0.3), 0 4px 12px rgba(5, 150, 105, 0.25)' : '0 0 0 1px rgba(5, 150, 105, 0.2), 0 4px 12px rgba(5, 150, 105, 0.2)')
                           : 'none',
                         opacity: isChosen ? 1 : 0.6,
                         overflow: 'hidden',
                         position: 'relative',
                         cursor: 'pointer',
                         backgroundColor: isChosen
-                          ? (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.04)')
+                          ? (isDark ? 'rgba(5, 150, 105, 0.08)' : 'rgba(5, 150, 105, 0.04)')
                           : (isDark ? '#0D1117' : '#F1F5F9'),
                         transition: 'all 0.15s ease',
                       }}
@@ -1668,54 +1668,22 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                           position: 'absolute',
                           top: 6,
                           right: 6,
-                          width: '22px',
+                          minWidth: '22px',
                           height: '22px',
-                          borderRadius: '50%',
-                          backgroundColor: isChosen ? '#10B981' : 'rgba(0,0,0,0.5)',
+                          padding: isChosen && currentSelected.length > 1 ? '0 6px' : '0',
+                          borderRadius: '9999px',
+                          backgroundColor: isChosen ? '#059669' : 'rgba(0,0,0,0.4)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           color: '#fff',
                           fontSize: '11px',
                           fontWeight: 700,
-                          boxShadow: isChosen ? '0 2px 6px rgba(16,185,129,0.4)' : '0 2px 4px rgba(0,0,0,0.3)',
+                          boxShadow: isChosen ? '0 2px 6px rgba(5,150,105,0.4)' : '0 2px 4px rgba(0,0,0,0.3)',
+                          transition: 'all 0.15s ease',
                         }}
                       >
-                        {isChosen ? '✓' : ''}
-                      </div>
-                      <div
-                        style={{
-                          position: 'absolute',
-                          bottom: 5,
-                          left: 5,
-                          right: 5,
-                          backgroundColor: isChosen ? 'rgba(16, 185, 129, 0.92)' : 'rgba(0,0,0,0.75)',
-                          backdropFilter: 'blur(3px)',
-                          color: '#fff',
-                          fontSize: '9px',
-                          padding: '3px 8px',
-                          borderRadius: '9999px',
-                          fontWeight: 600,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '4px',
-                        }}
-                      >
-                        <span>{isChosen ? `✓ #${orderNum}` : `#${idx + 1}`}</span>
-                        <span
-                          style={{
-                            fontSize: '8px',
-                            opacity: 0.9,
-                            maxWidth: '75px',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                          title={img.filename}
-                        >
-                          {img.filename || `Photo ${idx + 1}`}
-                        </span>
+                        {isChosen ? (currentSelected.length > 1 ? `✓ #${orderNum}` : '✓') : ''}
                       </div>
                     </div>
                   );
@@ -1738,13 +1706,14 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                   style={{
                     padding: '6px 14px',
                     borderRadius: '5px',
-                    backgroundColor: '#10B981',
+                    backgroundColor: '#059669',
                     color: '#FFFFFF',
                     border: 'none',
                     fontSize: '0.6875rem',
                     fontWeight: 600,
                     cursor: 'pointer',
-                    boxShadow: '0 2px 6px rgba(16,185,129,0.3)',
+                    boxShadow: '0 2px 6px rgba(5,150,105,0.35)',
+                    transition: 'all 0.15s ease',
                   }}
                 >
                   Done ({currentSelected.length} Photos Selected)
