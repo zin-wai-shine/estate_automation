@@ -2111,13 +2111,13 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                       onClick={() => setActiveWorkflowDropdownStepId(isDropdownOpen ? null : step.id)}
                                       style={{
                                         width: '100%',
-                                        height: '32px',
-                                        padding: '0 10px',
-                                        borderRadius: '5px',
+                                        height: '26px',
+                                        padding: '0 8px',
+                                        borderRadius: '4px',
                                         border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                                         backgroundColor: isDark ? '#161B22' : '#FFFFFF',
                                         color: isDark ? '#F0F6FC' : '#0F172A',
-                                        fontSize: '0.6875rem',
+                                        fontSize: '0.65625rem',
                                         fontWeight: 500,
                                         display: 'flex',
                                         alignItems: 'center',
@@ -2127,20 +2127,20 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                         outline: 'none',
                                       }}
                                     >
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1, marginRight: '8px' }}>
-                                        <FiLayers size={13} style={{ color: '#58A6FF', flexShrink: 0 }} />
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1, marginRight: '8px' }}>
+                                        <FiLayers size={12} style={{ color: '#58A6FF', flexShrink: 0 }} />
                                         <span style={{ fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                           {selectedSource?.title || 'Select workflow source...'}
                                         </span>
                                       </div>
 
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                                         <span
                                           style={{
-                                            fontSize: '0.59375rem',
+                                            fontSize: '0.5625rem',
                                             fontWeight: 500,
-                                            padding: '1px 6px',
-                                            borderRadius: '10px',
+                                            padding: '1px 5px',
+                                            borderRadius: '8px',
                                             backgroundColor: isDark ? '#21262D' : '#F1F5F9',
                                             color: isDark ? '#8B949E' : '#64748B',
                                             border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
@@ -2149,7 +2149,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                           {sourceImages.length} photo{sourceImages.length !== 1 ? 's' : ''}
                                         </span>
                                         <FiChevronDown
-                                          size={12}
+                                          size={11}
                                           style={{
                                             color: isDark ? '#8B949E' : '#64748B',
                                             transform: isDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
@@ -2169,18 +2169,20 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                         <div
                                           style={{
                                             position: 'absolute',
-                                            top: '36px',
+                                            top: '29px',
                                             left: 0,
                                             right: 0,
                                             zIndex: 50,
-                                            borderRadius: '6px',
+                                            maxHeight: '140px',
+                                            overflowY: 'auto',
+                                            borderRadius: '5px',
                                             border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                                             backgroundColor: isDark ? '#161B22' : '#FFFFFF',
                                             boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-                                            padding: '4px',
+                                            padding: '3px',
                                             display: 'flex',
                                             flexDirection: 'column',
-                                            gap: '2px',
+                                            gap: '1px',
                                           }}
                                         >
                                           {activeWorkflowSources.map((src) => {
@@ -2196,9 +2198,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                                 }}
                                                 style={{
                                                   width: '100%',
-                                                  height: '32px',
-                                                  padding: '0 10px',
-                                                  borderRadius: '4px',
+                                                  height: '25px',
+                                                  padding: '0 8px',
+                                                  borderRadius: '3px',
                                                   border: 'none',
                                                   backgroundColor: isCurrent
                                                     ? (isDark ? '#21262D' : '#E2E8F0')
@@ -2206,7 +2208,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                                   color: isCurrent
                                                     ? (isDark ? '#F0F6FC' : '#0F172A')
                                                     : (isDark ? '#C9D1D9' : '#334155'),
-                                                  fontSize: '0.6875rem',
+                                                  fontSize: '0.65625rem',
                                                   fontWeight: isCurrent ? 600 : 400,
                                                   display: 'flex',
                                                   alignItems: 'center',
