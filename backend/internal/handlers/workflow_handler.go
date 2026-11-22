@@ -50,6 +50,27 @@ func GetWorkflowConfig(c *fiber.Ctx) error {
 	return c.JSON(rawConfig)
 }
 
+// sanitizeConfigPayload strips massive base64 data_url payloads from condoImages to keep workflow_config.json small and prevent server lockups
+func sanitizeConfigPayload(v interface{}) {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		if _, hasDataURL := val["data_url"]; hasDataURL {
+			if _, hasPath := val["full_path"]; hasPath {
+				val["data_url"] = ""
+			} else if dataURLStr, ok := val["data_url"].(string); ok && len(dataURLStr) > 50000 {
+				val["data_url"] = ""
+			}
+		}
+		for _, child := range val {
+			sanitizeConfigPayload(child)
+		}
+	case []interface{}:
+		for _, child := range val {
+			sanitizeConfigPayload(child)
+		}
+	}
+}
+
 // SaveWorkflowConfig persists updated workflow map config (nodes, path switches, layout)
 func SaveWorkflowConfig(c *fiber.Ctx) error {
 	workflowMutex.Lock()
@@ -74,6 +95,9 @@ func SaveWorkflowConfig(c *fiber.Ctx) error {
 	for k, v := range payload {
 		mergedConfig[k] = v
 	}
+
+	// Clean out any massive base64 data URLs before writing to disk
+	sanitizeConfigPayload(mergedConfig)
 
 	data, err := json.MarshalIndent(mergedConfig, "", "  ")
 	if err != nil {

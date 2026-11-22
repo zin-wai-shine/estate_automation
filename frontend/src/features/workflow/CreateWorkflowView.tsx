@@ -1982,6 +1982,19 @@ export const CreateWorkflowView: React.FC = () => {
         } else {
           rawCaption = (cfg.getContent?.manualContent || extractedContent || workflowContextRef.current?.rawCaption || '').trim();
         }
+        if (!rawCaption) {
+          const savedData = getSavedWorkflowRunData(resolveCurrentFormatId());
+          if (savedData?.extractedContent) rawCaption = savedData.extractedContent.trim();
+          if (!rawCaption) {
+            try {
+              const fbSession = localStorage.getItem('estate_facebook_import_session_v1');
+              if (fbSession) {
+                const parsed = JSON.parse(fbSession);
+                if (parsed?.caption) rawCaption = String(parsed.caption).trim();
+              }
+            } catch {}
+          }
+        }
         setExtractedContent(rawCaption);
 
         imageList = extractedImages.length > 0
@@ -1994,6 +2007,34 @@ export const CreateWorkflowView: React.FC = () => {
               filename: img.filename || `Photo #${idx + 1}`,
               status: 'verified',
             })));
+        if (!imageList || imageList.length === 0) {
+          const savedData = getSavedWorkflowRunData(resolveCurrentFormatId());
+          if (Array.isArray(savedData?.extractedImages) && savedData.extractedImages.length > 0) {
+            imageList = savedData.extractedImages;
+          } else {
+            try {
+              const fbSession = localStorage.getItem('estate_facebook_import_session_v1');
+              if (fbSession) {
+                const parsed = JSON.parse(fbSession);
+                if (Array.isArray(parsed?.images) && parsed.images.length > 0) {
+                  imageList = parsed.images.map((img: any, idx: number) => ({
+                    index: typeof img.index === 'number' && img.index > 0 ? img.index : idx + 1,
+                    facebook_photo_id: img.facebook_photo_id || img.id || `photo-${idx + 1}`,
+                    source_url: img.source_url || img.url || '',
+                    stored_url: img.stored_url || img.url || '',
+                    filename: img.filename || `Photo #${idx + 1}`,
+                    width: img.width,
+                    height: img.height,
+                    status: 'verified',
+                  }));
+                }
+              }
+            } catch {}
+          }
+        }
+        if (imageList && imageList.length > 0) {
+          setExtractedImages(imageList);
+        }
 
         propData = workflowContextRef.current?.propData || propertyData;
         projName = projectName || workflowContextRef.current?.projName || '';
@@ -2009,6 +2050,10 @@ export const CreateWorkflowView: React.FC = () => {
         rawCaption = (cfg.getContent?.mode === 'manual' && cfg.getContent?.manualContent !== undefined)
           ? cfg.getContent.manualContent
           : (extractedContent || workflowContextRef.current?.rawCaption || cfg.trigger?.manualContent || '');
+        if (!rawCaption) {
+          const savedData = getSavedWorkflowRunData(resolveCurrentFormatId());
+          if (savedData?.extractedContent) rawCaption = savedData.extractedContent.trim();
+        }
         imageList = extractedImages.length > 0
           ? extractedImages
           : (workflowContextRef.current?.imageList || (cfg.trigger?.manualImages || []).map((img, idx) => ({
@@ -2019,6 +2064,34 @@ export const CreateWorkflowView: React.FC = () => {
               filename: img.filename || `Photo #${idx + 1}`,
               status: 'verified',
             })));
+        if (!imageList || imageList.length === 0) {
+          const savedData = getSavedWorkflowRunData(resolveCurrentFormatId());
+          if (Array.isArray(savedData?.extractedImages) && savedData.extractedImages.length > 0) {
+            imageList = savedData.extractedImages;
+          } else {
+            try {
+              const fbSession = localStorage.getItem('estate_facebook_import_session_v1');
+              if (fbSession) {
+                const parsed = JSON.parse(fbSession);
+                if (Array.isArray(parsed?.images) && parsed.images.length > 0) {
+                  imageList = parsed.images.map((img: any, idx: number) => ({
+                    index: typeof img.index === 'number' && img.index > 0 ? img.index : idx + 1,
+                    facebook_photo_id: img.facebook_photo_id || img.id || `photo-${idx + 1}`,
+                    source_url: img.source_url || img.url || '',
+                    stored_url: img.stored_url || img.url || '',
+                    filename: img.filename || `Photo #${idx + 1}`,
+                    width: img.width,
+                    height: img.height,
+                    status: 'verified',
+                  }));
+                }
+              }
+            } catch {}
+          }
+        }
+        if (imageList && imageList.length > 0) {
+          setExtractedImages(imageList);
+        }
         propData = workflowContextRef.current?.propData || propertyData;
         projName = projectName || workflowContextRef.current?.projName || '';
         extractFinished = true;
@@ -3665,9 +3738,11 @@ export const CreateWorkflowView: React.FC = () => {
           isRunning: false,
           hasError: true,
           activeNodeIds: [],
-          completedNodeIds: (prev?.completedNodeIds || []).filter((id) => id !== 'get-content' && id !== 'get-images'),
-          failedNodeIds: Array.from(new Set([...(prev?.failedNodeIds || []), 'get-content', 'get-images'])),
-          currentStepMessage: '❌ No content or images were found in the provided listing. Workflow stopped.',
+          completedNodeIds: (prev?.completedNodeIds || []).filter((id) => id !== 'trigger' && id !== 'get-content' && id !== 'get-images'),
+          failedNodeIds: Array.from(new Set([...(prev?.failedNodeIds || []), ...(!isFromStep ? ['trigger'] : []), 'get-content', 'get-images'])),
+          currentStepMessage: !isFromStep
+            ? '❌ Extraction failed: No content or images could be retrieved from the listing link. Please verify the URL or enter details manually.'
+            : '❌ No content or images available to process. Please run workflow with a listing link or enter content first.',
         }));
         setIsRunningWorkflow(false);
         (window as any).__isWorkflowProcessing = false;
@@ -4451,15 +4526,31 @@ export const CreateWorkflowView: React.FC = () => {
       return;
     }
 
-    // 3. If get-content: RUN WORKFLOW FROM THIS STEP AGAIN!
-    if (nodeId === 'get-content') {
-      await executeCanvasWorkflow('', { startFromNodeId: 'get-content' });
-      return;
-    }
+    // 3. If get-content or get-images:
+    if (nodeId === 'get-content' || nodeId === 'get-images') {
+      const formatId = resolveCurrentFormatId();
+      const saved = getSavedWorkflowRunData(formatId);
+      const hasAnyData = Boolean(
+        extractedContent ||
+        (extractedImages && extractedImages.length > 0) ||
+        saved?.extractedContent ||
+        (saved?.extractedImages && saved.extractedImages.length > 0) ||
+        workflowContextRef.current?.rawCaption ||
+        (workflowContextRef.current?.imageList && workflowContextRef.current.imageList.length > 0)
+      );
 
-    // 4. If get-images: RUN WORKFLOW FROM THIS STEP AGAIN!
-    if (nodeId === 'get-images') {
-      await executeCanvasWorkflow('', { startFromNodeId: 'get-images' });
+      if (!hasAnyData) {
+        const url = (runFacebookUrl || workflowContextRef.current?.targetUrl || saved?.runFacebookUrl || '').trim();
+        if (url) {
+          executeCanvasWorkflow(url);
+          return;
+        }
+        setRunFacebookUrl('');
+        setIsRunModalOpen(true);
+        return;
+      }
+
+      await executeCanvasWorkflow('', { startFromNodeId: nodeId });
       return;
     }
   };
