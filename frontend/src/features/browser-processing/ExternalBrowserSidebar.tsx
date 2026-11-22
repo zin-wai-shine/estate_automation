@@ -2393,27 +2393,17 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               fontWeight: 600,
               padding: '2px 7px',
               borderRadius: '10px',
-              backgroundColor: (useReferenceImage && referenceImage) ? 'rgba(16, 185, 129, 0.12)' : (isDark ? 'rgba(255,255,255,0.05)' : '#F1F5F9'),
-              color: (useReferenceImage && referenceImage) ? '#10B981' : 'var(--text-muted)',
+              backgroundColor: referenceImage ? 'rgba(16, 185, 129, 0.12)' : (isDark ? 'rgba(255,255,255,0.05)' : '#F1F5F9'),
+              color: referenceImage ? '#10B981' : 'var(--text-muted)',
               border: '1px solid var(--border-color)',
             }}
           >
-            {useReferenceImage ? (referenceImage ? 'Attached' : 'Ready') : 'Skipped'}
+            {referenceImage ? 'Attached' : 'Ready'}
           </span>
-          <ToggleSwitch
-            checked={useReferenceImage}
-            onChange={(val) => {
-              setUseReferenceImage(val);
-              updateConfig('useReferenceImage', val);
-            }}
-            size="sm"
-            activeColor="#EC4899"
-          />
         </div>
       </div>
 
-      {useReferenceImage ? (
-        referenceImage ? (
+      {referenceImage ? (
           <div style={{ paddingLeft: '23px' }}>
             <div
               style={{
@@ -2550,20 +2540,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               </label>
             </div>
           </div>
-        )
-      ) : (
-        <div
-          style={{
-            fontSize: '0.5625rem',
-            color: 'var(--text-muted)',
-            fontStyle: 'italic',
-            padding: '4px 0',
-            textAlign: 'center',
-          }}
-        >
-          Interior / Enhanced photos skipped — only reference & folder photos will attach.
-        </div>
-      )}
+        )}
     </div>
   );
   const renderImagesToEnhanceCard = () => (
@@ -3877,98 +3854,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       </div>
       )}
 
-      {/* ── ACTION MODE SWITCHER: GENERATE IMAGE VS ENHANCE IMAGES ── */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-          padding: '3px',
-          borderRadius: '9px',
-          backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : 'rgba(0, 0, 0, 0.05)',
-          border: '1px solid var(--border-color)',
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => {
-            setTabGroupMode('generate');
-            updateMultiConfig({
-              tabGroupMode: 'generate',
-              processKind: 'generate_image',
-            });
-          }}
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            padding: '6px 10px',
-            borderRadius: '7px',
-            fontSize: '0.6875rem',
-            fontWeight: currentTabGroupMode === 'generate' ? 700 : 500,
-            backgroundColor: currentTabGroupMode === 'generate'
-              ? (isDark ? 'rgba(59, 130, 246, 0.22)' : '#FFFFFF')
-              : 'transparent',
-            color: currentTabGroupMode === 'generate'
-              ? (isDark ? '#60A5FA' : '#2563EB')
-              : 'var(--text-muted)',
-            border: currentTabGroupMode === 'generate'
-              ? (isDark ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(0,0,0,0.08)')
-              : '1px solid transparent',
-            boxShadow: currentTabGroupMode === 'generate'
-              ? (isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.06)')
-              : 'none',
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <FiZap size={13} style={{ flexShrink: 0 }} />
-          <span style={{ whiteSpace: 'nowrap' }}>Generate Image</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setTabGroupMode('enhance');
-            updateMultiConfig({
-              tabGroupMode: 'enhance',
-              processKind: 'enhance_images',
-            });
-          }}
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            padding: '6px 10px',
-            borderRadius: '7px',
-            fontSize: '0.6875rem',
-            fontWeight: currentTabGroupMode === 'enhance' ? 700 : 500,
-            backgroundColor: currentTabGroupMode === 'enhance'
-              ? (isDark ? 'rgba(16, 185, 129, 0.22)' : '#FFFFFF')
-              : 'transparent',
-            color: currentTabGroupMode === 'enhance'
-              ? (isDark ? '#34D399' : '#059669')
-              : 'var(--text-muted)',
-            border: currentTabGroupMode === 'enhance'
-              ? (isDark ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(0,0,0,0.08)')
-              : '1px solid transparent',
-            boxShadow: currentTabGroupMode === 'enhance'
-              ? (isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.06)')
-              : 'none',
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <FiSliders size={13} style={{ flexShrink: 0 }} />
-          <span style={{ whiteSpace: 'nowrap' }}>Enhance Images</span>
-        </button>
-      </div>
-
       {/* ── TAB PROCESS MODULES (CONTROLLED BY SETTINGS) ── */}
       <div
         style={{
@@ -4076,58 +3961,20 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                       </div>
                     </div>
 
-                    {/* Canvas AI vs Custom pill switchers */}
-                    <div
+                    {/* Current Prompt Source Badge */}
+                    <span
                       style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
-                        padding: '2px',
-                        borderRadius: '6px',
-                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        fontSize: '0.5625rem',
+                        fontWeight: 600,
+                        padding: '2px 7px',
+                        borderRadius: '10px',
+                        backgroundColor: isDark ? 'rgba(88, 166, 255, 0.1)' : '#EFF6FF',
+                        color: isDark ? '#58A6FF' : '#2563EB',
+                        border: isDark ? '1px solid rgba(88, 166, 255, 0.3)' : '1px solid #CBD5E1',
                       }}
                     >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPromptSourceMode('upstream_ai');
-                          updateConfig('promptSourceMode', 'upstream_ai');
-                        }}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '4px',
-                          border: 'none',
-                          fontSize: '0.65625rem',
-                          fontWeight: 600,
-                          textTransform: 'none',
-                          backgroundColor: promptSourceMode === 'upstream_ai' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
-                          color: promptSourceMode === 'upstream_ai' ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Canvas AI
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPromptSourceMode('custom');
-                          updateConfig('promptSourceMode', 'custom');
-                        }}
-                        style={{
-                          padding: '3px 10px',
-                          borderRadius: '4px',
-                          border: 'none',
-                          fontSize: '0.65625rem',
-                          fontWeight: 600,
-                          textTransform: 'none',
-                          backgroundColor: promptSourceMode === 'custom' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
-                          color: promptSourceMode === 'custom' ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Custom
-                      </button>
-                    </div>
+                      {promptSourceMode === 'custom' ? 'Custom' : 'Canvas AI'}
+                    </span>
                   </div>
 
                   <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -4231,36 +4078,40 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 </div>
 
                 {/* 2. Attached Images Section (Boxless) */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: '4px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
-                      Attached Images
-                    </span>
-                    <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                      {(useReferenceImage && referenceImage ? 1 : 0) + (useCondoImages ? attachmentSteps.filter((s: AttachmentStep) => s.enabled).reduce((a: number, b: AttachmentStep) => a + b.count, 0) : 0)} total photos
-                    </span>
+                {((boxConfig.useReferenceImage !== false) || (boxConfig.useCondoImages !== false)) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
+                        Attached Images
+                      </span>
+                      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                        {(boxConfig.useReferenceImage !== false && referenceImage ? 1 : 0) + (boxConfig.useCondoImages !== false ? attachmentSteps.filter((s: AttachmentStep) => s.enabled).reduce((a: number, b: AttachmentStep) => a + b.count, 0) : 0)} total photos
+                      </span>
+                    </div>
+
+                    {/* Reference Layout (Boxless) */}
+                    {boxConfig.useReferenceImage !== false && renderReferenceImageCard()}
+
+                    {/* Condo Photos Multi-Group Manager (Boxless) */}
+                    {boxConfig.useCondoImages !== false && (
+                      <AttachmentGroupsManager
+                        boxless={true}
+                        hideToggle={true}
+                        hideAddGroup={true}
+                        hideDeleteGroup={true}
+                        steps={attachmentSteps}
+                        onChange={handleAttachmentStepsChange}
+                        isDark={isDark}
+                        useCondoImages={true}
+                        onToggleUseCondoImages={() => {}}
+                        workflowImageSources={workflowImageSources}
+                        propertyImages={propertyContext?.images}
+                        enhancedImages={availableEnhancedPhotos}
+                        condoName={condoSearchQuery || condoName}
+                      />
+                    )}
                   </div>
-
-                  {/* Reference Layout (Boxless) */}
-                  {renderReferenceImageCard()}
-
-                  {/* Condo Photos Multi-Group Manager (Boxless) */}
-                  <AttachmentGroupsManager
-                    boxless={true}
-                    steps={attachmentSteps}
-                    onChange={handleAttachmentStepsChange}
-                    isDark={isDark}
-                    useCondoImages={useCondoImages}
-                    onToggleUseCondoImages={(val) => {
-                      setUseCondoImages(val);
-                      updateConfig('useCondoImages', val);
-                    }}
-                    workflowImageSources={workflowImageSources}
-                    propertyImages={propertyContext?.images}
-                    enhancedImages={availableEnhancedPhotos}
-                    condoName={condoSearchQuery || condoName}
-                  />
-                </div>
+                )}
               </>
             )}
 

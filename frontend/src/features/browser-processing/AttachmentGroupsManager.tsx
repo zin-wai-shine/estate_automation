@@ -128,6 +128,9 @@ interface AttachmentGroupsManagerProps {
   title?: string;
   subtitle?: string;
   boxless?: boolean;
+  hideToggle?: boolean;
+  hideAddGroup?: boolean;
+  hideDeleteGroup?: boolean;
 }
 
 export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = ({
@@ -143,6 +146,9 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
   title = 'Condo Photos',
   subtitle = 'Exterior & facility photos (10 max combined across all groups)',
   boxless = false,
+  hideToggle = false,
+  hideAddGroup = false,
+  hideDeleteGroup = false,
 }) => {
   const [availableCondoFolders, setAvailableCondoFolders] = useState<string[]>([]);
   const [baseCondoDirectory, setBaseCondoDirectory] = useState<string>('/Users/zinwaishine/Desktop/Condo Building');
@@ -454,10 +460,12 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
             </div>
           </div>
         </div>
-        <ToggleSwitch checked={useCondoImages} onChange={onToggleUseCondoImages} size="sm" activeColor="#2563EB" />
+        {!hideToggle && (
+          <ToggleSwitch checked={useCondoImages} onChange={onToggleUseCondoImages} size="sm" activeColor="#2563EB" />
+        )}
       </div>
 
-      {useCondoImages && (
+      {(hideToggle || useCondoImages) && (
         <div style={{ paddingLeft: boxless ? '23px' : '0px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {steps.map((step, sIdx) => {
             const selectedSource = activeSources.find((s) => s.id === step.workflowSourceId) || activeSources[0];
@@ -519,7 +527,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                       })}
                     </div>
 
-                    {steps.length > 1 && (
+                    {!hideDeleteGroup && steps.length > 1 && (
                       <button
                         type="button"
                         onClick={() => handleRemoveStep(step.id)}
@@ -1063,28 +1071,30 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
           })}
 
           {/* Add Group Button */}
-          <button
-            type="button"
-            disabled={totalCondoImagesCount >= 10}
-            onClick={handleAddStep}
-            style={{
-              height: '28px',
-              borderRadius: '5px',
-              border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
-              backgroundColor: 'transparent',
-              color: totalCondoImagesCount >= 10 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#8B949E' : '#64748B'),
-              fontSize: '0.65625rem',
-              fontWeight: 500,
-              cursor: totalCondoImagesCount >= 10 ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-            }}
-          >
-            <FiPlus size={11} />
-            <span>Add Group ({steps.length + 1})</span>
-          </button>
+          {!hideAddGroup && (
+            <button
+              type="button"
+              disabled={totalCondoImagesCount >= 10}
+              onClick={handleAddStep}
+              style={{
+                height: '28px',
+                borderRadius: '5px',
+                border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                backgroundColor: 'transparent',
+                color: totalCondoImagesCount >= 10 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#8B949E' : '#64748B'),
+                fontSize: '0.65625rem',
+                fontWeight: 500,
+                cursor: totalCondoImagesCount >= 10 ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+              }}
+            >
+              <FiPlus size={11} />
+              <span>Add Group ({steps.length + 1})</span>
+            </button>
+          )}
         </div>
       )}
 

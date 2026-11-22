@@ -1,6 +1,6 @@
 {
   "has_saved_config": true,
-  "timestamp": 1795375672526,
+  "timestamp": 1795376803964,
   "workflow_formats": [
     {
       "config": {
@@ -477,11 +477,22 @@
             "browserTabTitle": "ChatGPT",
             "browserWorkerCount": 1,
             "condoImages": [],
+            "condoImagesCount": 3,
             "condoPhotos": [],
             "customPrompt": "",
             "enabled": true,
             "generatedImages": [],
             "id": "ai-box-tabgroup-fb-hero-1793050402048-cp-format-1792648980268-cp-format-1792648980268",
+            "imageAttachmentSteps": [
+              {
+                "count": 3,
+                "enabled": true,
+                "folderName": "",
+                "id": "group-1",
+                "sourceType": "folder",
+                "title": "Group 1"
+              }
+            ],
             "model": "chrome-tab-group",
             "outputCopy": "",
             "processKind": "generate_image",
@@ -1195,9 +1206,9 @@
           "extractContacts": true,
           "extractPrice": true,
           "extractSpecs": true,
-          "manualContent": "",
-          "mode": "extracted",
-          "x": 300,
+          "manualContent": "For Sale/Rent (Owner post)\nAspire Erawan Prime\n(Aspy Arawan Prime)\nLocation📍Next to BTS Chang Erawan, green line Location🔵0 meters.\n👉🏻Selling price is 3 million baht.\n👉🏻Rental price 15,000 baht/month. 1 year contract.\n(2 months warranty + 1 month advance)\n👉🏻Ready to move in.\n👉🏻Suitable for buy-on-own or rent-out investment.\n✅️The owner never rented it.\nSize: 35.22 sq.m. | 17th floor | Samut Prakan view\nRoom Details\n- 1 bedroom / 1 living room / 1 bathroom\n- Corner room with private fire staircase.\n- Open view. I can see Samut Prakan. There is no view building. The room can get sunlight in the morning. Not hot.\n👉🏻Available furniture and electronics\n-Bed bases (Beds are provided if tenant has made a contract)\n-Samsung 42-inch Smart TV📺\nCloset\n- Dressing table\n-Dining table\n-2 glass display cabinet\nCloset\n-Built-in kitchen countertops\n-Electric stove\n-Microwave\n- Vacuum Cleaner\nRefrigerator\n-2 air conditioners\n- Washing machine\n-Digital door lock (Samsung)\n-Curtain\n📍Amenities\n-Fitness\n-Swimming pool\n-Movie Room\n-Plu table\n-Meeting room\n-Working room\n-Board Game Room\n-gym ground\n-24 hr security system / Key card access / CCTV camera\n-Convenience store/coffee shop/cafe/hair salon/market\n✨Location Spotlight\n• Stick BTS, green line, Erawan station 0 meters.\n• Near Robinson Mall Samut Prakan / Paulo Hospital / Kanchanapisek Expressway 500 meters.\n• It is convenient to travel into the city because of the BTS green line.\nMore room details\n• Size 35.22 sq.m. 17th floor. View of Samut Prakan.\n• 1 bedroom / 1 living room / closed kitchen / 1 bathroom\n• Furniture + electronics are ready.\n• Nice view, nice weather, peaceful.\nWant to view the room please contact\nTel. 0824397893 Boom\nLine: name_boom",
+          "mode": "manual",
+          "x": 298.83720930232556,
           "y": 245
         },
         "getImages": {
@@ -1243,7 +1254,7 @@
       "id": "format-1792648980268",
       "isPinned": true,
       "name": "Download FB Post",
-      "updatedAt": 1795375672111
+      "updatedAt": 1795376803549
     },
     {
       "config": {
