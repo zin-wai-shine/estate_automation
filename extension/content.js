@@ -1401,21 +1401,8 @@
         const title = (btn.getAttribute('title') || '').toLowerCase();
         const text = (btn.textContent || '').trim().toLowerCase();
 
-        // Strictly exclude Send, Attach (+), Model, Voice, Upload
-        if (
-          aria.includes('send') || aria.includes('plus') || aria.includes('add') ||
-          aria.includes('attach') || aria.includes('upload') ||
-          aria.includes('voice') || aria.includes('mic') || aria.includes('dictate') ||
-          aria.includes('model') || text === 'files' || text === 'send' ||
-          testid.includes('send') || testid.includes('attach') || testid.includes('upload') ||
-          testid.includes('model') || testid.includes('plus')
-        ) {
-          continue;
-        }
-
-        // Explicit remove/delete labels on thumbnail cards (e.g. "Remove image_001.jpg", "Dismiss")
-        if (
-          aria.startsWith('remove') ||
+        // If this is an explicit remove / delete / dismiss / close button:
+        const isExplicitRemove = (
           aria.includes('remove') ||
           aria.includes('delete') ||
           aria.includes('dismiss') ||
@@ -1427,9 +1414,25 @@
           title.includes('remove') ||
           title.includes('delete') ||
           title.includes('close')
-        ) {
+        );
+
+        if (isExplicitRemove) {
           seen.add(btn);
           result.push(btn);
+          continue;
+        }
+
+        // Strictly exclude Send, Attach (+), Model, Voice, Upload ONLY IF NOT an explicit remove button!
+        const isMainAction = (
+          aria.includes('send') || aria.includes('plus') || aria.includes('add') ||
+          aria === 'attach' || aria === 'attach files' || aria.startsWith('attach ') ||
+          aria.includes('upload') ||
+          aria.includes('voice') || aria.includes('mic') || aria.includes('dictate') ||
+          aria.includes('model') || text === 'files' || text === 'send' ||
+          testid.includes('send') || testid === 'attach-button' || testid.includes('upload') ||
+          testid.includes('model') || testid.includes('plus')
+        );
+        if (isMainAction) {
           continue;
         }
 
@@ -1568,6 +1571,15 @@
       } catch (e) {}
     });
 
+    // 1b. Hover over all attachment cards to reveal any hover-only remove buttons
+    try {
+      const cards = composer.querySelectorAll('[data-testid*="attachment" i], [data-testid*="file-tile" i], [class*="file-tile" i], div[class*="relative"]:has(img)');
+      cards.forEach((card) => {
+        card.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+        card.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      });
+    } catch (e) {}
+
     // 2. Click all attachment remove buttons with robust pointer/mouse sequence
     for (let loop = 0; loop < 5; loop++) {
       const removeBtns = findAttachmentRemoveButtons(composer);
@@ -1579,27 +1591,31 @@
       await new Promise((r) => setTimeout(r, 150));
     }
 
-    // 3. Clear prompt area text completely across all paragraph tags in ProseMirror
+    // 3. Clear prompt area text cleanly without destroying the ProseMirror <p> element
     if (promptArea) {
       try {
         promptArea.focus();
         if (promptArea.tagName === 'TEXTAREA') {
           promptArea.value = '';
+          promptArea.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          promptArea.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
         } else {
-          // Select ENTIRE ProseMirror editor contents (all paragraphs) and delete via standard execCommand
-          try {
-            const sel = window.getSelection();
-            const range = document.createRange();
-            range.selectNodeContents(promptArea);
-            sel.removeAllRanges();
-            sel.addRange(range);
-            document.execCommand('delete', false, null);
-          } catch (e) {}
+          const ps = Array.from(promptArea.querySelectorAll('p'));
+          if (ps.length > 0) {
+            ps.forEach((p, idx) => {
+              if (idx === 0) {
+                p.textContent = '';
+              } else {
+                p.remove();
+              }
+            });
+          } else {
+            promptArea.textContent = '';
+          }
+          promptArea.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'deleteContentBackward' }));
+          promptArea.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          promptArea.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
         }
-
-        promptArea.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'deleteContentBackward' }));
-        promptArea.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-        promptArea.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
       } catch (e) {}
     }
 
@@ -2626,6 +2642,16 @@
     // 2. Wait for the image upload to fully complete BEFORE typing the prompt (up to 15s)
     const composerEl = getComposerContainer(input) || document;
     await waitForAttachmentUploadComplete(composerEl, 15000);
+
+    // Verify strictly 1 image is attached before pasting prompt
+    const curAttached = getAttachedImagesCount(input);
+    if (curAttached > 1) {
+      console.warn(`[BOLTHAVEN] ⚠️ Multiple images (${curAttached}) detected in composer! Re-cleaning and attaching only image #${job.original_position || 1}...`);
+      await cleanComposerInputCompletely(input);
+      await new Promise((r) => setTimeout(r, 400));
+      await attachImageFileToComposer(input, file, 1, 1, job.image_data_url || (primaryUrl.startsWith('data:') ? primaryUrl : null));
+      await waitForAttachmentUploadComplete(composerEl, 15000);
+    }
 
     if (activeJobAborted) {
       clearPromptText(input);

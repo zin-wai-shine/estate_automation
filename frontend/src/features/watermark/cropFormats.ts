@@ -611,6 +611,39 @@ export interface FormattedCropSlice {
   aspect: string;
 }
 
+// High-performance in-memory slice cache to prevent re-processing identical images repeatedly
+const formattedSlicesCache = new Map<string, FormattedCropSlice[]>();
+
+export const getCropSliceCacheKey = (imgSrc: string, format: CropStudioFormat): string => {
+  const w = format.targetWidth || 1200;
+  const h = format.targetHeight || 1200;
+  const mode = format.mode || 'standard';
+  const aspect = format.aspect || '1:1';
+  const fit = format.fitMode || 'cover';
+  const focus = format.focusPosition || 'center';
+  const zoom = format.cropZoom || 1;
+  const wm = format.watermarkConfig ? JSON.stringify(format.watermarkConfig) : 'none';
+  return `${imgSrc}__fmt:${format.id || 'custom'}_${w}x${h}_${mode}_${aspect}_${fit}_${focus}_${zoom}_wm:${wm}`;
+};
+
+export const getCachedCropSlices = (imgSrc: string, format: CropStudioFormat): FormattedCropSlice[] | null => {
+  if (!imgSrc || !format) return null;
+  const key = getCropSliceCacheKey(imgSrc, format);
+  return formattedSlicesCache.get(key) || null;
+};
+
+export const clearCropSlicesCache = (imgSrc?: string): void => {
+  if (!imgSrc) {
+    formattedSlicesCache.clear();
+    return;
+  }
+  for (const k of formattedSlicesCache.keys()) {
+    if (k.startsWith(imgSrc)) {
+      formattedSlicesCache.delete(k);
+    }
+  }
+};
+
 /**
  * High-performance offscreen canvas helper to format any image
  * using a given CropStudioFormat (aspect, dimensions, fit, anchor, zoom, grid splits & watermarks).
@@ -629,6 +662,14 @@ export const formatImageWithCropFormatSlices = async (
     height: format.targetHeight || 1200,
     aspect: format.aspect || '1:1',
   };
+
+  if (!imgSrc) return [fallbackItem];
+
+  const cacheKey = getCropSliceCacheKey(imgSrc, format);
+  const cached = formattedSlicesCache.get(cacheKey);
+  if (cached && cached.length > 0) {
+    return cached;
+  }
 
   try {
     const img = await loadImageElement(imgSrc);
@@ -777,6 +818,7 @@ export const formatImageWithCropFormatSlices = async (
           }
 
           if (slices.length > 0) {
+            formattedSlicesCache.set(cacheKey, slices);
             return slices;
           }
         }
@@ -858,7 +900,7 @@ export const formatImageWithCropFormatSlices = async (
           await drawWatermarkOnContext(ctx, width, height, effectiveWatermark);
         }
 
-        return [
+        const singleResult: FormattedCropSlice[] = [
           {
             url: canvas.toDataURL(mime, 0.95),
             tileIndex: 1,
@@ -869,6 +911,8 @@ export const formatImageWithCropFormatSlices = async (
             aspect: format.aspect || '1:1',
           },
         ];
+        formattedSlicesCache.set(cacheKey, singleResult);
+        return singleResult;
       } catch (err) {
         console.warn('Canvas crop formatting error, falling back to original', err);
         return [fallbackItem];

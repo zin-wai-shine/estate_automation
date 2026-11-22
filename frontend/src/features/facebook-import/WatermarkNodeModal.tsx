@@ -27,6 +27,8 @@ import {
   formatImageWithCropFormatSlices,
   type FormattedCropSlice,
   syncCropFormatToWorkflowConfig,
+  clearCropSlicesCache,
+  getCachedCropSlices,
 } from '../watermark/cropFormats';
 import type { DynamicAIBoxConfig, WorkflowWireConnection } from './FacebookWorkflowCanvas';
 import { Select, type SelectOption } from '../../components/ui/Select';
@@ -680,6 +682,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   // Listen for global canvas clear event
   useEffect(() => {
     const handleCleared = () => {
+      clearCropSlicesCache();
       setUploadedImages([]);
       setFormattedPreviewItems([]);
       setLiveFormattedPhotos({});
@@ -1108,9 +1111,14 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       }
     };
 
-    generatePreviews();
+    // Debounce preview generation to allow rapid batch / companion downloads to settle
+    const debounceTimer = setTimeout(() => {
+      generatePreviews();
+    }, 300);
+
     return () => {
       isCancelled = true;
+      clearTimeout(debounceTimer);
       setIsProcessingCrop(false);
     };
   }, [
@@ -1127,6 +1135,9 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   ]);
 
   const handleTriggerCropProcess = () => {
+    activePhotosToFormat.forEach((p) => {
+      clearCropSlicesCache(p.url);
+    });
     setIsProcessingCrop(true);
     lastRenderedKeyRef.current = '';
     setFormattedPreviewItems([]);
@@ -1466,6 +1477,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  clearCropSlicesCache();
                   setUploadedImages([]);
                   setFormattedPreviewItems([]);
                   setLiveFormattedPhotos({});

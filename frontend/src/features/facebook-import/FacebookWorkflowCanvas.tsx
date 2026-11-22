@@ -84,7 +84,7 @@ import type { BrowserProfile, BrowserGroupItem } from '../browser-processing/typ
 import { WatermarkNodeModal } from './WatermarkNodeModal';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { loadWatermarkPresets, DEFAULT_WATERMARK_CONFIG, DEFAULT_PRESETS, type WatermarkConfig } from '../autopost/watermarkStorage';
-import { getSavedCropFormats, type CropStudioFormat, formatImageWithCropFormatSlices, type FormattedCropSlice } from '../watermark/cropFormats';
+import { getSavedCropFormats, type CropStudioFormat, formatImageWithCropFormatSlices, type FormattedCropSlice, clearCropSlicesCache } from '../watermark/cropFormats';
 import { getStoredManagedPages, saveStoredManagedPage, DEFAULT_MANAGED_FB_PAGES, type ManagedPageMeta } from '../autopost/autoPostStorage';
 
 export { getAIModelDisplayName, isWatermarkAIBox, isEnhanceAIBox, isTextFormatAIBox, isTextAIBox };
@@ -3561,6 +3561,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           });
         }
       }
+      clearCropSlicesCache();
     };
     window.addEventListener('ea_workflow_cleared', handleWorkflowCleared);
     return () => window.removeEventListener('ea_workflow_cleared', handleWorkflowCleared);
@@ -3668,6 +3669,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       }
     };
     const handleCleared = () => {
+      clearCropSlicesCache();
       setHeroImage(null);
     };
     window.addEventListener('ea_hero_image_updated', handleHeroUpdated);
@@ -4922,10 +4924,14 @@ export const FacebookWorkflowCanvas = forwardRef<
       }
     };
 
-    run();
+    // Debounce combineCropSlices to prevent cascading offscreen canvas execution during streaming updates
+    const debounceTimer = setTimeout(() => {
+      run();
+    }, 400);
 
     return () => {
       isCancelled = true;
+      clearTimeout(debounceTimer);
     };
   }, [config.aiBoxes, config.connections, effectiveImages, allEnhancedPhotos]);
 
