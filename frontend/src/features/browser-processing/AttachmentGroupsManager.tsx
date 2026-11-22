@@ -13,6 +13,7 @@ import {
   FiImage,
   FiMonitor,
   FiRefreshCw,
+  FiLoader,
 } from 'react-icons/fi';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import type { WorkflowImageSource } from './ChromeTabGroupConnectDrawer';
@@ -160,6 +161,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
   const [manualChooseModalStepId, setManualChooseModalStepId] = useState<string | null>(null);
   const [folderSearchFilter, setFolderSearchFilter] = useState<string>('');
   const [reloadingStepId, setReloadingStepId] = useState<string | null>(null);
+  const [loadingSteps, setLoadingSteps] = useState<Record<string, boolean>>({});
   // In-memory condo folder images cache: folderName.toLowerCase() -> images
   const condoImagesCacheRef = React.useRef<Record<string, Array<{ filename: string; data_url?: string; full_path?: string; index?: number }>>>({});
 
@@ -235,6 +237,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
     }
 
     inFlightFetchRef.current[fetchKey] = true;
+    setLoadingSteps((prev) => ({ ...prev, [stepId]: true }));
     try {
       const resp = await fetch(
         `http://127.0.0.1:9224/condo-images?condo_name=${encodeURIComponent(trimmed)}&folder=${encodeURIComponent(trimmed)}&base_dir=${encodeURIComponent(baseCondoDirectory)}`
@@ -262,6 +265,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
     } catch (_) {
     } finally {
       inFlightFetchRef.current[fetchKey] = false;
+      setLoadingSteps((prev) => ({ ...prev, [stepId]: false }));
     }
   };
 
@@ -752,13 +756,13 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                       )}
 
                       {(() => {
-                        const isReloading = reloadingStepId === step.id;
+                        const isStepLoading = Boolean(loadingSteps[step.id] || reloadingStepId === step.id);
                         return (
                           <button
                             type="button"
-                            disabled={isReloading}
+                            disabled={isStepLoading}
                             onClick={async () => {
-                              if (reloadingStepId) return;
+                              if (isStepLoading) return;
                               const target = (condoName || step.folderName || '').trim();
                               setReloadingStepId(step.id);
                               const minTimer = new Promise((resolve) => setTimeout(resolve, 650));
@@ -777,20 +781,25 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                               height: '26px',
                               padding: '0 8px',
                               borderRadius: '4px',
-                              border: isReloading ? '1px solid #58A6FF' : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                              backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-                              color: isReloading ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B'),
-                              cursor: isReloading ? 'wait' : 'pointer',
+                              border: isStepLoading ? '1px solid #2563EB' : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                              backgroundColor: isStepLoading
+                                ? (isDark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF')
+                                : (isDark ? '#0D1117' : '#FFFFFF'),
+                              color: isStepLoading ? '#2563EB' : (isDark ? '#8B949E' : '#64748B'),
+                              cursor: isStepLoading ? 'wait' : 'pointer',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               transition: 'all 0.15s ease',
+                              boxShadow: isStepLoading ? '0 0 0 1px rgba(37, 99, 235, 0.3)' : 'none',
                             }}
                           >
                             <FiRefreshCw
                               size={11}
-                              className={isReloading ? 'animate-spin' : ''}
-                              style={isReloading ? { animation: 'spin 0.75s linear infinite' } : {}}
+                              style={{
+                                animation: isStepLoading ? 'spin 0.75s linear infinite' : 'none',
+                                color: isStepLoading ? '#2563EB' : undefined,
+                              }}
                             />
                           </button>
                         );
@@ -801,17 +810,27 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                       const effectiveFolderImages = (step.folderImages && step.folderImages.length > 0)
                         ? step.folderImages
                         : (condoImagesCacheRef.current[(condoName || step.folderName || '').trim().toLowerCase()] || []);
+                      const isStepLoading = Boolean(loadingSteps[step.id] || reloadingStepId === step.id);
 
                       return (
                         <>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-                              <span style={{ fontSize: '0.625rem', color: reloadingStepId === step.id ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {reloadingStepId === step.id
-                                  ? `Reloading photos in ${condoName || step.folderName || 'folder'}...`
-                                  : `Found ${effectiveFolderImages.length} photos in ${condoName || step.folderName || 'folder'}`}
-                              </span>
-                              {effectiveFolderImages.length > 0 && (() => {
+                              {isStepLoading ? (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: isDark ? '#60A5FA' : '#2563EB' }}>
+                                  <FiLoader size={12} style={{ animation: 'spin 0.75s linear infinite', flexShrink: 0 }} />
+                                  <span style={{ fontSize: '0.625rem', fontWeight: 600 }}>
+                                    {effectiveFolderImages.length > 0
+                                      ? `Refreshing photos in ${condoName || step.folderName || 'folder'}...`
+                                      : `Loading photos from ${condoName || step.folderName || 'folder'}...`}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {`Found ${effectiveFolderImages.length} photos in ${condoName || step.folderName || 'folder'}`}
+                                </span>
+                              )}
+                              {!isStepLoading && effectiveFolderImages.length > 0 && (() => {
                                 const isManuallyChosen = Boolean(step.selectedIndices && step.selectedIndices.length > 0);
                                 return (
                                   <button
@@ -855,6 +874,32 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                             </div>
                             {renderCountStepper(step)}
                           </div>
+
+                          {isStepLoading && effectiveFolderImages.length === 0 && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflowX: 'auto', padding: '3px 0' }}>
+                              {Array.from({ length: Math.max(1, step.count || 1) }, (_, i) => i + 1).map((n) => (
+                                <div
+                                  key={n}
+                                  style={{
+                                    width: '64px',
+                                    height: '64px',
+                                    borderRadius: '8px',
+                                    border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                                    backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '4px',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <FiLoader size={16} style={{ color: isDark ? '#60A5FA' : '#2563EB', animation: 'spin 0.85s linear infinite' }} />
+                                  <span style={{ fontSize: '8px', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>Loading...</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
 
                           {effectiveFolderImages.length > 0 && (() => {
                             const targetCount = Math.max(1, step.count || 1);
