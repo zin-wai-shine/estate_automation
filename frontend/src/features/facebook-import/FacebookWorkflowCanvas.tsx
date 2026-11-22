@@ -5581,7 +5581,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     nodeId: string,
     color: string,
     positionStyle?: React.CSSProperties,
-    label: string = 'Run',
+    _label: string = 'Run',
     side: 'top' | 'right' | 'left' = 'top'
   ) => {
     const isThisNodeRunning = Boolean(
@@ -5644,7 +5644,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           }}
           onMouseEnter={() => handleNodeMouseEnter(nodeId)}
           onMouseLeave={() => handleNodeMouseLeave(nodeId)}
-          title={isThisNodeRunning ? `Stop this step (${label})` : `Run this step (${label})`}
+          title={isThisNodeRunning ? 'Stop' : 'Run'}
           style={{
             ['--play-btn-accent' as any]: isThisNodeRunning ? '#EF4444' : color,
             ['--play-btn-bg' as any]: isThisNodeRunning ? '#EF4444' : (isDark ? '#1F2937' : '#FFFFFF'),
