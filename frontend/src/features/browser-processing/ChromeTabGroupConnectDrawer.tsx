@@ -103,15 +103,6 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
       imageSelection: '',
       enabled: true,
     },
-    {
-      id: 'group-2',
-      title: 'Group 2',
-      count: 4,
-      sourceType: 'enhanced',
-      folderName: 'Interior',
-      imageSelection: '',
-      enabled: true,
-    },
   ]);
 
   const filteredCondoFolders = useMemo(() => {
