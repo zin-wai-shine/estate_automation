@@ -3490,6 +3490,7 @@ export interface WorkflowExecutionState {
   isComplete?: boolean;
   hasError?: boolean;
   errorMessage?: string;
+  nodeErrors?: Record<string, string>;
   propertyId?: string;
   listingCode?: string;
 }
@@ -4187,7 +4188,16 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const getNodeErrorMessage = (nodeId: string): string | null => {
     if (executionState?.failedNodeIds?.includes(nodeId)) {
-      return executionState.errorMessage || executionState.currentStepMessage || 'Step execution failed';
+      if (executionState.nodeErrors?.[nodeId]) {
+        return executionState.nodeErrors[nodeId];
+      }
+      if (executionState.errorMessage && !executionState.errorMessage.startsWith('✓')) {
+        return executionState.errorMessage;
+      }
+      if (executionState.currentStepMessage && !executionState.currentStepMessage.startsWith('✓')) {
+        return executionState.currentStepMessage;
+      }
+      return 'Step execution failed';
     }
     return null;
   };
@@ -17022,7 +17032,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       Google Sheet Sync Failed
                                     </div>
                                     <div style={{ fontSize: '0.6875rem', color: isDark ? '#F87171' : '#DC2626', marginTop: '2px' }}>
-                                      {sheetSyncErrorMessage || executionState?.currentStepMessage?.replace(/^[❌⚠️]\s*/, '') || 'Failed to append row. Please check your columns and permissions.'}
+                                      {sheetSyncErrorMessage ||
+                                       (currentDrawerNodeId && executionState?.nodeErrors?.[currentDrawerNodeId]) ||
+                                       (executionState?.currentStepMessage && !executionState.currentStepMessage.startsWith('✓')
+                                         ? executionState.currentStepMessage.replace(/^[❌⚠️]\s*/, '')
+                                         : 'Failed to append row. Please check your columns and permissions.')}
                                     </div>
                                   </div>
                                 </div>

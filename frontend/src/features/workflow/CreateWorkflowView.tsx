@@ -2759,12 +2759,17 @@ export const CreateWorkflowView: React.FC = () => {
           } catch (err: any) {
             if (isRunStopped(myRunId) || branchFatalError) return false;
             console.warn('Google Sheet step error:', err);
+            const sheetErrMsg = err.message || 'Google Sheet sync failed';
             safeSetExecutionState(myRunId, (prev) => ({
               ...prev!,
               hasError: true,
               activeNodeIds: (prev?.activeNodeIds || []).filter((id) => id !== box.id),
               failedNodeIds: Array.from(new Set([...(prev?.failedNodeIds || []), box.id])),
-              currentStepMessage: `❌ Google Sheet Sync failed for [${box.title || 'Google Sheet'}]: ${err.message || 'Sync error'}.`,
+              nodeErrors: {
+                ...(prev?.nodeErrors || {}),
+                [box.id]: `Google Sheet Sync failed: ${sheetErrMsg}`,
+              },
+              currentStepMessage: `❌ Google Sheet Sync failed for [${box.title || 'Google Sheet'}]: ${sheetErrMsg}.`,
             }));
             canvasRef.current?.openNodeDrawer(box.id);
             return false;

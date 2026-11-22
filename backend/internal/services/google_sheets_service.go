@@ -1011,6 +1011,94 @@ func containsNonEnglishScript(s string) bool {
 	return false
 }
 
+// heuristicMapListingData extracts listing attributes via regex when AI JSON generation fails or is truncated
+func heuristicMapListingData(headers []string, rawContent, condoName, postURL, listingCode string) map[string]interface{} {
+	m := make(map[string]interface{})
+
+	// Price heuristic
+	priceRe := regexp.MustCompile(`(?i)(?:price|rent|ค่าเช่า|ราคา)?\s*[:=]?\s*([1-9]\d{0,2}(?:,\d{3})+|[1-9]\d{3,5})\s*(?:thb|baht|บาท|/เดือน|/mo)?`)
+	priceVal := ""
+	if match := priceRe.FindStringSubmatch(rawContent); len(match) > 1 {
+		priceVal = match[1] + " THB"
+	}
+
+	// Floor heuristic
+	floorRe := regexp.MustCompile(`(?i)(?:floor|fl\.?|ชั้น)\s*[:=]?\s*(\d+)`)
+	floorVal := ""
+	if match := floorRe.FindStringSubmatch(rawContent); len(match) > 1 {
+		floorVal = match[1]
+	}
+
+	// Size heuristic
+	sizeRe := regexp.MustCompile(`(?i)(\d+(?:\.\d+)?)\s*(?:sq\.?m|ตร\.?ม|sqm)`)
+	sizeVal := ""
+	if match := sizeRe.FindStringSubmatch(rawContent); len(match) > 1 {
+		sizeVal = match[1] + " Sq.m."
+	}
+
+	// Room type heuristic
+	roomVal := "1 Bedroom"
+	if strings.Contains(strings.ToLower(rawContent), "studio") {
+		roomVal = "Studio"
+	} else if match := regexp.MustCompile(`(?i)(\d+)\s*(?:bed|bedroom|ห้องนอน)`).FindStringSubmatch(rawContent); len(match) > 1 {
+		roomVal = match[1] + " Bedroom"
+	}
+
+	// Transit heuristic
+	btsVal := ""
+	if match := regexp.MustCompile(`(?i)(?:BTS|MRT)\s+([A-Za-z\s]+)`).FindStringSubmatch(rawContent); len(match) > 0 {
+		btsVal = strings.TrimSpace(match[0])
+	}
+
+	// Owner/Agent
+	ownerAgent := "Agent"
+	lower := strings.ToLower(rawContent)
+	if strings.Contains(lower, "owner") || strings.Contains(rawContent, "เจ้าของ") {
+		ownerAgent = "Owner"
+	}
+
+	// Contact info
+	contactParts := []string{}
+	phoneRe := regexp.MustCompile(`0\d{1,2}[-\s]?\d{3,4}[-\s]?\d{4}`)
+	if phones := phoneRe.FindAllString(rawContent, 2); len(phones) > 0 {
+		contactParts = append(contactParts, "Tel: "+strings.Join(phones, ", "))
+	}
+	lineRe := regexp.MustCompile(`(?i)(?:line|id)\s*[:=]?\s*(@?[a-zA-Z0-9._-]+)`)
+	if match := lineRe.FindStringSubmatch(rawContent); len(match) > 1 {
+		contactParts = append(contactParts, "Line: "+match[1])
+	}
+	contactVal := strings.Join(contactParts, " | ")
+
+	for _, h := range headers {
+		lowerH := strings.ToLower(h)
+		switch {
+		case strings.Contains(lowerH, "code"):
+			m[h] = listingCode
+		case strings.Contains(lowerH, "project") || strings.Contains(lowerH, "condo"):
+			m[h] = condoName
+		case strings.Contains(lowerH, "room") || strings.Contains(lowerH, "type") || strings.Contains(lowerH, "bed"):
+			m[h] = roomVal
+		case strings.Contains(lowerH, "size") || strings.Contains(lowerH, "area") || strings.Contains(lowerH, "sqm"):
+			m[h] = sizeVal
+		case strings.Contains(lowerH, "floor"):
+			m[h] = floorVal
+		case strings.Contains(lowerH, "price") || strings.Contains(lowerH, "rent"):
+			m[h] = priceVal
+		case strings.Contains(lowerH, "bts") || strings.Contains(lowerH, "mrt") || strings.Contains(lowerH, "transit"):
+			m[h] = btsVal
+		case strings.Contains(lowerH, "owner") || strings.Contains(lowerH, "agent"):
+			m[h] = ownerAgent
+		case strings.Contains(lowerH, "contact") || strings.Contains(lowerH, "phone") || strings.Contains(lowerH, "tel"):
+			m[h] = contactVal
+		case strings.Contains(lowerH, "link") || strings.Contains(lowerH, "url"):
+			m[h] = postURL
+		default:
+			m[h] = ""
+		}
+	}
+	return m
+}
+
 // PrepareDataWithAI prompts Gemini or OpenAI to extract data matching the sheet's exact headers.
 func (s *GoogleSheetsService) PrepareDataWithAI(
 	ctx context.Context,
@@ -1113,11 +1201,41 @@ Guidelines:
 	endIdx := strings.LastIndex(cleanJSON, "}")
 	if startIdx != -1 && endIdx != -1 && endIdx > startIdx {
 		cleanJSON = cleanJSON[startIdx : endIdx+1]
+	} else if startIdx != -1 && (endIdx == -1 || endIdx <= startIdx) {
+		trimmed := strings.TrimRight(strings.TrimSpace(cleanJSON[startIdx:]), ", \t\r\n")
+		cleanJSON = trimmed + "\n}"
 	}
 
 	var mappedData map[string]interface{}
 	if err := json.Unmarshal([]byte(cleanJSON), &mappedData); err != nil {
-		return nil, nil, fmt.Errorf("failed to parse AI JSON response: %w (raw response: %s)", err, cleanJSON)
+		log.Printf("[GoogleSheets] Failed to parse AI JSON response (%v, raw: %s); attempting fallback...", err, cleanJSON)
+
+		// 1. Try OpenAI fallback if provider was google_ai
+		if selectedProvider != "openai" {
+			fallbackJSON, fallbackErr := aiSvc.GenerateContentWithOpenAI(systemPrompt, rawContent, "", "gpt-4o-mini")
+			if fallbackErr == nil && strings.TrimSpace(fallbackJSON) != "" {
+				cf := strings.TrimSpace(fallbackJSON)
+				if strings.HasPrefix(cf, "```") {
+					l := strings.Split(cf, "\n")
+					if len(l) > 2 {
+						cf = strings.Join(l[1:len(l)-1], "\n")
+					}
+				}
+				cf = strings.TrimSpace(cf)
+				sI := strings.Index(cf, "{")
+				eI := strings.LastIndex(cf, "}")
+				if sI != -1 && eI != -1 && eI > sI {
+					cf = cf[sI : eI+1]
+				}
+				_ = json.Unmarshal([]byte(cf), &mappedData)
+			}
+		}
+
+		// 2. If mappedData is still empty, apply direct heuristic mapping from extracted facts
+		if len(mappedData) == 0 {
+			log.Printf("[GoogleSheets] AI JSON extraction unavailable; falling back to heuristic property parser")
+			mappedData = heuristicMapListingData(headers, rawContent, condoName, strings.TrimSpace(postURL), strings.TrimSpace(listingCode))
+		}
 	}
 
 	// Post-processing safeguard: Ensure 100% English translation on all mapped fields
