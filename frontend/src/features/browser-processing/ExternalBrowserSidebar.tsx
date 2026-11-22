@@ -2353,54 +2353,16 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: '10px',
-        paddingBottom: '1rem',
+        gap: '8px',
+        paddingBottom: '0.75rem',
         borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <FiImage size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                Reference Layout
-              </span>
-              <span
-                style={{
-                  fontSize: '0.53125rem',
-                  fontWeight: 700,
-                  padding: '1px 5px',
-                  borderRadius: '4px',
-                  backgroundColor: 'rgba(236, 72, 153, 0.12)',
-                  color: '#EC4899',
-                  border: '1px solid rgba(236, 72, 153, 0.25)',
-                }}
-              >
-                1st in Chat
-              </span>
-            </div>
-            <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-              Example design attached first to guide composition
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span
-            style={{
-              fontSize: '0.5625rem',
-              fontWeight: 600,
-              padding: '2px 7px',
-              borderRadius: '10px',
-              backgroundColor: referenceImage ? 'rgba(16, 185, 129, 0.12)' : (isDark ? 'rgba(255,255,255,0.05)' : '#F1F5F9'),
-              color: referenceImage ? '#10B981' : 'var(--text-muted)',
-              border: '1px solid var(--border-color)',
-            }}
-          >
-            {referenceImage ? 'Attached' : 'Ready'}
-          </span>
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <FiImage size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+          Reference Layout
+        </span>
       </div>
 
       {referenceImage ? (
@@ -2631,105 +2593,107 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', paddingBottom: '2rem' }}>
       {/* Node Header Banner */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.75rem',
-          padding: '0.875rem 1rem',
-          borderRadius: '12px',
-          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-          border: '1px solid var(--border-color)',
-          boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
-        }}
-      >
+      {!isHeroNode && (
         <div
           style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '8px',
-            background: isTabGroupNode
-              ? 'linear-gradient(135deg, #06B6D4, #0891B2)'
-              : isProfileNode
-              ? 'linear-gradient(135deg, #3B82F6, #1D4ED8)'
-              : 'linear-gradient(135deg, #6366F1, #4F46E5)',
-            color: '#FFFFFF',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
+            gap: '0.75rem',
+            padding: '0.875rem 1rem',
+            borderRadius: '12px',
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+            border: '1px solid var(--border-color)',
+            boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
           }}
         >
-          {isTabGroupNode ? <FiLayers size={16} /> : isProfileNode ? <FaChrome size={17} /> : <FiMonitor size={16} />}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-            {isTabGroupNode
-              ? `Tab Group — ${currentGroup.name || boxConfig.browserGroupName || boxConfig.title || (isHeroNode ? 'FB Hero' : 'Enhance IMG')}`
-              : isProfileNode
-              ? `Chrome Profile — ${activeProfile?.display_name || boxConfig.browserProfileName || 'Hsu'}`
-              : 'External Browser Node'}
+          <div
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '8px',
+              background: isTabGroupNode
+                ? 'linear-gradient(135deg, #06B6D4, #0891B2)'
+                : isProfileNode
+                ? 'linear-gradient(135deg, #3B82F6, #1D4ED8)'
+                : 'linear-gradient(135deg, #6366F1, #4F46E5)',
+              color: '#FFFFFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            {isTabGroupNode ? <FiLayers size={16} /> : isProfileNode ? <FaChrome size={17} /> : <FiMonitor size={16} />}
           </div>
-          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', rowGap: '4px', marginTop: '3px' }}>
-            {isTabGroupNode ? (
-              <>
-                <span style={{ whiteSpace: 'nowrap' }}>
-                  Connected: <strong style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{boxConfig.browserProfileName || connectedProfileName || activeProfile?.display_name || 'Note Zin Wai'}</strong> ({boxConfig.browserProfileKey || activeProfile?.profile_key || 'Pro'})
-                </span>
-                {connectedProfileNodeId && onOpenProfileNode && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenProfileNode(connectedProfileNodeId)}
-                    title="View Chrome Profile configuration"
-                    style={{
-                      background: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
-                      border: isDark ? '1px solid rgba(59, 130, 246, 0.25)' : '1px solid rgba(59, 130, 246, 0.2)',
-                      padding: '1px 6px',
-                      borderRadius: '4px',
-                      color: isDark ? '#93C5FD' : '#2563EB',
-                      fontSize: '0.625rem',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '3px',
-                      whiteSpace: 'nowrap',
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    <FiArrowLeft size={9} /> View
-                  </button>
-                )}
-                {boxConfig.reuseSessionTabs !== false && (
-                  <span
-                    title="Memorized worker tabs bound to this group"
-                    style={{
-                      fontSize: '0.625rem',
-                      fontWeight: 600,
-                      color: '#10B981',
-                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#DCFCE7',
-                      border: isDark ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(16, 185, 129, 0.3)',
-                      padding: '1px 6px',
-                      borderRadius: '4px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '3px',
-                      whiteSpace: 'nowrap',
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    💾 Memorized
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              {isTabGroupNode
+                ? `Tab Group — ${currentGroup.name || boxConfig.browserGroupName || boxConfig.title || (isHeroNode ? 'FB Hero' : 'Enhance IMG')}`
+                : isProfileNode
+                ? `Chrome Profile — ${activeProfile?.display_name || boxConfig.browserProfileName || 'Hsu'}`
+                : 'External Browser Node'}
+            </div>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', rowGap: '4px', marginTop: '3px' }}>
+              {isTabGroupNode ? (
+                <>
+                  <span style={{ whiteSpace: 'nowrap' }}>
+                    Connected: <strong style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{boxConfig.browserProfileName || connectedProfileName || activeProfile?.display_name || 'Note Zin Wai'}</strong> ({boxConfig.browserProfileKey || activeProfile?.profile_key || 'Pro'})
                   </span>
-                )}
-              </>
-            ) : isProfileNode ? (
-              `${activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro')} · Connected Tab Groups`
-            ) : (
-              'Chrome Automation · Processing Pipeline'
-            )}
+                  {connectedProfileNodeId && onOpenProfileNode && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenProfileNode(connectedProfileNodeId)}
+                      title="View Chrome Profile configuration"
+                      style={{
+                        background: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
+                        border: isDark ? '1px solid rgba(59, 130, 246, 0.25)' : '1px solid rgba(59, 130, 246, 0.2)',
+                        padding: '1px 6px',
+                        borderRadius: '4px',
+                        color: isDark ? '#93C5FD' : '#2563EB',
+                        fontSize: '0.625rem',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        whiteSpace: 'nowrap',
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      <FiArrowLeft size={9} /> View
+                    </button>
+                  )}
+                  {boxConfig.reuseSessionTabs !== false && (
+                    <span
+                      title="Memorized worker tabs bound to this group"
+                      style={{
+                        fontSize: '0.625rem',
+                        fontWeight: 600,
+                        color: '#10B981',
+                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#DCFCE7',
+                        border: isDark ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(16, 185, 129, 0.3)',
+                        padding: '1px 6px',
+                        borderRadius: '4px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        whiteSpace: 'nowrap',
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      💾 Memorized
+                    </span>
+                  )}
+                </>
+              ) : isProfileNode ? (
+                `${activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro')} · Connected Tab Groups`
+              ) : (
+                'Chrome Automation · Processing Pipeline'
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {!isProfileNode && !isTabGroupNode ? (
         <>
@@ -3911,58 +3875,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                         }}
                       />
                     )}
-
-                    {/* View Prompt Button & Quick Copy Button */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onCloseSettingsSidebox?.();
-                          setShowPromptViewSidebox(true);
-                        }}
-                        style={{
-                          flex: 1,
-                          height: '30px',
-                          borderRadius: '6px',
-                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                          backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                          color: isDark ? '#F0F6FC' : '#0F172A',
-                          fontSize: '0.6875rem',
-                          fontWeight: 600,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <FiZap size={13} style={{ color: '#10B981' }} />
-                        <span>View Prompt</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleCopyPrompt}
-                        title="Copy full prompt"
-                        style={{
-                          height: '30px',
-                          padding: '0 10px',
-                          borderRadius: '6px',
-                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                          backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                          color: isCopied ? '#10B981' : (isDark ? '#8B949E' : '#64748B'),
-                          fontSize: '0.6875rem',
-                          fontWeight: 600,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {isCopied ? <FiCheck size={12} /> : <FiCopy size={12} />}
-                        <span>{isCopied ? 'Copied' : 'Copy'}</span>
-                      </button>
-                    </div>
                   </div>
                 </div>
 
@@ -4605,50 +4517,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             <FiPlay size={12} />
             <span>Resume Missing Photos ({missingPositions.length})</span>
           </button>
-        )}
-
-        {/* ── CHATGPT ATTACHMENT PIPELINE SUMMARY BAR (For Hero / Generate Image mode) ── */}
-        {isHeroNode && (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '5px',
-              padding: '8px 10px',
-              borderRadius: '8px',
-              backgroundColor: isDark ? 'rgba(0, 0, 0, 0.3)' : 'rgba(0, 0, 0, 0.03)',
-              border: '1px solid var(--border-color)',
-              fontSize: '0.65625rem',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-              <span style={{ fontWeight: 600 }}>📎 ChatGPT Attachments:</span>
-              <span style={{ fontWeight: 700, color: 'var(--accent-primary)' }}>
-                Total: {(useReferenceImage && referenceImage ? 1 : 0) + (useCondoImages ? Math.min(condoImagesCount, selectedCondoCount || condoImagesCount) : 0) + (useEnhancedImages ? Math.min(enhancedImagesCount, (enhancedImagesSource === 'enhanced' ? availableEnhancedPhotos.length : availableSourcePhotos.length) || enhancedImagesCount) : 0)} Photos
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', color: 'var(--text-secondary)' }}>
-              {useReferenceImage && referenceImage && (
-                <span style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(236, 72, 153, 0.15)', color: '#EC4899', fontWeight: 600 }}>
-                  1 Ref
-                </span>
-              )}
-              {useCondoImages && (
-                <span style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10B981', fontWeight: 600 }}>
-                  +{Math.min(condoImagesCount, selectedCondoCount || condoImagesCount)} Condo
-                </span>
-              )}
-              {useEnhancedImages && (
-                <span style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#8B5CF6', fontWeight: 600 }}>
-                  +{Math.min(enhancedImagesCount, (enhancedImagesSource === 'enhanced' ? availableEnhancedPhotos.length : availableSourcePhotos.length) || enhancedImagesCount)} {enhancedImagesSource === 'enhanced' ? 'Enhanced' : 'Source'}
-                </span>
-              )}
-              <span>➔</span>
-              <span style={{ color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }}>
-                💬 {promptSourceMode === 'upstream_ai' ? selectedUpstreamPromptObj?.title || 'AI Model Prompt' : effectivePromptKey || 'Direct Prompt'}
-              </span>
-            </div>
-          </div>
         )}
 
         {/* Run Action Button (Theme Primary Clean Apple Style) */}
