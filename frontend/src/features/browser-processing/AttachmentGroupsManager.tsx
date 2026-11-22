@@ -361,7 +361,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
 
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
-        <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Attach:</span>
+        <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', whiteSpace: 'nowrap', flexShrink: 0 }}>Attach:</span>
         <div
           style={{
             display: 'inline-flex',
@@ -869,8 +869,8 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                       transition: 'all 0.15s ease',
                                     }}
                                   >
-                                    <FiCheckSquare size={12} color={isManuallyChosen ? '#FFFFFF' : (isDark ? '#60A5FA' : '#2563EB')} />
-                                    <span>
+                                    <FiCheckSquare size={12} color={isManuallyChosen ? '#FFFFFF' : (isDark ? '#60A5FA' : '#2563EB')} style={{ flexShrink: 0 }} />
+                                    <span style={{ whiteSpace: 'nowrap' }}>
                                       {isManuallyChosen
                                         ? `Manual: ${step.selectedIndices!.length} Chosen`
                                         : 'Manual Choose'}
@@ -1024,8 +1024,8 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
 
                 {/* Source 2: Upload */}
                 {step.sourceType === 'upload' && (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flexShrink: 0 }}>
                       <label
                         style={{
                           height: '26px',
@@ -1040,10 +1040,13 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: '6px',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                          userSelect: 'none',
                         }}
                       >
-                        <FiUpload size={11} style={{ color: '#58A6FF' }} />
-                        <span>{step.uploadedUrls?.length ? `${step.uploadedUrls.length}/${step.count} Selected` : 'Choose Files'}</span>
+                        <FiUpload size={11} style={{ color: '#58A6FF', flexShrink: 0 }} />
+                        <span style={{ whiteSpace: 'nowrap' }}>{step.uploadedUrls?.length ? `${step.uploadedUrls.length}/${step.count} Selected` : 'Choose Files'}</span>
                         <input
                           type="file"
                           multiple
@@ -1068,7 +1071,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                           }}
                         />
                       </label>
-                      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', whiteSpace: 'nowrap', flexShrink: 0 }}>
                         Max {step.count} image(s)
                       </span>
                     </div>
@@ -1322,8 +1325,8 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                 transition: 'all 0.15s ease',
                               }}
                             >
-                              <FiCheckSquare size={12} color={isManuallyChosen ? '#FFFFFF' : (isDark ? '#60A5FA' : '#2563EB')} />
-                              <span>
+                              <FiCheckSquare size={12} color={isManuallyChosen ? '#FFFFFF' : (isDark ? '#60A5FA' : '#2563EB')} style={{ flexShrink: 0 }} />
+                              <span style={{ whiteSpace: 'nowrap' }}>
                                 {isManuallyChosen
                                   ? `Manual: ${step.selectedIndices!.length} Chosen`
                                   : 'Manual Choose'}
