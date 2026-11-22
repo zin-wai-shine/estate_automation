@@ -787,39 +787,47 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                             ? `Reloading photos in ${condoName || step.folderName || 'folder'}...`
                             : `Found ${step.folderImages?.length || 0} photos in ${condoName || step.folderName || 'folder'}`}
                         </span>
-                        {step.folderImages && step.folderImages.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setManualChooseModalStepId(step.id)}
-                            style={{
-                              padding: '2px 8px',
-                              borderRadius: '9999px',
-                              fontSize: '0.59375rem',
-                              fontWeight: 600,
-                              border: (step.selectedIndices && step.selectedIndices.length > 0)
-                                ? (isDark ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid #A7F3D0')
-                                : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                              backgroundColor: (step.selectedIndices && step.selectedIndices.length > 0)
-                                ? (isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5')
-                                : (isDark ? '#21262D' : '#F1F5F9'),
-                              color: (step.selectedIndices && step.selectedIndices.length > 0)
-                                ? (isDark ? '#34D399' : '#059669')
-                                : (isDark ? '#C9D1D9' : '#475569'),
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              flexShrink: 0,
-                            }}
-                          >
-                            <FiCheckSquare size={11} />
-                            <span>
-                              {step.selectedIndices && step.selectedIndices.length > 0
-                                ? `Manual: ${step.selectedIndices.length} Chosen`
-                                : 'Manual Choose'}
-                            </span>
-                          </button>
-                        )}
+                        {step.folderImages && step.folderImages.length > 0 && (() => {
+                          const isManuallyChosen = Boolean(step.selectedIndices && step.selectedIndices.length > 0);
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setManualChooseModalStepId(step.id)}
+                              style={{
+                                height: '24px',
+                                padding: '0 9px',
+                                borderRadius: '5px',
+                                fontSize: '0.625rem',
+                                fontWeight: 600,
+                                border: isManuallyChosen
+                                  ? '1px solid #1D4ED8'
+                                  : (isDark ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid #BFDBFE'),
+                                backgroundColor: isManuallyChosen
+                                  ? '#2563EB'
+                                  : (isDark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF'),
+                                color: isManuallyChosen
+                                  ? '#FFFFFF'
+                                  : (isDark ? '#60A5FA' : '#2563EB'),
+                                boxShadow: isManuallyChosen
+                                  ? '0 1px 3px rgba(37, 99, 235, 0.4), 0 1px 2px rgba(0, 0, 0, 0.1)'
+                                  : (isDark ? '0 1px 2px rgba(0, 0, 0, 0.2)' : '0 1px 2px rgba(0, 0, 0, 0.05)'),
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                flexShrink: 0,
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              <FiCheckSquare size={12} color={isManuallyChosen ? '#FFFFFF' : (isDark ? '#60A5FA' : '#2563EB')} />
+                              <span>
+                                {isManuallyChosen
+                                  ? `Manual: ${step.selectedIndices!.length} Chosen`
+                                  : 'Manual Choose'}
+                              </span>
+                            </button>
+                          );
+                        })()}
                       </div>
                       {renderCountStepper(step)}
                     </div>
@@ -1203,39 +1211,47 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                             ? `Found ${sourceImages.length} photo${sourceImages.length !== 1 ? 's' : ''} in ${selectedSource?.title || 'Workflow'}`
                             : `Found 0 photos in ${selectedSource?.title || 'Workflow'} (Awaiting results)`}
                         </span>
-                        {sourceImages.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setManualChooseModalStepId(step.id)}
-                            style={{
-                              padding: '2px 8px',
-                              borderRadius: '9999px',
-                              fontSize: '0.59375rem',
-                              fontWeight: 600,
-                              border: (step.selectedIndices && step.selectedIndices.length > 0)
-                                ? (isDark ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid #A7F3D0')
-                                : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                              backgroundColor: (step.selectedIndices && step.selectedIndices.length > 0)
-                                ? (isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5')
-                                : (isDark ? '#21262D' : '#F1F5F9'),
-                              color: (step.selectedIndices && step.selectedIndices.length > 0)
-                                ? (isDark ? '#34D399' : '#059669')
-                                : (isDark ? '#C9D1D9' : '#475569'),
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              flexShrink: 0,
-                            }}
-                          >
-                            <FiCheckSquare size={11} />
-                            <span>
-                              {step.selectedIndices && step.selectedIndices.length > 0
-                                ? `Manual: ${step.selectedIndices.length} Chosen`
-                                : 'Manual Choose'}
-                            </span>
-                          </button>
-                        )}
+                        {sourceImages.length > 0 && (() => {
+                          const isManuallyChosen = Boolean(step.selectedIndices && step.selectedIndices.length > 0);
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setManualChooseModalStepId(step.id)}
+                              style={{
+                                height: '24px',
+                                padding: '0 9px',
+                                borderRadius: '5px',
+                                fontSize: '0.625rem',
+                                fontWeight: 600,
+                                border: isManuallyChosen
+                                  ? '1px solid #1D4ED8'
+                                  : (isDark ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid #BFDBFE'),
+                                backgroundColor: isManuallyChosen
+                                  ? '#2563EB'
+                                  : (isDark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF'),
+                                color: isManuallyChosen
+                                  ? '#FFFFFF'
+                                  : (isDark ? '#60A5FA' : '#2563EB'),
+                                boxShadow: isManuallyChosen
+                                  ? '0 1px 3px rgba(37, 99, 235, 0.4), 0 1px 2px rgba(0, 0, 0, 0.1)'
+                                  : (isDark ? '0 1px 2px rgba(0, 0, 0, 0.2)' : '0 1px 2px rgba(0, 0, 0, 0.05)'),
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                flexShrink: 0,
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              <FiCheckSquare size={12} color={isManuallyChosen ? '#FFFFFF' : (isDark ? '#60A5FA' : '#2563EB')} />
+                              <span>
+                                {isManuallyChosen
+                                  ? `Manual: ${step.selectedIndices!.length} Chosen`
+                                  : 'Manual Choose'}
+                              </span>
+                            </button>
+                          );
+                        })()}
                       </div>
                       {renderCountStepper(step)}
                     </div>
