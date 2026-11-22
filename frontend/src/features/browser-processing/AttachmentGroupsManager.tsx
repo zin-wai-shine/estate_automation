@@ -158,6 +158,8 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
   const [activeWorkflowDropdownStepId, setActiveWorkflowDropdownStepId] = useState<string | null>(null);
   const [manualChooseModalStepId, setManualChooseModalStepId] = useState<string | null>(null);
   const [folderSearchFilter, setFolderSearchFilter] = useState<string>('');
+  // In-memory condo folder images cache: folderName.toLowerCase() -> images
+  const condoImagesCacheRef = React.useRef<Record<string, Array<{ filename: string; data_url?: string; full_path?: string; index?: number }>>>({});
 
   // Resolved workflow sources with fallbacks
   const activeSources = useMemo<WorkflowImageSource[]>(() => {
@@ -208,20 +210,41 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
     } catch (_) {}
   };
 
-  const fetchImagesForStep = async (stepId: string, folder: string) => {
+  const fetchImagesForStep = async (stepId: string, folder: string, forceReload: boolean = false) => {
+    const trimmed = (folder || '').trim();
+    if (!trimmed) return;
+    const cacheKey = trimmed.toLowerCase();
+
+    // In-memory cache check: if already loaded and not force reloading, apply instantly with zero network/disk delay!
+    if (!forceReload && condoImagesCacheRef.current[cacheKey] && condoImagesCacheRef.current[cacheKey].length > 0) {
+      handleUpdateStep(stepId, {
+        folderImages: condoImagesCacheRef.current[cacheKey],
+      });
+      return;
+    }
+
     try {
       const resp = await fetch(
-        `http://127.0.0.1:9224/condo-images?condo_name=${encodeURIComponent(folder)}&folder=${encodeURIComponent(folder)}&base_dir=${encodeURIComponent(baseCondoDirectory)}`
+        `http://127.0.0.1:9224/condo-images?condo_name=${encodeURIComponent(trimmed)}&folder=${encodeURIComponent(trimmed)}&base_dir=${encodeURIComponent(baseCondoDirectory)}`
       );
       const data = await resp.json();
-      if (data?.status === 'success' && Array.isArray(data.images)) {
+      if (data?.status === 'success') {
+        const rawList = (data.available_images && data.available_images.length > 0)
+          ? data.available_images
+          : (data.images || []);
+
+        const mappedImages = rawList.map((im: any, idx: number) => ({
+          filename: im.filename || `Photo #${idx + 1}`,
+          data_url: im.data_url || im.url || '',
+          full_path: im.full_path || '',
+          index: idx + 1,
+        }));
+
+        // Cache the parsed images for this condo/folder
+        condoImagesCacheRef.current[cacheKey] = mappedImages;
+
         handleUpdateStep(stepId, {
-          folderImages: data.images.map((im: any, idx: number) => ({
-            filename: im.filename || `Photo #${idx + 1}`,
-            data_url: im.data_url || '',
-            full_path: im.full_path || '',
-            index: idx + 1,
-          })),
+          folderImages: mappedImages,
         });
       }
     } catch (_) {}
@@ -713,12 +736,12 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                         onClick={() => {
                           const target = (condoName || step.folderName || '').trim();
                           if (target) {
-                            fetchImagesForStep(step.id, target);
+                            fetchImagesForStep(step.id, target, true);
                           } else {
                             loadCondoFolders();
                           }
                         }}
-                        title="Reload folder photos"
+                        title="Reload folder photos from disk"
                         style={{
                           height: '26px',
                           padding: '0 8px',
@@ -780,7 +803,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                         : Array.from({ length: Math.min(targetCount, step.folderImages.length) }, (_, i) => i);
 
                       return (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', padding: '2px 0' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflowX: 'auto', padding: '3px 0' }}>
                           {step.folderImages.map((img, idx) => {
                             const isSelected = currentSelected.includes(idx);
                             const selectionOrder = currentSelected.indexOf(idx) + 1;
@@ -809,36 +832,39 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                   handleUpdateStep(step.id, { selectedIndices: updated });
                                 }}
                                 style={{
-                                  width: '42px',
-                                  height: '42px',
-                                  borderRadius: '4px',
-                                  border: isSelected ? '1.5px solid #58A6FF' : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
-                                  opacity: isSelected ? 1 : 0.4,
+                                  width: '64px',
+                                  height: '64px',
+                                  borderRadius: '6px',
+                                  border: isSelected ? '2px solid #58A6FF' : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
+                                  opacity: isSelected ? 1 : 0.45,
                                   overflow: 'hidden',
                                   position: 'relative',
                                   flexShrink: 0,
                                   cursor: 'pointer',
                                   backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
+                                  boxShadow: isSelected ? '0 0 0 1px #58A6FF' : 'none',
+                                  transition: 'all 0.15s ease',
                                 }}
                               >
                                 {img.data_url ? (
                                   <img src={img.data_url} alt={`#${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 ) : (
                                   <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <FiImage size={11} color={isDark ? '#8B949E' : '#64748B'} />
+                                    <FiImage size={16} color={isDark ? '#8B949E' : '#64748B'} />
                                   </div>
                                 )}
                                 <span
                                   style={{
                                     position: 'absolute',
-                                    bottom: 1,
-                                    right: 1,
-                                    backgroundColor: isSelected ? 'rgba(37,99,235,0.9)' : 'rgba(0,0,0,0.65)',
+                                    bottom: 2,
+                                    right: 2,
+                                    backgroundColor: isSelected ? 'rgba(37,99,235,0.92)' : 'rgba(0,0,0,0.7)',
                                     color: '#fff',
-                                    fontSize: '7px',
+                                    fontSize: '8px',
                                     fontWeight: 600,
-                                    padding: '1px 3px',
-                                    borderRadius: '2px',
+                                    padding: '1px 4px',
+                                    borderRadius: '3px',
+                                    backdropFilter: 'blur(2px)',
                                   }}
                                 >
                                   {isSelected ? `✓ #${selectionOrder}` : `#${idx + 1}`}
@@ -1157,8 +1183,8 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
 
                     {/* Thumbnail carousel with toggleable selection */}
                     {sourceImages && sourceImages.length > 0 && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', padding: '2px 0' }}>
-                        {sourceImages.slice(0, 15).map((img: any, tIdx: number) => {
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflowX: 'auto', padding: '3px 0' }}>
+                        {sourceImages.map((img: any, tIdx: number) => {
                           const isSelected = step.selectedIndices && step.selectedIndices.length > 0
                             ? step.selectedIndices.includes(tIdx)
                             : tIdx < step.count;
@@ -1195,36 +1221,39 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                 });
                               }}
                               style={{
-                                width: '42px',
-                                height: '42px',
-                                borderRadius: '4px',
-                                border: isSelected ? '1.5px solid #58A6FF' : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
-                                opacity: isSelected ? 1 : 0.4,
+                                width: '64px',
+                                height: '64px',
+                                borderRadius: '6px',
+                                border: isSelected ? '2px solid #58A6FF' : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
+                                opacity: isSelected ? 1 : 0.45,
                                 overflow: 'hidden',
                                 position: 'relative',
                                 flexShrink: 0,
                                 cursor: 'pointer',
                                 backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
+                                boxShadow: isSelected ? '0 0 0 1px #58A6FF' : 'none',
+                                transition: 'all 0.15s ease',
                               }}
                             >
                               {img.url ? (
                                 <img src={img.url} alt={`#${tIdx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                               ) : (
                                 <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                  <FiImage size={12} color={isDark ? '#8B949E' : '#64748B'} />
+                                  <FiImage size={16} color={isDark ? '#8B949E' : '#64748B'} />
                                 </div>
                               )}
                               <span
                                 style={{
                                   position: 'absolute',
-                                  bottom: 1,
-                                  right: 1,
-                                  backgroundColor: isSelected ? 'rgba(37,99,235,0.85)' : 'rgba(0,0,0,0.65)',
+                                  bottom: 2,
+                                  right: 2,
+                                  backgroundColor: isSelected ? 'rgba(37,99,235,0.92)' : 'rgba(0,0,0,0.7)',
                                   color: '#fff',
-                                  fontSize: '7px',
+                                  fontSize: '8px',
                                   fontWeight: 600,
-                                  padding: '1px 3px',
-                                  borderRadius: '2px',
+                                  padding: '1px 4px',
+                                  borderRadius: '3px',
+                                  backdropFilter: 'blur(2px)',
                                 }}
                               >
                                 {isSelected ? `✓ #${selectionIndex}` : `#${tIdx + 1}`}
@@ -1307,13 +1336,13 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
-                width: '540px',
-                maxWidth: '92vw',
-                maxHeight: '85vh',
+                width: '780px',
+                maxWidth: '95vw',
+                maxHeight: '90vh',
                 backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                borderRadius: '8px',
+                borderRadius: '10px',
                 border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+                boxShadow: '0 24px 48px rgba(0,0,0,0.6)',
                 display: 'flex',
                 flexDirection: 'column',
                 overflow: 'hidden',
@@ -1322,37 +1351,50 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
               {/* Modal Header */}
               <div
                 style={{
-                  padding: '12px 16px',
+                  padding: '14px 18px',
                   borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <FiCheckSquare size={16} style={{ color: '#58A6FF' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                      color: '#58A6FF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <FiCheckSquare size={17} />
+                  </div>
                   <div>
-                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                    <div style={{ fontSize: '0.875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
                       Manual Choose Photos
                     </div>
-                    <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                      Select up to {maxAllowed} images from {isFolder ? (condoName || modalStep.folderName || 'Condo Folder') : (selectedSrc?.title || 'Workflow')}
+                    <div style={{ fontSize: '0.65625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                      Select up to {maxAllowed} images from {isFolder ? (condoName || modalStep.folderName || 'Condo Folder') : (selectedSrc?.title || 'Workflow')} ({imagesList.length} photos found)
                     </div>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setManualChooseModalStepId(null)}
-                  style={{ background: 'transparent', border: 'none', color: isDark ? '#8B949E' : '#64748B', cursor: 'pointer', padding: '4px' }}
+                  style={{ background: 'transparent', border: 'none', color: isDark ? '#8B949E' : '#64748B', cursor: 'pointer', padding: '6px' }}
                 >
-                  <FiX size={16} />
+                  <FiX size={18} />
                 </button>
               </div>
 
               {/* Action Toolbar */}
               <div
                 style={{
-                  padding: '8px 16px',
+                  padding: '10px 18px',
                   backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
                   borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
                   display: 'flex',
@@ -1360,10 +1402,10 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                   justifyContent: 'space-between',
                 }}
               >
-                <span style={{ fontSize: '0.6875rem', fontWeight: 500, color: isDark ? '#C9D1D9' : '#334155' }}>
-                  Selected: <strong style={{ color: '#58A6FF' }}>{currentSelected.length}</strong> / {maxAllowed} max
+                <span style={{ fontSize: '0.71875rem', fontWeight: 500, color: isDark ? '#C9D1D9' : '#334155' }}>
+                  Selected: <strong style={{ color: '#58A6FF', fontSize: '0.8125rem' }}>{currentSelected.length}</strong> / {maxAllowed} max
                 </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <button
                     type="button"
                     onClick={() => {
@@ -1371,12 +1413,13 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                       handleUpdateStep(modalStep.id, isFolder ? { selectedIndices: firstN } : { selectedIndices: firstN, count: firstN.length });
                     }}
                     style={{
-                      padding: '3px 8px',
-                      borderRadius: '4px',
+                      padding: '4px 10px',
+                      borderRadius: '5px',
                       border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                       backgroundColor: isDark ? '#21262D' : '#FFFFFF',
                       color: isDark ? '#C9D1D9' : '#334155',
-                      fontSize: '0.625rem',
+                      fontSize: '0.65625rem',
+                      fontWeight: 500,
                       cursor: 'pointer',
                     }}
                   >
@@ -1390,12 +1433,13 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                         handleUpdateStep(modalStep.id, { selectedIndices: all, count: all.length });
                       }}
                       style={{
-                        padding: '3px 8px',
-                        borderRadius: '4px',
+                        padding: '4px 10px',
+                        borderRadius: '5px',
                         border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                         backgroundColor: isDark ? '#21262D' : '#FFFFFF',
                         color: isDark ? '#C9D1D9' : '#334155',
-                        fontSize: '0.625rem',
+                        fontSize: '0.65625rem',
+                        fontWeight: 500,
                         cursor: 'pointer',
                       }}
                     >
@@ -1406,12 +1450,13 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                     type="button"
                     onClick={() => handleUpdateStep(modalStep.id, isFolder ? { selectedIndices: [0] } : { selectedIndices: [0], count: 1 })}
                     style={{
-                      padding: '3px 8px',
-                      borderRadius: '4px',
+                      padding: '4px 10px',
+                      borderRadius: '5px',
                       border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                       backgroundColor: isDark ? '#21262D' : '#FFFFFF',
                       color: isDark ? '#C9D1D9' : '#334155',
-                      fontSize: '0.625rem',
+                      fontSize: '0.65625rem',
+                      fontWeight: 500,
                       cursor: 'pointer',
                     }}
                   >
@@ -1426,10 +1471,10 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                   padding: '16px',
                   overflowY: 'auto',
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))',
-                  gap: '10px',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                  gap: '12px',
                   flex: 1,
-                  maxHeight: '400px',
+                  maxHeight: '520px',
                 }}
               >
                 {imagesList.map((img: any, idx: number) => {
@@ -1472,56 +1517,78 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                       }}
                       style={{
                         aspectRatio: '1',
-                        borderRadius: '6px',
-                        border: isChosen ? '2px solid #58A6FF' : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                        opacity: isChosen ? 1 : 0.5,
+                        borderRadius: '8px',
+                        border: isChosen ? '2.5px solid #3B82F6' : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                        boxShadow: isChosen ? '0 0 0 1px #3B82F6, 0 4px 12px rgba(59,130,246,0.25)' : 'none',
+                        opacity: isChosen ? 1 : 0.6,
                         overflow: 'hidden',
                         position: 'relative',
                         cursor: 'pointer',
                         backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
+                        transition: 'all 0.15s ease',
                       }}
                     >
                       {img.url ? (
                         <img src={img.url} alt={`Photo #${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       ) : (
                         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <FiImage size={20} color={isDark ? '#8B949E' : '#64748B'} />
+                          <FiImage size={24} color={isDark ? '#8B949E' : '#64748B'} />
                         </div>
                       )}
                       <div
                         style={{
                           position: 'absolute',
-                          top: 4,
-                          right: 4,
-                          width: '18px',
-                          height: '18px',
-                          borderRadius: '4px',
+                          top: 6,
+                          right: 6,
+                          width: '22px',
+                          height: '22px',
+                          borderRadius: '5px',
                           backgroundColor: isChosen ? '#2563EB' : 'rgba(0,0,0,0.5)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           color: '#fff',
-                          fontSize: '10px',
+                          fontSize: '11px',
                           fontWeight: 700,
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
                         }}
                       >
                         {isChosen ? '✓' : ''}
                       </div>
-                      <span
+                      <div
                         style={{
                           position: 'absolute',
-                          bottom: 3,
-                          left: 3,
-                          backgroundColor: 'rgba(0,0,0,0.7)',
+                          bottom: 5,
+                          left: 5,
+                          right: 5,
+                          backgroundColor: 'rgba(0,0,0,0.75)',
+                          backdropFilter: 'blur(3px)',
                           color: '#fff',
-                          fontSize: '8px',
-                          padding: '1px 4px',
-                          borderRadius: '2px',
+                          fontSize: '9px',
+                          padding: '3px 6px',
+                          borderRadius: '4px',
                           fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '4px',
                         }}
                       >
-                        {isChosen ? `#${orderNum} (Img ${idx + 1})` : `Img #${idx + 1}`}
-                      </span>
+                        <span>{isChosen ? `✓ #${orderNum}` : `#${idx + 1}`}</span>
+                        <span
+                          style={{
+                            fontSize: '8px',
+                            opacity: 0.85,
+                            maxWidth: '75px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={img.filename}
+                        >
+                          {img.filename || `Photo ${idx + 1}`}
+                        </span>
+                      </div>
                     </div>
                   );
                 })}

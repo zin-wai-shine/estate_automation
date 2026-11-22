@@ -1510,29 +1510,35 @@ const server = http.createServer(async (req, res) => {
 
         const images = extractCondoImages123(folderPath);
 
-        // Also extract all available image files in this condo folder (so user can pick/swap/replace any of the 3 slots)
+        // Also extract all available image files in this condo folder (so user can pick/swap/replace any photos)
         let availableImages = [];
         try {
           const allEntries = fs.readdirSync(folderPath, { withFileTypes: true });
-          availableImages = allEntries
+          // Natural alphanumeric sort so 1.png, 2.png, ... 10.png are ordered correctly
+          const sortedEntries = allEntries
             .filter((f) => f.isFile() && /\.(png|jpg|jpeg|webp)$/i.test(f.name) && !f.name.startsWith('.'))
-            .map((f, i) => {
-              const fp = path.join(folderPath, f.name);
-              const ext = path.extname(f.name).toLowerCase().replace('.', '') || 'png';
-              const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-              const fileBuf = fs.readFileSync(fp);
-              return {
-                id: `avail-${i + 1}`,
-                filename: f.name,
-                mime_type: mime,
-                full_path: fp,
-                size_bytes: fileBuf.length,
-                data_url: `data:${mime};base64,${fileBuf.toString('base64')}`,
-              };
-            });
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+          availableImages = sortedEntries.map((f, i) => {
+            const fp = path.join(folderPath, f.name);
+            const ext = path.extname(f.name).toLowerCase().replace('.', '') || 'png';
+            const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+            const fileUrl = `http://127.0.0.1:${PORT}/condo-image-file?path=${encodeURIComponent(fp)}`;
+            return {
+              id: `avail-${i + 1}`,
+              index: i + 1,
+              filename: f.name,
+              mime_type: mime,
+              full_path: fp,
+              url: fileUrl,
+              data_url: fileUrl,
+            };
+          });
         } catch (scanErr) {
           console.warn('[COMPANION] Error reading available images in folder:', scanErr);
         }
+
+        const resolvedImages = availableImages.length > 0 ? availableImages : images;
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
@@ -1541,8 +1547,8 @@ const server = http.createServer(async (req, res) => {
           matched_folder: matchedDir,
           folder_path: folderPath,
           base_dir: CONDO_BASE_DIR,
-          images_found: images.length,
-          images: images,
+          images_found: resolvedImages.length,
+          images: resolvedImages,
           available_images: availableImages,
         }));
       } catch (err) {
@@ -1574,6 +1580,27 @@ const server = http.createServer(async (req, res) => {
       const customFolder = url.searchParams.get('folder_path') || url.searchParams.get('folderPath') || '';
       return handleCondoRequest(q, customBase, customFolder);
     }
+  }
+
+  // ── Serve Condo Image File Stream with HTTP Caching ──
+  if ((url.pathname === '/condo-image-file' || url.pathname === '/condo-image') && (req.method === 'GET' || req.method === 'HEAD')) {
+    const filePath = url.searchParams.get('path');
+    if (filePath && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      const stat = fs.statSync(filePath);
+      const ext = path.extname(filePath).toLowerCase().replace('.', '') || 'png';
+      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+      res.writeHead(200, {
+        'Content-Type': mime,
+        'Content-Length': stat.size,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=86400',
+      });
+      if (req.method === 'HEAD') return res.end();
+      fs.createReadStream(filePath).pipe(res);
+      return;
+    }
+    res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    return res.end(JSON.stringify({ error: 'Condo image not found' }));
   }
 
   // Preview all indexed condo directories
