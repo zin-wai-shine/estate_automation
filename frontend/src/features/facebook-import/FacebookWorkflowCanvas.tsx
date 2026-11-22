@@ -4664,9 +4664,21 @@ export const FacebookWorkflowCanvas = forwardRef<
         }
         seenZipNames.add(fileName);
 
-        const fullUrl = item.url.startsWith('/storage') ? `http://localhost:8085${item.url}` : item.url;
-        const resp = await fetch(fullUrl);
-        const blob = await resp.blob();
+        let blob: Blob;
+        if (item.url.startsWith('data:')) {
+          const commaIdx = item.url.indexOf(',');
+          const header = item.url.slice(0, commaIdx);
+          const base64Data = item.url.slice(commaIdx + 1);
+          const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+          const binaryStr = atob(base64Data);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let b = 0; b < binaryStr.length; b++) bytes[b] = binaryStr.charCodeAt(b);
+          blob = new Blob([bytes], { type: mimeType });
+        } else {
+          const fullUrl = item.url.startsWith('/storage') ? `http://localhost:8085${item.url}` : item.url;
+          const resp = await fetch(fullUrl);
+          blob = await resp.blob();
+        }
 
         if (folder) {
           folder.file(fileName, blob);
@@ -4710,11 +4722,13 @@ export const FacebookWorkflowCanvas = forwardRef<
         const isCrop = fromBox ? (fromBox.processType === 'image_crop' || fromBox.title?.toLowerCase().includes('cut') || fromBox.title?.toLowerCase().includes('crop')) : false;
         const isEnhance = fromBox ? (isEnhanceAIBox(fromBox) || isImageAIBox(fromBox, config.connections)) : false;
         if (isImages || isWatermark || isCrop || isEnhance) {
-          const boxAssets = fromBox ? combineMediaAssets.filter((a) => a.formatId === fromBox.id) : [];
+          const boxAssets = fromBox
+            ? combineMediaAssets.filter((a) => a.formatId === fromBox.id)
+            : (isImages ? combineMediaAssets.filter((a) => a.formatId === 'get-images') : []);
           const count = boxAssets.length > 0
             ? boxAssets.length
             : isImages
-              ? (images?.length || 0)
+              ? (effectiveImages?.length || 0)
               : 0;
           return {
             id: c.fromNodeId,
@@ -4729,7 +4743,11 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   useEffect(() => {
     const watermarkBoxes = (config.aiBoxes || []).filter((b) => isWatermarkAIBox(b) && b.enabled !== false);
-    if (watermarkBoxes.length === 0) {
+    const isImagesConnectedToCombine = (config.connections || []).some(
+      (c) => c.fromNodeId === 'get-images' && (c.toNodeId.startsWith('combine-box') || (config.combineBoxes || []).some((cb) => cb.id === c.toNodeId))
+    );
+
+    if (watermarkBoxes.length === 0 && !isImagesConnectedToCombine) {
       setCombineCropSlices([]);
       setCombineMediaAssets([]);
       return;
@@ -4752,6 +4770,26 @@ export const FacebookWorkflowCanvas = forwardRef<
 
     const run = async () => {
       const allAssets: CombineMediaAssetItem[] = [];
+
+      // If Get Images is connected to Combine Box, include raw images with formatId 'get-images'
+      if (isImagesConnectedToCombine && photoList.length > 0) {
+        photoList.forEach((img, idx) => {
+          const rawUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url) || '';
+          if (rawUrl) {
+            allAssets.push({
+              id: `get-images-photo-${idx}`,
+              url: rawUrl,
+              label: `Photo #${idx + 1}`,
+              formatTitle: 'Get Images',
+              photoIndex: idx,
+              tileIndex: 1,
+              totalTiles: 1,
+              isEnhanced: false,
+              formatId: 'get-images',
+            });
+          }
+        });
+      }
 
       for (const cropBox of watermarkBoxes) {
         const fmt =
@@ -4918,6 +4956,8 @@ export const FacebookWorkflowCanvas = forwardRef<
         const firstBoxAssets = allAssets.filter((a) => a.formatId === watermarkBoxes[0]?.id && a.photoIndex === (allAssets[0]?.photoIndex ?? 0));
         if (firstBoxAssets.length > 0) {
           setCombineCropSlices(firstBoxAssets.map((a) => ({ url: a.url, label: a.label, tileIndex: a.tileIndex, totalTiles: a.totalTiles, width: 1080, height: 1350, aspect: '4:5' })));
+        } else if (allAssets.length > 0) {
+          setCombineCropSlices(allAssets.slice(0, 1).map((a) => ({ url: a.url, label: a.label, tileIndex: a.tileIndex, totalTiles: a.totalTiles, width: 1080, height: 1350, aspect: '4:5' })));
         } else {
           setCombineCropSlices([]);
         }
@@ -14258,7 +14298,26 @@ export const FacebookWorkflowCanvas = forwardRef<
                             if (isWatermark || isCrop || isImages) {
                               const boxAssets = fromBox
                                 ? combineMediaAssets.filter((a) => a.formatId === fromBox.id)
-                                : (isImages ? combineMediaAssets : []);
+                                : (isImages
+                                    ? (
+                                        combineMediaAssets.filter((a) => a.formatId === 'get-images').length > 0
+                                          ? combineMediaAssets.filter((a) => a.formatId === 'get-images')
+                                          : (effectiveImages || []).map((img, idx) => {
+                                              const rawUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url) || '';
+                                              return {
+                                                id: `get-images-photo-${idx}`,
+                                                url: rawUrl,
+                                                label: `Photo #${idx + 1}`,
+                                                formatTitle: 'Get Images',
+                                                photoIndex: idx,
+                                                tileIndex: 1,
+                                                totalTiles: 1,
+                                                isEnhanced: false,
+                                                formatId: 'get-images',
+                                              };
+                                            }).filter((a) => a.url)
+                                      )
+                                    : []);
                               const boxCount = boxAssets.length > 0
                                 ? boxAssets.length
                                 : isImages
@@ -14425,7 +14484,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       if (fromBox) {
                                         setCombineMediaSideboxFormatFilter(fromBox.id);
                                       } else {
-                                        setCombineMediaSideboxFormatFilter('all');
+                                        setCombineMediaSideboxFormatFilter(isImages ? 'get-images' : 'all');
                                       }
                                       setShowCombineMediaSidebox(true);
                                     }}
