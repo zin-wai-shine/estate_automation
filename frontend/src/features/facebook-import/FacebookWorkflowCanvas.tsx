@@ -18250,6 +18250,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                           condoFromProject ||
                           (hasActiveExtractedPost && currentModalAIBox.browserCondoName ? currentModalAIBox.browserCondoName : '');
 
+                        const directIncomingConnIds = new Set(
+                          (config.connections || [])
+                            .filter((c) => c.toNodeId === currentModalAIBox.id)
+                            .map((c) => c.fromNodeId)
+                        );
+
                         const upstreamPrompts = config.aiBoxes
                           .filter(
                             (b) =>
@@ -18271,7 +18277,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 : ''),
                             generatedOutput: (aiGeneratedOutputs && aiGeneratedOutputs[b.id]) || '',
                             templateId: b.templateId,
-                          }));
+                            isDirectConnected: directIncomingConnIds.has(b.id),
+                          }))
+                          .sort((a, b) => {
+                            const aDirect = a.isDirectConnected ? 1 : 0;
+                            const bDirect = b.isDirectConnected ? 1 : 0;
+                            return bDirect - aDirect;
+                          });
 
                         const combinePromptItems = connectedIncomingCombineBoxes.map((cb) => {
                           const inputs = (config.connections || []).filter((c) => c.toNodeId === cb.id);

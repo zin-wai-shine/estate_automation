@@ -337,10 +337,17 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
   const [selectedUpstreamAiId, setSelectedUpstreamAiId] = useState<string>(() => {
     if (boxConfig.selectedUpstreamAiId) return boxConfig.selectedUpstreamAiId;
-    const matching = propertyContext?.upstreamPrompts?.find((p) =>
-      p.title.toLowerCase().includes('hero') || p.title.toLowerCase().includes('fb')
-    );
-    if (matching) return matching.id;
+    // 1. Direct match by node keyword (e.g. 'tiktok', 'hero', 'content')
+    const nodeKw = (boxConfig.title || '').toLowerCase();
+    if (nodeKw && propertyContext?.upstreamPrompts && propertyContext.upstreamPrompts.length > 0) {
+      const words = nodeKw.split(/[-_\s]+/).filter((w: string) => w.length > 2);
+      const kwMatch = propertyContext.upstreamPrompts.find((p) => {
+        const pt = p.title.toLowerCase();
+        return words.some((w: string) => pt.includes(w));
+      });
+      if (kwMatch) return kwMatch.id;
+    }
+    // 2. Pick the first upstream prompt (which is sorted with directly wired connections first)
     return propertyContext?.upstreamPrompts?.[0]?.id || '';
   });
 
@@ -1241,8 +1248,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   useEffect(() => {
     if (boxConfig.selectedUpstreamAiId && boxConfig.selectedUpstreamAiId !== selectedUpstreamAiId) {
       setSelectedUpstreamAiId(boxConfig.selectedUpstreamAiId);
+    } else if (!selectedUpstreamAiId && propertyContext?.upstreamPrompts && propertyContext.upstreamPrompts.length > 0) {
+      setSelectedUpstreamAiId(propertyContext.upstreamPrompts[0].id);
     }
-  }, [boxConfig.selectedUpstreamAiId]);
+  }, [boxConfig.selectedUpstreamAiId, propertyContext?.upstreamPrompts]);
 
   useEffect(() => {
     if (boxConfig.browserCustomPrompt !== undefined && boxConfig.browserCustomPrompt !== customPromptText) {
@@ -1651,6 +1660,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               _liveGroupTabs: tabs.map((t) => ({ id: t.id, title: t.title, url: t.url })),
               subtitle: `${tabs.length} Tabs`,
             });
+          } else if (isTabGroupNode) {
+            setSelectedGroupName(boxConfig.title || targetGroupName);
           }
         } else if (!isTabGroupNode) {
           setSelectedGroupName('');
@@ -2156,65 +2167,74 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     return profiles.find((p) => p.id === selectedProfileId) || profiles[0];
   }, [profiles, selectedProfileId, boxConfig.browserProfileKey, boxConfig.browserProfileId, boxConfig.browserProfileName]);
 
-  // Target group for this node (Strict Hero vs Enhance Isolation)
+  // Target group for this node (Strict Group Isolation across all flows)
   const currentGroup: BrowserGroupItem = useMemo(() => {
     const target = targetGroupName.toLowerCase();
-    const matched = isHeroNode
-      ? tabGroups.find((g) => {
-          const gn = g.name.toLowerCase();
-          return (gn.includes('hero') || gn.includes('fb')) && !gn.includes('enhance');
-        })
-      : isEnhanceNode
-      ? tabGroups.find((g) => {
+
+    // 1. Strict exact match by name
+    let matched = tabGroups.find((g) => g.name.toLowerCase() === target);
+
+    // 2. Exact match by saved browserGroupId
+    if (!matched && boxConfig.browserGroupId) {
+      matched = tabGroups.find((g) => g.id === boxConfig.browserGroupId);
+    }
+
+    // 3. Exact match by boxConfig.browserGroupName or boxConfig.title
+    if (!matched && boxConfig.browserGroupName) {
+      const bgn = boxConfig.browserGroupName.toLowerCase();
+      matched = tabGroups.find((g) => g.name.toLowerCase() === bgn);
+    }
+    if (!matched && boxConfig.title && boxConfig.title !== 'Tab Group') {
+      const bt = boxConfig.title.toLowerCase();
+      matched = tabGroups.find((g) => g.name.toLowerCase() === bt);
+    }
+
+    // 4. Fuzzy match on target name (only if target is specific, not generic 'tab group')
+    if (!matched && target && target !== 'tab group' && !target.startsWith('external browser')) {
+      matched = tabGroups.find((g) => {
+        const gn = g.name.toLowerCase();
+        return gn === target || target.includes(gn) || gn.includes(target);
+      });
+    }
+
+    // 5. Role-based fallback ONLY if the node specifically targets Enhance or FB Hero
+    if (!matched) {
+      if (isEnhanceNode) {
+        matched = tabGroups.find((g) => {
           const gn = g.name.toLowerCase();
           return gn.includes('enhance') && !gn.includes('hero') && !gn.includes('fb');
-        })
-      : (
-          tabGroups.find((g) => g.name.toLowerCase() === target) ||
-          tabGroups.find((g) => target && (target.includes(g.name.toLowerCase()) || g.name.toLowerCase().includes(target)))
-        );
+        });
+      } else if (target.includes('hero') || target.includes('fb')) {
+        matched = tabGroups.find((g) => {
+          const gn = g.name.toLowerCase();
+          return (gn.includes('hero') || gn.includes('fb')) && !gn.includes('enhance');
+        });
+      }
+    }
 
     if (matched) return matched;
 
-    // Node's own saved or default tabs (never grab Enhance IMG when inspecting FB Hero or another node!)
+    // Node's own saved or default tabs (never grab FB Hero or Enhance IMG when inspecting another flow node like Flow-5146!)
     const savedLive: BrowserTabItem[] = (boxConfig._liveGroupTabs || []).filter((t: any) => Boolean(t && (t.title || t.url)));
     const savedUrls: string[] = (boxConfig.browserGroupTabUrls || []).filter(Boolean);
-    const count = savedLive.length || savedUrls.length || (isHeroNode ? 2 : 4);
+    const count = savedLive.length || savedUrls.length || (isHeroNode ? 1 : 4);
 
-    const defaultTabs: BrowserTabItem[] = isHeroNode
-      ? [
-          {
-            id: 'tab-hero-1',
-            title: 'ChatGPT — Staging Prompt Gen (Worker #1)',
-            url: savedUrls[0] || 'https://chatgpt.com',
-            hostname: 'chatgpt.com',
-            is_chatgpt: true,
-            is_connected: true,
-            is_selected: true,
-          },
-          {
-            id: 'tab-hero-2',
-            title: 'ChatGPT — 1080x1350 Staging Ad (Worker #2)',
-            url: savedUrls[1] || 'https://chatgpt.com',
-            hostname: 'chatgpt.com',
-            is_chatgpt: true,
-            is_connected: true,
-            is_selected: false,
-          },
-        ]
-      : Array.from({ length: count }).map((_, i: number): BrowserTabItem => ({
-          id: `tab-${i + 1}`,
-          title: `${targetGroupName} Worker #${i + 1}`,
-          url: savedUrls[i] || 'https://chatgpt.com',
-          hostname: 'chatgpt.com',
-          is_chatgpt: true,
-          is_connected: true,
-          is_selected: i === 0,
-        }));
+    const groupDisplayName = boxConfig.title || boxConfig.browserGroupName || targetGroupName;
+    const defaultTabs: BrowserTabItem[] = [
+      {
+        id: `tab-${target.replace(/[^a-z0-9]/g, '-')}-1`,
+        title: `${groupDisplayName} Worker #1`,
+        url: savedUrls[0] || 'https://chatgpt.com',
+        hostname: 'chatgpt.com',
+        is_chatgpt: true,
+        is_connected: true,
+        is_selected: true,
+      },
+    ];
 
     return {
       id: `default-${target.replace(/[^a-z0-9]/g, '-')}`,
-      name: boxConfig.title || boxConfig.browserGroupName || targetGroupName,
+      name: groupDisplayName,
       color: isHeroNode ? '#8B5CF6' : '#3B82F6',
       is_active: true,
       tabs_count: count,
@@ -2223,9 +2243,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         : (savedUrls.length > 0
             ? savedUrls.map((u: string, i: number): BrowserTabItem => ({
                 id: `tab-${i + 1}`,
-                title: isHeroNode
-                  ? (i === 0 ? 'ChatGPT — Staging Prompt Gen (Worker #1)' : 'ChatGPT — 1080x1350 Staging Ad (Worker #2)')
-                  : `${targetGroupName} Worker #${i + 1}`,
+                title: `${groupDisplayName} Worker #${i + 1}`,
                 url: u,
                 hostname: 'chatgpt.com',
                 is_chatgpt: true,
@@ -2234,7 +2252,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               }))
             : defaultTabs),
     };
-  }, [tabGroups, targetGroupName, boxConfig.browserGroupId, boxConfig._liveGroupTabs, boxConfig.browserGroupTabUrls, boxConfig.title, boxConfig.browserGroupName, isHeroNode]);
+  }, [tabGroups, targetGroupName, boxConfig.browserGroupId, boxConfig._liveGroupTabs, boxConfig.browserGroupTabUrls, boxConfig.title, boxConfig.browserGroupName, isHeroNode, isEnhanceNode]);
 
   const displayGroups = useMemo(() => {
     return [currentGroup];
