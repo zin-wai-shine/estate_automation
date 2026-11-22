@@ -1442,23 +1442,6 @@
           continue;
         }
       }
-
-      // 2. Query inside all thumbnail cards directly for remove buttons or close icons
-      const cards = root.querySelectorAll(
-        '[data-testid*="attachment" i], [data-testid*="file-tile" i], [class*="attachment-tile" i], [class*="file-tile" i], [class*="thumbnail" i], div[class*="relative"]:has(img), div[class*="rounded"]:has(img)'
-      );
-      for (const card of cards) {
-        const cr = card.getBoundingClientRect();
-        if (cr.width > 300 || cr.height > 300) continue;
-        const subBtns = card.querySelectorAll('button, [role="button"], [class*="close" i], [class*="remove" i], svg');
-        for (const sb of subBtns) {
-          const el = sb.tagName === 'svg' ? (sb.closest('button, [role="button"]') || sb) : sb;
-          if (!seen.has(el)) {
-            seen.add(el);
-            result.push(el);
-          }
-        }
-      }
     }
 
     return result;
@@ -1490,7 +1473,9 @@
         const hasBgImg = (el.style?.backgroundImage || '').includes('blob:') || (el.style?.backgroundImage || '').includes('data:');
         return Boolean(hasImg || hasSpinner || hasBgImg);
       });
-      if (cards.length > 0) return cards.length;
+      // Filter out nested child cards to count each thumbnail card strictly once
+      const topCards = cards.filter((c) => !cards.some((other) => other !== c && other.contains(c)));
+      if (topCards.length > 0) return topCards.length;
 
       // 2. Remove buttons strictly inside composer or document
       const removeBtns = findAttachmentRemoveButtons(composer);
@@ -2043,16 +2028,6 @@
   async function attachImageFileToComposer(inputEl, file, maxExpected = 1, minExpected = 1, dataUrlHint = null) {
     const targetInputArea = inputEl || findPromptInput();
 
-    // 0. MUST CLEAN FIRST: If attaching a single image, enforce that 0 attachments exist BEFORE attaching!
-    if (maxExpected === 1) {
-      const initialCount = getAttachedImagesCount(targetInputArea);
-      if (initialCount > 0) {
-        console.log(`[BOLTHAVEN] Pre-attach check: ${initialCount} leftover attachment(s) found. Cleaning input completely first...`);
-        await cleanComposerInputCompletely(targetInputArea);
-        await new Promise((r) => setTimeout(r, 300));
-      }
-    }
-
     if (activeJobAborted) return false;
 
     // Convert file to DataURL if not provided, ensuring MAIN world script has valid data
@@ -2100,10 +2075,6 @@
 
       // Wait up to 8 seconds for the single attachment to register
       const attachedMethodA = await waitForImageAttached(inputEl, 8000, minExpected);
-      if (getAttachedImagesCount(inputEl) > maxExpected) {
-        console.log(`[BOLTHAVEN] Pruning excess attachments down to ${maxExpected}...`);
-        await pruneExcessAttachments(inputEl, maxExpected);
-      }
       if (attachedMethodA || getAttachedImagesCount(inputEl) >= minExpected) {
         console.log(`[BOLTHAVEN] ✓ Attached image successfully (${getAttachedImagesCount(inputEl)} attached)`);
         return true;
@@ -2644,24 +2615,10 @@
       if (src) preExistingImageUrls.add(src);
     });
 
-    // 0. CLEAN INPUT FIRST: Completely wipe out any residual text, drafts, and attached images!
-    console.log(`[BOLTHAVEN] Step 0: Cleaning chat input first for Image #${job.original_position || 1}...`);
+    // 0. CLEAN INPUT AT FIRST TIME: Clean out any leftover attachments and residual text from previous runs once
+    console.log(`[BOLTHAVEN] Step 0: Cleaning chat input at first time for Image #${job.original_position || 1}...`);
     await cleanComposerInputCompletely(input);
     await new Promise((r) => setTimeout(r, 400));
-
-    // VERIFY: input must be strictly clean (0 attachments, 0 text) before attaching
-    let initialCount = getAttachedImagesCount(input);
-    if (initialCount > 0) {
-      console.warn(`[BOLTHAVEN] Attachments still detected (${initialCount}). Retrying complete clean...`);
-      await cleanComposerInputCompletely(input);
-      await new Promise((r) => setTimeout(r, 500));
-      initialCount = getAttachedImagesCount(input);
-      if (initialCount > 0) {
-        console.warn(`[BOLTHAVEN] ⚠️ Persistent attachment detected (${initialCount}). Reloading tab to guarantee clean chat input...`);
-        window.location.reload();
-        throw new Error('Chat input had stuck attachments from previous run. Reloaded tab to clean input — retrying.');
-      }
-    }
 
     // 1. Fetch and attach strictly single image
     const localPath = job.source_file_path || '';
@@ -2697,27 +2654,11 @@
     await waitForAttachmentUploadComplete(composerEl, 15000);
 
     if (activeJobAborted) {
-      await cleanComposerInputCompletely(input);
+      clearPromptText(input);
       throw new Error('Job stopped by user');
     }
 
-    // STRICT POST-ATTACH CHECK: Ensure there is NOT more than 1 image attached!
-    let countAfterUpload = getAttachedImagesCount(input);
-    if (countAfterUpload > 1) {
-      console.warn(`[BOLTHAVEN] ⚠️ Found ${countAfterUpload} images attached (expected 1)! Pruning excess attachments...`);
-      await pruneExcessAttachments(input, 1);
-      await new Promise((r) => setTimeout(r, 400));
-      countAfterUpload = getAttachedImagesCount(input);
-      if (countAfterUpload > 1) {
-        console.error(`[BOLTHAVEN] Failed to prune down to 1 attachment. Wiping input and re-attaching strictly 1 image...`);
-        await cleanComposerInputCompletely(input);
-        await new Promise((r) => setTimeout(r, 500));
-        await attachImageFileToComposer(input, file, 1, 1, job.image_data_url || (primaryUrl.startsWith('data:') ? primaryUrl : null));
-        await waitForAttachmentUploadComplete(getComposerContainer(input) || document, 15000);
-      }
-    }
-
-    // 3. Clear any leftover prompt text first, then set prompt text cleanly
+    // 3. Clear prompt input and paste prompt text cleanly
     const promptText = (job.resolved_prompt || 'Enhance the attached architectural photo').trim();
     console.log(`[BOLTHAVEN] Setting prompt text (${promptText.length} chars)...`);
 
@@ -2728,20 +2669,12 @@
     await insertPromptCleanly(liveInput, promptText);
     await new Promise((r) => setTimeout(r, 400));
 
-    // FINAL CRITICAL SAFETY CHECK: Verify exactly 1 image is attached before sending!
-    const finalAttachedCount = getAttachedImagesCount(liveInput);
-    if (finalAttachedCount > 1) {
-      console.error(`[BOLTHAVEN] ⛔ BLOCKED SEND: Detected ${finalAttachedCount} attached images! (Expected exactly 1). Cleaning input to prevent sending duplicate images.`);
-      await cleanComposerInputCompletely(liveInput);
-      throw new Error(`Send aborted: ${finalAttachedCount} images were attached in ChatGPT. Expected exactly 1. Input has been cleaned — retrying.`);
-    }
-
     // Record pre-existing assistant turn count before sending
     const preAssistantCount = document.querySelectorAll(
       'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
     ).length;
 
-    // 4. Click Send button and wait for generation (NO tab reloading!)
+    // 4. Click Send button and wait for generation
     console.log(`[BOLTHAVEN] Sending prompt + single image #${job.original_position || 1} to ChatGPT...`);
     const sendSuccess = await triggerSendRobustly(liveInput);
     console.log(`[BOLTHAVEN] Send triggered (status: ${sendSuccess}). Launching watcher...`);
