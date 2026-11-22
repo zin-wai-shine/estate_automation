@@ -19100,44 +19100,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                   </>
                 )}
               </div>
-
-              {/* Bottom Pinned Footer: Full Width Delete Button */}
-              <div
-                style={{
-                  padding: '0.875rem 1rem',
-                  borderTop: 'none',
-                  backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                }}
-              >
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={(e) => {
-                    if (isTrigger) handleDeleteTrigger(e);
-                    else if (isContent) handleDeleteGetContent(e);
-                    else if (isImages) handleDeleteGetImages(e);
-                    else if (isCombine && currentCombineBox) handleDeleteCombineBox(currentCombineBox.id, e);
-                    else if (isAIBox && currentModalAIBox) handleDeleteAIBox(currentModalAIBox.id, e);
-                    else if (isOutput) handleDeleteOutputNode(e);
-                    handleCloseModal();
-                  }}
-                  leftIcon={<FiTrash2 size={13} style={{ color: 'var(--text-secondary)' }} />}
-                  style={{
-                    width: '100%',
-                    height: '34px',
-                    fontSize: '0.75rem',
-                    fontWeight: 500,
-                    color: 'var(--text-primary)',
-                    backgroundColor: isDark ? 'var(--bg-surface)' : '#F1F5F9',
-                    borderColor: 'var(--border-color)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  Delete
-                </Button>
-              </div>
             </aside>
           );
         })()}
@@ -19824,39 +19786,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                     isSettingsSideboxOpen={showPhotoCropSettingsSidebox}
                   />
                 </div>
-
-                {/* Bottom Pinned Footer: Full Width Delete Button */}
-                <div
-                  style={{
-                    padding: '0.875rem 1rem',
-                    borderTop: 'none',
-                    backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                  }}
-                >
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={(e) => {
-                      handleDeleteAIBox(currentModalAIBox.id, e);
-                      handleCloseModal();
-                    }}
-                    leftIcon={<FiTrash2 size={13} style={{ color: 'var(--text-secondary)' }} />}
-                    style={{
-                      width: '100%',
-                      height: '34px',
-                      fontSize: '0.75rem',
-                      fontWeight: 500,
-                      color: 'var(--text-primary)',
-                      backgroundColor: isDark ? 'var(--bg-surface)' : '#F1F5F9',
-                      borderColor: 'var(--border-color)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    Delete
-                  </Button>
-                </div>
               </aside>
 
               <PhotoCropSettingsSidebox
@@ -20398,39 +20327,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                   />
                 </div>
               </div>
-            </div>
-
-            {/* Bottom Footer Actions: Only Delete button with full width */}
-            <div
-              style={{
-                padding: '0.875rem 1rem',
-                borderTop: 'none',
-                backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-              }}
-            >
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={(e) => {
-                  handleDeleteDestination(e, activeDestId);
-                  handleCloseModal();
-                }}
-                leftIcon={<FiTrash2 size={13} style={{ color: 'var(--text-secondary)' }} />}
-                style={{
-                  width: '100%',
-                  height: '34px',
-                  fontSize: '0.75rem',
-                  fontWeight: 500,
-                  color: 'var(--text-primary)',
-                  backgroundColor: isDark ? 'var(--bg-surface)' : '#F1F5F9',
-                  borderColor: 'var(--border-color)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                Delete
-              </Button>
             </div>
           </aside>
         );
