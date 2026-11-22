@@ -136,6 +136,11 @@ interface AttachmentGroupsManagerProps {
   isMainBox?: boolean;
 }
 
+// Global in-memory cache preserved across unmounts, sidebar toggles, and node switches
+const globalCondoImagesCache: Record<string, Array<{ filename: string; data_url?: string; full_path?: string; index?: number }>> = {};
+let globalAvailableCondoFolders: string[] = [];
+let globalBaseCondoDirectory: string = '/Users/zinwaishine/Desktop/Condo Building';
+
 export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = ({
   steps,
   onChange,
@@ -154,16 +159,14 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
   hideDeleteGroup = false,
   isMainBox = false,
 }) => {
-  const [availableCondoFolders, setAvailableCondoFolders] = useState<string[]>([]);
-  const [baseCondoDirectory, setBaseCondoDirectory] = useState<string>('/Users/zinwaishine/Desktop/Condo Building');
+  const [availableCondoFolders, setAvailableCondoFolders] = useState<string[]>(() => globalAvailableCondoFolders);
+  const [baseCondoDirectory, setBaseCondoDirectory] = useState<string>(() => globalBaseCondoDirectory);
   const [activeFolderDropdownStepId, setActiveFolderDropdownStepId] = useState<string | null>(null);
   const [activeWorkflowDropdownStepId, setActiveWorkflowDropdownStepId] = useState<string | null>(null);
   const [manualChooseModalStepId, setManualChooseModalStepId] = useState<string | null>(null);
   const [folderSearchFilter, setFolderSearchFilter] = useState<string>('');
   const [reloadingStepId, setReloadingStepId] = useState<string | null>(null);
   const [loadingSteps, setLoadingSteps] = useState<Record<string, boolean>>({});
-  // In-memory condo folder images cache: folderName.toLowerCase() -> images
-  const condoImagesCacheRef = React.useRef<Record<string, Array<{ filename: string; data_url?: string; full_path?: string; index?: number }>>>({});
 
   // Resolved workflow sources with fallbacks
   const activeSources = useMemo<WorkflowImageSource[]>(() => {
@@ -208,8 +211,12 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
       const resp = await fetch(`http://127.0.0.1:9224/condo-folders?base_dir=${encodeURIComponent(dir)}`);
       const data = await resp.json();
       if (data?.status === 'success' && Array.isArray(data.folders)) {
+        globalAvailableCondoFolders = data.folders;
         setAvailableCondoFolders(data.folders);
-        if (data.base_dir) setBaseCondoDirectory(data.base_dir);
+        if (data.base_dir) {
+          globalBaseCondoDirectory = data.base_dir;
+          setBaseCondoDirectory(data.base_dir);
+        }
       }
     } catch (_) {}
   };
@@ -224,13 +231,13 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
 
     if (!forceReload) {
       if (inFlightFetchRef.current[fetchKey]) return;
-      if (condoImagesCacheRef.current[cacheKey] && condoImagesCacheRef.current[cacheKey].length > 0) {
+      if (globalCondoImagesCache[cacheKey] && globalCondoImagesCache[cacheKey].length > 0) {
         const targetStep = steps.find((s) => s.id === stepId);
-        if (targetStep?.folderImages && targetStep.folderImages.length === condoImagesCacheRef.current[cacheKey].length) {
+        if (targetStep?.folderImages && targetStep.folderImages.length === globalCondoImagesCache[cacheKey].length) {
           return;
         }
         handleUpdateStep(stepId, {
-          folderImages: condoImagesCacheRef.current[cacheKey],
+          folderImages: globalCondoImagesCache[cacheKey],
         });
         return;
       }
@@ -255,8 +262,8 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
           index: idx + 1,
         }));
 
-        // Cache the parsed images for this condo/folder
-        condoImagesCacheRef.current[cacheKey] = mappedImages;
+        // Cache the parsed images in global in-memory cache for the entire session
+        globalCondoImagesCache[cacheKey] = mappedImages;
 
         handleUpdateStep(stepId, {
           folderImages: mappedImages,
@@ -809,7 +816,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                     {(() => {
                       const effectiveFolderImages = (step.folderImages && step.folderImages.length > 0)
                         ? step.folderImages
-                        : (condoImagesCacheRef.current[(condoName || step.folderName || '').trim().toLowerCase()] || []);
+                        : (globalCondoImagesCache[(condoName || step.folderName || '').trim().toLowerCase()] || []);
                       const isStepLoading = Boolean(loadingSteps[step.id] || reloadingStepId === step.id);
 
                       return (
@@ -1500,7 +1507,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
         const cachedFolderImages = isFolder
           ? ((modalStep.folderImages && modalStep.folderImages.length > 0)
               ? modalStep.folderImages
-              : (condoImagesCacheRef.current[(condoName || modalStep.folderName || '').trim().toLowerCase()] || []))
+              : (globalCondoImagesCache[(condoName || modalStep.folderName || '').trim().toLowerCase()] || []))
           : [];
         const imagesList = isFolder
           ? cachedFolderImages.map((f, i) => ({ url: f.data_url || f.full_path || '', filename: f.filename || `Photo #${i + 1}` }))
