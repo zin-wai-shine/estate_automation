@@ -628,7 +628,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
             /* VIEW 1: DISCOVERED TAB GROUPS LIST */
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
                   Discovered in {browserProfileName || fromTitle}
                 </span>
                 <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
@@ -747,7 +747,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
               {/* 1. Flow Name & Use Template Button */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', position: 'relative' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
                     Flow Name
                   </label>
                   <button
@@ -828,7 +828,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                         gap: '3px',
                       }}
                     >
-                      <div style={{ padding: '4px 6px', fontSize: '0.625rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B', textTransform: 'uppercase' }}>
+                      <div style={{ padding: '4px 6px', fontSize: '0.625rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
                         Choose a Template
                       </div>
                       {[
@@ -895,7 +895,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
 
               {/* 2. Action Mode Switcher */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
                   Action Mode
                 </label>
                 <div
@@ -969,7 +969,99 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
               {tabGroupMode === 'generate' ? (
                 /* GENERATE MODE PIPELINE */
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  {/* Item 1: Reference Layout */}
+                  {/* Item 1: Connected Prompt */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <FiFileText size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                        <div>
+                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                            Connected Prompt
+                          </div>
+                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                            AI prompt from canvas
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPromptSource('upstream_ai')}
+                          style={{
+                            padding: '3px 10px',
+                            borderRadius: '4px',
+                            fontSize: '0.65625rem',
+                            fontWeight: selectedPromptSource === 'upstream_ai' ? 600 : 400,
+                            backgroundColor: selectedPromptSource === 'upstream_ai'
+                              ? (isDark ? '#21262D' : '#E2E8F0')
+                              : 'transparent',
+                            color: selectedPromptSource === 'upstream_ai'
+                              ? (isDark ? '#F0F6FC' : '#0F172A')
+                              : (isDark ? '#8B949E' : '#64748B'),
+                            border: selectedPromptSource === 'upstream_ai'
+                              ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
+                              : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Canvas AI
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPromptSource('custom')}
+                          style={{
+                            padding: '3px 10px',
+                            borderRadius: '4px',
+                            fontSize: '0.65625rem',
+                            fontWeight: selectedPromptSource === 'custom' ? 600 : 400,
+                            backgroundColor: selectedPromptSource === 'custom'
+                              ? (isDark ? '#21262D' : '#E2E8F0')
+                              : 'transparent',
+                            color: selectedPromptSource === 'custom'
+                              ? (isDark ? '#F0F6FC' : '#0F172A')
+                              : (isDark ? '#8B949E' : '#64748B'),
+                            border: selectedPromptSource === 'custom'
+                              ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
+                              : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Custom
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ paddingLeft: '23px' }}>
+                      {selectedPromptSource === 'upstream_ai' ? (
+                        <Select
+                          options={cleanPromptOptions}
+                          value={selectedUpstreamAiId}
+                          onChange={(val) => setSelectedUpstreamAiId(String(val))}
+                          height="34px"
+                        />
+                      ) : (
+                        <textarea
+                          rows={2}
+                          value={customPromptText}
+                          onChange={(e) => setCustomPromptText(e.target.value)}
+                          placeholder="Enter custom generation prompt..."
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            borderRadius: '6px',
+                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                            color: isDark ? '#F0F6FC' : '#0F172A',
+                            fontSize: '0.6875rem',
+                            boxSizing: 'border-box',
+                            outline: 'none',
+                          }}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Item 2: Reference Layout */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1315,8 +1407,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     )}
                   </div>
 
-                  {/* Item 2: Condo Photos (Main Title) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
+                  {/* Item 3: Condo Photos (Main Title) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <FiFolder size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
@@ -1988,98 +2080,6 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                       </div>
                     )}
                   </div>
-
-                  {/* Item 4: Connected Prompt */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <FiFileText size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
-                        <div>
-                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                            Connected Prompt
-                          </div>
-                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                            AI prompt from canvas
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPromptSource('upstream_ai')}
-                          style={{
-                            padding: '3px 10px',
-                            borderRadius: '4px',
-                            fontSize: '0.65625rem',
-                            fontWeight: selectedPromptSource === 'upstream_ai' ? 600 : 400,
-                            backgroundColor: selectedPromptSource === 'upstream_ai'
-                              ? (isDark ? '#21262D' : '#E2E8F0')
-                              : 'transparent',
-                            color: selectedPromptSource === 'upstream_ai'
-                              ? (isDark ? '#F0F6FC' : '#0F172A')
-                              : (isDark ? '#8B949E' : '#64748B'),
-                            border: selectedPromptSource === 'upstream_ai'
-                              ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                              : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Canvas AI
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPromptSource('custom')}
-                          style={{
-                            padding: '3px 10px',
-                            borderRadius: '4px',
-                            fontSize: '0.65625rem',
-                            fontWeight: selectedPromptSource === 'custom' ? 600 : 400,
-                            backgroundColor: selectedPromptSource === 'custom'
-                              ? (isDark ? '#21262D' : '#E2E8F0')
-                              : 'transparent',
-                            color: selectedPromptSource === 'custom'
-                              ? (isDark ? '#F0F6FC' : '#0F172A')
-                              : (isDark ? '#8B949E' : '#64748B'),
-                            border: selectedPromptSource === 'custom'
-                              ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                              : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Custom
-                        </button>
-                      </div>
-                    </div>
-
-                    <div style={{ paddingLeft: '23px' }}>
-                      {selectedPromptSource === 'upstream_ai' ? (
-                        <Select
-                          options={cleanPromptOptions}
-                          value={selectedUpstreamAiId}
-                          onChange={(val) => setSelectedUpstreamAiId(String(val))}
-                          height="34px"
-                        />
-                      ) : (
-                        <textarea
-                          rows={2}
-                          value={customPromptText}
-                          onChange={(e) => setCustomPromptText(e.target.value)}
-                          placeholder="Enter custom generation prompt..."
-                          style={{
-                            width: '100%',
-                            padding: '6px 8px',
-                            borderRadius: '6px',
-                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                            color: isDark ? '#F0F6FC' : '#0F172A',
-                            fontSize: '0.6875rem',
-                            boxSizing: 'border-box',
-                            outline: 'none',
-                          }}
-                        />
-                      )}
-                    </div>
-                  </div>
                 </div>
               ) : (
                 /* ENHANCE MODE PIPELINE */
@@ -2275,7 +2275,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
               gap: '6px',
             }}
           >
-            <div style={{ fontSize: '0.625rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <div style={{ fontSize: '0.625rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
               Canvas Node Hierarchy
             </div>
 
@@ -2366,7 +2366,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '0.625rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              <span style={{ fontSize: '0.625rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
                 Composer Simulation
               </span>
               <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
@@ -2585,7 +2585,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
               gap: '5px',
             }}
           >
-            <div style={{ fontSize: '0.625rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <div style={{ fontSize: '0.625rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
               Execution Summary
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
