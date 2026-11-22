@@ -335,6 +335,10 @@ export interface DynamicAIBoxConfig {
   condoImages?: any[];
   condoPhotos?: any[];
   useCondoImages?: boolean;
+  condoImagesCount?: number;
+  useEnhancedImages?: boolean;
+  enhancedImagesSource?: 'enhanced' | 'get_images';
+  enhancedImagesCount?: number;
   showImagesToEnhance?: boolean;
   downloadFolder?: string;
   showCondoProjectCard?: boolean;
@@ -18257,6 +18261,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 upstreamPrompts: effectiveUpstreamPrompts,
                                 upstreamTabGroups,
                                 images: effectiveBrowserImages,
+                                enhancedImages: Object.entries(allEnhancedPhotos)
+                                  .filter(([_, u]) => Boolean(u))
+                                  .map(([idx, u]) => ({
+                                    index: Number(idx),
+                                    url: typeof u === 'string' ? u : (u as any).url || (u as any).stored_url || '',
+                                    filename: `Enhanced Photo #${idx}`,
+                                  })),
                               }}
                               rawPostContent={effectiveRawContent || ''}
                               onRunCondoNameStep={handleRunCondoNameStep}
@@ -18285,6 +18296,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 upstreamPrompts: effectiveUpstreamPrompts,
                                 upstreamTabGroups,
                                 images: effectiveBrowserImages,
+                                enhancedImages: Object.entries(allEnhancedPhotos)
+                                  .filter(([_, u]) => Boolean(u))
+                                  .map(([idx, u]) => ({
+                                    index: Number(idx),
+                                    url: typeof u === 'string' ? u : (u as any).url || (u as any).stored_url || '',
+                                    filename: `Enhanced Photo #${idx}`,
+                                  })),
                               }}
                             />
                           </>

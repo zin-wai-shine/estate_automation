@@ -49,6 +49,7 @@ interface FBHeroSettingsSideboxProps {
     upstreamPrompts?: Array<{ id: string; title: string; text?: string; generatedOutput?: string; templateId?: string }>;
     upstreamTabGroups?: Array<{ id: string; title: string; browserGroupName?: string }>;
     images?: Array<{ url: string; index: number; filename?: string }>;
+    enhancedImages?: Array<{ url: string; index?: number; filename?: string }>;
     rawPostContent?: string;
   };
   availablePrompts?: Array<{ id: string | number; name: string; category?: string; instructions?: string; templateText?: string }>;
@@ -101,19 +102,20 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
 
   const [copiedPrompt, setCopiedPrompt] = useState(false);
 
-  // ── 4. Node Classification (FB Hero vs Worker Tab Group e.g. Enhance IMG) ──
+  // ── 4. Dynamic Action Mode & Classification ──────────────────────────
   const nodeTitle = (boxConfig.title || boxConfig.browserGroupName || '').toLowerCase();
-  const isEnhance = Boolean(
-    nodeTitle.includes('enhance') ||
-    (!nodeTitle.includes('hero') && !nodeTitle.includes('fb') && (boxConfig.tabGroupMode === 'enhance' || boxConfig.processKind === 'enhance_images'))
-  );
+  const initialMode: 'generate' | 'enhance' =
+    boxConfig.tabGroupMode === 'generate'
+      ? 'generate'
+      : boxConfig.tabGroupMode === 'enhance'
+      ? 'enhance'
+      : nodeTitle.includes('enhance')
+      ? 'enhance'
+      : 'generate';
 
-  const isHero = !isEnhance && Boolean(
-    nodeTitle.includes('hero') ||
-    nodeTitle.includes('fb') ||
-    boxConfig.tabGroupMode === 'generate' ||
-    boxConfig.processKind === 'generate_image'
-  );
+  const [tabGroupMode, setTabGroupMode] = useState<'generate' | 'enhance'>(initialMode);
+  const isEnhance = tabGroupMode === 'enhance';
+  const isHero = !isEnhance;
 
   // ── 4. Inspector Modules Toggles ───────────────────────────────────────────
   const [showCondoProjectCard, setShowCondoProjectCard] = useState<boolean>(() => {
@@ -128,6 +130,22 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   const [useCondoImages, setUseCondoImages] = useState<boolean>(() => {
     if (boxConfig.useCondoImages !== undefined) return boxConfig.useCondoImages !== false;
     return isHero;
+  });
+
+  const [condoImagesCount, setCondoImagesCount] = useState<number>(() => {
+    return boxConfig.condoImagesCount !== undefined ? boxConfig.condoImagesCount : 3;
+  });
+
+  const [useEnhancedImages, setUseEnhancedImages] = useState<boolean>(() => {
+    return boxConfig.useEnhancedImages !== undefined ? boxConfig.useEnhancedImages : true;
+  });
+
+  const [enhancedImagesSource, setEnhancedImagesSource] = useState<'enhanced' | 'get_images'>(() => {
+    return boxConfig.enhancedImagesSource || 'enhanced';
+  });
+
+  const [enhancedImagesCount, setEnhancedImagesCount] = useState<number>(() => {
+    return boxConfig.enhancedImagesCount !== undefined ? boxConfig.enhancedImagesCount : 5;
   });
 
   const [showImagesToEnhance, setShowImagesToEnhance] = useState<boolean>(() => {
@@ -747,6 +765,97 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
           gap: '0.75rem',
         }}
       >
+        {/* ── ACTION MODE SWITCHER ── */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '3px',
+            borderRadius: '9px',
+            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : 'rgba(0, 0, 0, 0.05)',
+            border: '1px solid var(--border-color)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setTabGroupMode('generate');
+              updateSettings({
+                tabGroupMode: 'generate',
+                processKind: 'generate_image',
+              });
+            }}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              padding: '6px 10px',
+              borderRadius: '7px',
+              fontSize: '0.6875rem',
+              fontWeight: tabGroupMode === 'generate' ? 700 : 500,
+              backgroundColor: tabGroupMode === 'generate'
+                ? (isDark ? 'rgba(59, 130, 246, 0.22)' : '#FFFFFF')
+                : 'transparent',
+              color: tabGroupMode === 'generate'
+                ? (isDark ? '#60A5FA' : '#2563EB')
+                : 'var(--text-muted)',
+              border: tabGroupMode === 'generate'
+                ? (isDark ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(0,0,0,0.08)')
+                : '1px solid transparent',
+              boxShadow: tabGroupMode === 'generate'
+                ? (isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.06)')
+                : 'none',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <FiZap size={13} />
+            <span>Generate Image (Composite)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setTabGroupMode('enhance');
+              updateSettings({
+                tabGroupMode: 'enhance',
+                processKind: 'enhance_images',
+              });
+            }}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              padding: '6px 10px',
+              borderRadius: '7px',
+              fontSize: '0.6875rem',
+              fontWeight: tabGroupMode === 'enhance' ? 700 : 500,
+              backgroundColor: tabGroupMode === 'enhance'
+                ? (isDark ? 'rgba(16, 185, 129, 0.22)' : '#FFFFFF')
+                : 'transparent',
+              color: tabGroupMode === 'enhance'
+                ? (isDark ? '#34D399' : '#059669')
+                : 'var(--text-muted)',
+              border: tabGroupMode === 'enhance'
+                ? (isDark ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(0,0,0,0.08)')
+                : '1px solid transparent',
+              boxShadow: tabGroupMode === 'enhance'
+                ? (isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.06)')
+                : 'none',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <FiSliders size={13} />
+            <span>Enhance Images (Batch Workers)</span>
+          </button>
+        </div>
+
         {/* ── 1. Condo / Project Name (Hero Only) ── */}
         {isHero && (
           <>
@@ -1084,6 +1193,44 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
 
               {useCondoImages && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+                  {/* Photos to Attach Count Selector */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                    <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                      Photos to Attach:
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      {[
+                        { count: 1, label: '1 Photo (#1)' },
+                        { count: 2, label: '2 Photos (#1 & #2)' },
+                        { count: 3, label: '3 Photos (All 3)' },
+                      ].map((opt) => {
+                        const isActive = condoImagesCount === opt.count;
+                        return (
+                          <button
+                            key={opt.count}
+                            type="button"
+                            onClick={() => {
+                              setCondoImagesCount(opt.count);
+                              updateSettings({ condoImagesCount: opt.count });
+                            }}
+                            style={{
+                              padding: '2px 7px',
+                              borderRadius: '5px',
+                              fontSize: '0.59375rem',
+                              fontWeight: isActive ? 700 : 500,
+                              backgroundColor: isActive ? 'rgba(16, 185, 129, 0.18)' : isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
+                              color: isActive ? '#10B981' : 'var(--text-secondary)',
+                              border: isActive ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid var(--border-color)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   {/* 1. Base Patch / Target Folder */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
@@ -1242,6 +1389,152 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── 4. Interior / Enhanced Photos ── */}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.5rem',
+                padding: '0.875rem 1rem',
+                borderRadius: '12px',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                border: '1px solid var(--border-color)',
+                boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                  <div
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '7px',
+                      backgroundColor: 'rgba(139, 92, 246, 0.12)',
+                      color: '#8B5CF6',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <FiZap size={14} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      4. Interior / Enhanced Photos
+                    </div>
+                    <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                      Attach 3rd into ChatGPT composer
+                    </div>
+                  </div>
+                </div>
+
+                <ToggleSwitch
+                  checked={useEnhancedImages}
+                  onChange={(val) => {
+                    setUseEnhancedImages(val);
+                    updateSettings({ useEnhancedImages: val });
+                  }}
+                  size="sm"
+                  activeColor="#8B5CF6"
+                />
+              </div>
+
+              <div style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+                Attach interior photos from the upstream Enhance IMG node or original extracted photos from Get Images.
+              </div>
+
+              {useEnhancedImages && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+                  {/* Source Switcher */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                    <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                      Photo Source:
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEnhancedImagesSource('enhanced');
+                          updateSettings({ enhancedImagesSource: 'enhanced' });
+                        }}
+                        style={{
+                          padding: '2px 7px',
+                          borderRadius: '5px',
+                          fontSize: '0.59375rem',
+                          fontWeight: enhancedImagesSource === 'enhanced' ? 700 : 500,
+                          backgroundColor: enhancedImagesSource === 'enhanced' ? 'rgba(139, 92, 246, 0.18)' : isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
+                          color: enhancedImagesSource === 'enhanced' ? '#8B5CF6' : 'var(--text-secondary)',
+                          border: enhancedImagesSource === 'enhanced' ? '1px solid rgba(139, 92, 246, 0.35)' : '1px solid var(--border-color)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        ✨ Enhanced Images ({propertyContext?.enhancedImages?.length || 0})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEnhancedImagesSource('get_images');
+                          updateSettings({ enhancedImagesSource: 'get_images' });
+                        }}
+                        style={{
+                          padding: '2px 7px',
+                          borderRadius: '5px',
+                          fontSize: '0.59375rem',
+                          fontWeight: enhancedImagesSource === 'get_images' ? 700 : 500,
+                          backgroundColor: enhancedImagesSource === 'get_images' ? 'rgba(139, 92, 246, 0.18)' : isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
+                          color: enhancedImagesSource === 'get_images' ? '#8B5CF6' : 'var(--text-secondary)',
+                          border: enhancedImagesSource === 'get_images' ? '1px solid rgba(139, 92, 246, 0.35)' : '1px solid var(--border-color)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        📷 Get Images ({propertyContext?.images?.length || 0})
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Count Selector */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                    <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                      Photos to Attach:
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      {[
+                        { count: 1, label: '1 Photo' },
+                        { count: 3, label: '3 Photos' },
+                        { count: 5, label: '5 Photos' },
+                        { count: 20, label: 'All Photos' },
+                      ].map((opt) => {
+                        const isActive = enhancedImagesCount === opt.count;
+                        return (
+                          <button
+                            key={opt.count}
+                            type="button"
+                            onClick={() => {
+                              setEnhancedImagesCount(opt.count);
+                              updateSettings({ enhancedImagesCount: opt.count });
+                            }}
+                            style={{
+                              padding: '2px 7px',
+                              borderRadius: '5px',
+                              fontSize: '0.59375rem',
+                              fontWeight: isActive ? 700 : 500,
+                              backgroundColor: isActive ? 'rgba(139, 92, 246, 0.2)' : isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
+                              color: isActive ? '#8B5CF6' : 'var(--text-secondary)',
+                              border: isActive ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid var(--border-color)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               )}

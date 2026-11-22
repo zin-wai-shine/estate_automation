@@ -2047,6 +2047,7 @@ async function executeTwoStageStaging(payload) {
     initialPrompt,
     referenceImage,
     condoImages,
+    enhancedImages,
     condoName,
     skipTab1,
     tabMode,
@@ -2055,6 +2056,9 @@ async function executeTwoStageStaging(payload) {
   } = payload || {};
   const resolvedRefImg = referenceImage || payload?.reference_image || '';
   const resolvedCondoImgs = condoImages || payload?.condo_images || [];
+  const resolvedEnhancedImgs = Array.isArray(enhancedImages)
+    ? enhancedImages
+    : (Array.isArray(payload?.enhanced_images) ? payload.enhanced_images : []);
   const resolvedPrompt = (initialPrompt || payload?.initial_prompt || payload?.extractedPrompt || '').trim();
   const resolvedCondoName = condoName || payload?.condo_name || '';
   const isDirectMode = Boolean(skipTab1 || payload?.skip_tab1) || reqWorkerCount === 1 || payload?.worker_count === 1;
@@ -2212,6 +2216,7 @@ async function executeTwoStageStaging(payload) {
           extractedPrompt: extractedPrompt || resolvedPrompt,
           referenceImage: resolvedRefImg, // 1st: manual reference image
           condoImages: resolvedCondoImgs, // 2nd: 1.png, 2.png, 3.png
+          enhancedImages: resolvedEnhancedImgs, // 3rd: interior/enhanced images
           condoName: resolvedCondoName,
         }, (res) => {
           if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));

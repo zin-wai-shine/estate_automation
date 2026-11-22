@@ -2885,6 +2885,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
             initialPrompt,
             referenceImage, // 1st: manual reference image
             condoImages,    // 2nd: 1.png, 2.png, 3.png
+            enhancedImages: Array.isArray(payload.enhanced_images) ? payload.enhanced_images : (Array.isArray(payload.enhancedImages) ? payload.enhancedImages : []), // 3rd: interior/enhanced images
             condoName,
             matchedFolder: matchedDir,
             skipTab1,

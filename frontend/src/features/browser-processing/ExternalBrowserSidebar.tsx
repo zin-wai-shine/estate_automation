@@ -108,6 +108,7 @@ interface ExternalBrowserSidebarProps {
     aboveBoxTitle?: string;
     price?: string;
     images?: Array<{ url: string; index?: number; filename?: string }>;
+    enhancedImages?: Array<{ url: string; index?: number; filename?: string }>;
     upstreamPrompts?: Array<{ id: string; title: string; text?: string; templateId?: string; generatedOutput?: string }>;
     upstreamTabGroups?: Array<{ id: string; title: string; browserGroupName?: string }>;
   };
@@ -195,19 +196,19 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       }));
   }, [propertyContext?.images]);
 
-  // 4b. Authoritative Hero vs Enhance Node Classification
+  // 4b. Dynamic Node Action Mode (Generate Image vs Enhance Images)
   const nodeTitle = (boxConfig.title || boxConfig.browserGroupName || '').toLowerCase();
-  const isEnhanceNode = Boolean(
-    nodeTitle.includes('enhance') ||
-    (!nodeTitle.includes('hero') && !nodeTitle.includes('fb') && (boxConfig.tabGroupMode === 'enhance' || boxConfig.processKind === 'enhance_images'))
-  );
+  const currentTabGroupMode: 'generate' | 'enhance' =
+    boxConfig.tabGroupMode === 'generate'
+      ? 'generate'
+      : boxConfig.tabGroupMode === 'enhance'
+      ? 'enhance'
+      : nodeTitle.includes('enhance')
+      ? 'enhance'
+      : 'generate';
 
-  const isHeroNode = !isEnhanceNode && Boolean(
-    nodeTitle.includes('hero') ||
-    nodeTitle.includes('fb') ||
-    boxConfig.tabGroupMode === 'generate' ||
-    boxConfig.processKind === 'generate_image'
-  );
+  const isEnhanceNode = currentTabGroupMode === 'enhance';
+  const isHeroNode = !isEnhanceNode;
 
   // 1. Core Profile, Group, and Tab State
   const targetGroupName = useMemo(() => {
@@ -316,12 +317,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     return propertyContext?.upstreamPrompts?.[0]?.id || '';
   });
 
-  const [tabGroupMode, setTabGroupMode] = useState<'enhance' | 'generate'>(() => {
-    if (isHeroNode) return 'generate';
-    if (isEnhanceNode) return 'enhance';
-    if (boxConfig.tabGroupMode) return boxConfig.tabGroupMode;
-    return 'enhance';
-  });
+  const [tabGroupMode, setTabGroupMode] = useState<'generate' | 'enhance'>(currentTabGroupMode);
 
   // 3 Distinct Kinds of Tab Processes:
   // 1. 'generate_image': Reference Image + Images for Generate (Condo 1,2,3) + Prompt
@@ -365,6 +361,26 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
   const [selectedReferenceIndex, setSelectedReferenceIndex] = useState<number>(() => {
     return boxConfig.selectedReferenceIndex || 1;
+  });
+
+  // Dynamic Pipeline Customization State
+  const [useReferenceImage, setUseReferenceImage] = useState<boolean>(() => {
+    return boxConfig.useReferenceImage !== undefined ? boxConfig.useReferenceImage !== false : true;
+  });
+  const [useCondoImages, setUseCondoImages] = useState<boolean>(() => {
+    return boxConfig.useCondoImages !== undefined ? boxConfig.useCondoImages !== false : true;
+  });
+  const [condoImagesCount, setCondoImagesCount] = useState<number>(() => {
+    return boxConfig.condoImagesCount !== undefined ? boxConfig.condoImagesCount : 3;
+  });
+  const [useEnhancedImages, setUseEnhancedImages] = useState<boolean>(() => {
+    return boxConfig.useEnhancedImages !== undefined ? boxConfig.useEnhancedImages : true;
+  });
+  const [enhancedImagesSource, setEnhancedImagesSource] = useState<'enhanced' | 'get_images'>(() => {
+    return boxConfig.enhancedImagesSource || 'enhanced';
+  });
+  const [enhancedImagesCount, setEnhancedImagesCount] = useState<number>(() => {
+    return boxConfig.enhancedImagesCount !== undefined ? boxConfig.enhancedImagesCount : 5;
   });
 
   // 5. Output Dimension State
@@ -488,6 +504,17 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   }, [matchedCondoInfo?.images, boxConfig.condoImages]);
 
   const selectedCondoCount = condoSlots.filter(Boolean).length;
+
+  const availableEnhancedPhotos = useMemo(() => {
+    if (propertyContext?.enhancedImages && propertyContext.enhancedImages.length > 0) {
+      return propertyContext.enhancedImages;
+    }
+    return [];
+  }, [propertyContext?.enhancedImages]);
+
+  const availableSourcePhotos = useMemo(() => {
+    return receivedImages;
+  }, [receivedImages]);
 
   // Set or replace a slot with an image (ensures exactly 3 slots max)
   const handleAssignCondoSlot = (imageObj: any, preferredSlotIndex?: number) => {
@@ -1129,6 +1156,48 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     }
   }, [boxConfig.browserCustomPrompt]);
 
+  useEffect(() => {
+    if (boxConfig.tabGroupMode && boxConfig.tabGroupMode !== tabGroupMode) {
+      setTabGroupMode(boxConfig.tabGroupMode);
+    }
+  }, [boxConfig.tabGroupMode]);
+
+  useEffect(() => {
+    if (boxConfig.useReferenceImage !== undefined && boxConfig.useReferenceImage !== useReferenceImage) {
+      setUseReferenceImage(boxConfig.useReferenceImage !== false);
+    }
+  }, [boxConfig.useReferenceImage]);
+
+  useEffect(() => {
+    if (boxConfig.useCondoImages !== undefined && boxConfig.useCondoImages !== useCondoImages) {
+      setUseCondoImages(boxConfig.useCondoImages !== false);
+    }
+  }, [boxConfig.useCondoImages]);
+
+  useEffect(() => {
+    if (boxConfig.condoImagesCount !== undefined && boxConfig.condoImagesCount !== condoImagesCount) {
+      setCondoImagesCount(boxConfig.condoImagesCount);
+    }
+  }, [boxConfig.condoImagesCount]);
+
+  useEffect(() => {
+    if (boxConfig.useEnhancedImages !== undefined && boxConfig.useEnhancedImages !== useEnhancedImages) {
+      setUseEnhancedImages(boxConfig.useEnhancedImages);
+    }
+  }, [boxConfig.useEnhancedImages]);
+
+  useEffect(() => {
+    if (boxConfig.enhancedImagesSource && boxConfig.enhancedImagesSource !== enhancedImagesSource) {
+      setEnhancedImagesSource(boxConfig.enhancedImagesSource);
+    }
+  }, [boxConfig.enhancedImagesSource]);
+
+  useEffect(() => {
+    if (boxConfig.enhancedImagesCount !== undefined && boxConfig.enhancedImagesCount !== enhancedImagesCount) {
+      setEnhancedImagesCount(boxConfig.enhancedImagesCount);
+    }
+  }, [boxConfig.enhancedImagesCount]);
+
   const handleReferenceImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1181,25 +1250,52 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       const activeProf = profiles.find((p) => p.id === selectedProfileId);
       const profKey = activeProf?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
 
-      const selectedCondoImgs = condoSlots.filter(Boolean);
+      // 1. Reference Photo (1st Attached)
+      const shouldAttachRef = useReferenceImage && boxConfig.useReferenceImage !== false;
+      const refImgToUse = shouldAttachRef
+        ? (activeReferenceImage?.url || referenceImage || boxConfig.referenceImage || (propertyContext?.images && propertyContext.images[0]?.url) || null)
+        : null;
+
+      // 2. Condo / Folder Photos (2nd Attached)
       let condoImagesToUse: any[] = [];
-      if (selectedCondoImgs.length > 0) {
-        condoImagesToUse = selectedCondoImgs;
-      } else if (matchedCondoInfo?.images && matchedCondoInfo.images.length > 0) {
-        condoImagesToUse = matchedCondoInfo.images;
-      } else if (Array.isArray(boxConfig.condoImages) && boxConfig.condoImages.length > 0) {
-        condoImagesToUse = boxConfig.condoImages;
-      } else if (propertyContext?.images && propertyContext.images.length > 0) {
-        condoImagesToUse = propertyContext.images.slice(0, 3).map((img, i) => ({
-          index: i + 1,
-          filename: img.filename || `Condo Photo #${i + 1}`,
+      const shouldAttachCondo = useCondoImages && boxConfig.useCondoImages !== false;
+      const targetCondoCount = typeof condoImagesCount === 'number' ? condoImagesCount : 3;
+      if (shouldAttachCondo && targetCondoCount > 0) {
+        const selectedCondoImgs = condoSlots.filter(Boolean);
+        if (selectedCondoImgs.length > 0) {
+          condoImagesToUse = selectedCondoImgs.slice(0, targetCondoCount);
+        } else if (matchedCondoInfo?.images && matchedCondoInfo.images.length > 0) {
+          condoImagesToUse = matchedCondoInfo.images.slice(0, targetCondoCount);
+        } else if (Array.isArray(boxConfig.condoImages) && boxConfig.condoImages.length > 0) {
+          condoImagesToUse = boxConfig.condoImages.slice(0, targetCondoCount);
+        } else if (propertyContext?.images && propertyContext.images.length > 0) {
+          condoImagesToUse = propertyContext.images.slice(0, targetCondoCount).map((img, i) => ({
+            index: i + 1,
+            filename: img.filename || `Condo Photo #${i + 1}`,
+            url: img.url,
+            data_url: img.url,
+          }));
+        }
+      }
+
+      // 3. Interior / Enhanced Photos (3rd Attached)
+      let enhancedImagesToUse: any[] = [];
+      const shouldAttachEnhanced = useEnhancedImages && boxConfig.useEnhancedImages !== false;
+      const targetEnhancedCount = typeof enhancedImagesCount === 'number' ? enhancedImagesCount : 5;
+      if (shouldAttachEnhanced && targetEnhancedCount > 0) {
+        const isEnhancedSrc = enhancedImagesSource === 'enhanced';
+        const sourcePool = isEnhancedSrc && availableEnhancedPhotos.length > 0
+          ? availableEnhancedPhotos
+          : availableSourcePhotos;
+        enhancedImagesToUse = sourcePool.slice(0, targetEnhancedCount).map((img, i) => ({
+          index: img.index || i + 1,
+          filename: img.filename || `Interior Photo #${img.index || i + 1}`,
           url: img.url,
           data_url: img.url,
         }));
       }
 
       const promptToUse = (resolvedPromptPreview || currentPromptText || 'Create facebook advertisement from the attached reference and building photos').trim();
-      const refImgToUse = activeReferenceImage?.url || referenceImage || boxConfig.referenceImage || (propertyContext?.images && propertyContext.images[0]?.url) || null;
       const effectiveHeroGroupName = currentGroup?.name || targetGroupName || 'FB Hero';
       const isDirectStaging = boxConfig.stagingMode !== 'two_stage';
 
@@ -1224,14 +1320,15 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           group_name: effectiveHeroGroupName,
           condo_name: matchedCondoInfo?.matched_folder || aiExtractedCondoName || condoSearchQuery || condoName,
           matched_folder: matchedCondoInfo?.matched_folder || '',
-          condo_images: condoImagesToUse.slice(0, 3),
+          condo_images: condoImagesToUse,
+          enhanced_images: enhancedImagesToUse,
           initial_prompt: promptToUse,
           reference_image: refImgToUse,
           reference_image_index: activeReferenceImage?.index || 1,
           enable_prompt_enhance: enablePromptEnhance,
           target_folder: boxConfig.targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '',
-          use_condo_images: boxConfig.useCondoImages !== false,
-          use_reference_image: boxConfig.useReferenceImage !== false,
+          use_condo_images: condoImagesToUse.length > 0,
+          use_reference_image: !!refImgToUse,
           skip_tab1: isDirectStaging,
           tab_mode: boxConfig.workerTabMode || 'existing_tabs',
           worker_count: isDirectStaging ? 1 : 2,
@@ -2239,149 +2336,191 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             <FiImage size={14} />
           </div>
           <div>
-            <div style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-              Reference Image
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                Reference Image
+              </span>
+              <span
+                style={{
+                  fontSize: '0.53125rem',
+                  fontWeight: 700,
+                  padding: '1px 5px',
+                  borderRadius: '4px',
+                  backgroundColor: 'rgba(236, 72, 153, 0.12)',
+                  color: '#EC4899',
+                  border: '1px solid rgba(236, 72, 153, 0.25)',
+                }}
+              >
+                1st in Chat
+              </span>
             </div>
             <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-              Layout example pasted into Tab 2
+              Layout example attached first to ChatGPT
             </div>
           </div>
         </div>
 
-        <span
-          style={{
-            fontSize: '0.5625rem',
-            fontWeight: 600,
-            padding: '2px 7px',
-            borderRadius: '10px',
-            backgroundColor: referenceImage ? 'rgba(16, 185, 129, 0.12)' : (isDark ? 'rgba(255,255,255,0.05)' : '#F1F5F9'),
-            color: referenceImage ? '#10B981' : 'var(--text-muted)',
-            border: '1px solid var(--border-color)',
-          }}
-        >
-          {referenceImage ? 'Attached' : 'Optional'}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span
+            style={{
+              fontSize: '0.5625rem',
+              fontWeight: 600,
+              padding: '2px 7px',
+              borderRadius: '10px',
+              backgroundColor: (useReferenceImage && referenceImage) ? 'rgba(16, 185, 129, 0.12)' : (isDark ? 'rgba(255,255,255,0.05)' : '#F1F5F9'),
+              color: (useReferenceImage && referenceImage) ? '#10B981' : 'var(--text-muted)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            {useReferenceImage ? (referenceImage ? 'Attached' : 'Ready') : 'Skipped'}
+          </span>
+          <ToggleSwitch
+            checked={useReferenceImage}
+            onChange={(val) => {
+              setUseReferenceImage(val);
+              updateConfig('useReferenceImage', val);
+            }}
+            size="sm"
+            activeColor="#EC4899"
+          />
+        </div>
       </div>
 
-      {referenceImage ? (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            padding: '0.5rem 0.65rem',
-            borderRadius: '8px',
-            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : '#F8FAFC',
-            border: '1px solid rgba(236, 72, 153, 0.25)',
-          }}
-        >
-          <img
-            src={referenceImage}
-            alt="Reference"
+      {useReferenceImage ? (
+        referenceImage ? (
+          <div
             style={{
-              width: '52px',
-              height: '52px',
-              borderRadius: '6px',
-              objectFit: 'cover',
-              border: '1px solid var(--border-color)',
-              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+              padding: '0.5rem 0.65rem',
+              borderRadius: '8px',
+              backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : '#F8FAFC',
+              border: '1px solid rgba(236, 72, 153, 0.25)',
             }}
-          />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              Active Reference Photo
-            </div>
-            <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Ready to paste in chat
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
-              <label
-                style={{
-                  fontSize: '0.5625rem',
-                  fontWeight: 600,
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
-                }}
-              >
-                Change
-                <input type="file" accept="image/*" onChange={handleReferenceImageFile} style={{ display: 'none' }} />
-              </label>
-              <button
-                type="button"
-                onClick={handleRemoveReferenceImage}
-                style={{
-                  border: 'none',
-                  background: 'none',
-                  color: '#EF4444',
-                  fontSize: '0.5625rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  padding: '2px 4px',
-                }}
-              >
-                Remove
-              </button>
+          >
+            <img
+              src={referenceImage}
+              alt="Reference"
+              style={{
+                width: '52px',
+                height: '52px',
+                borderRadius: '6px',
+                objectFit: 'cover',
+                border: '1px solid var(--border-color)',
+                flexShrink: 0,
+              }}
+            />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                Active Reference Photo
+              </div>
+              <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                Will attach first into chat
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                <label
+                  style={{
+                    fontSize: '0.5625rem',
+                    fontWeight: 600,
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
+                  }}
+                >
+                  Change
+                  <input type="file" accept="image/*" onChange={handleReferenceImageFile} style={{ display: 'none' }} />
+                </label>
+                <button
+                  type="button"
+                  onClick={handleRemoveReferenceImage}
+                  style={{
+                    border: 'none',
+                    background: 'none',
+                    color: '#EF4444',
+                    fontSize: '0.5625rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    padding: '2px 4px',
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      ) : (
-        <label
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0.7rem 0.85rem',
-            borderRadius: '8px',
-            backgroundColor: isDark ? 'rgba(236, 72, 153, 0.03)' : '#FDF2F8',
-            border: '1px dashed rgba(236, 72, 153, 0.35)',
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div
+        ) : (
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0.7rem 0.85rem',
+              borderRadius: '8px',
+              backgroundColor: isDark ? 'rgba(236, 72, 153, 0.03)' : '#FDF2F8',
+              border: '1px dashed rgba(236, 72, 153, 0.35)',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '7px',
+                  backgroundColor: 'rgba(236, 72, 153, 0.12)',
+                  color: '#EC4899',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <FiUploadCloud size={16} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Add Reference Photo
+                </div>
+                <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+                  Example layout or composition
+                </div>
+              </div>
+            </div>
+            <span
               style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '7px',
-                backgroundColor: 'rgba(236, 72, 153, 0.12)',
+                fontSize: '0.625rem',
+                fontWeight: 600,
+                padding: '4px 9px',
+                borderRadius: '6px',
+                backgroundColor: 'rgba(236, 72, 153, 0.15)',
                 color: '#EC4899',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                border: '1px solid rgba(236, 72, 153, 0.3)',
                 flexShrink: 0,
               }}
             >
-              <FiUploadCloud size={16} />
-            </div>
-            <div>
-              <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                Add Reference Photo
-              </div>
-              <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
-                Example layout or composition
-              </div>
-            </div>
-          </div>
-          <span
-            style={{
-              fontSize: '0.625rem',
-              fontWeight: 600,
-              padding: '4px 9px',
-              borderRadius: '6px',
-              backgroundColor: 'rgba(236, 72, 153, 0.15)',
-              color: '#EC4899',
-              border: '1px solid rgba(236, 72, 153, 0.3)',
-              flexShrink: 0,
-            }}
-          >
-            Browse...
-          </span>
-          <input type="file" accept="image/*" onChange={handleReferenceImageFile} style={{ display: 'none' }} />
-        </label>
+              Browse...
+            </span>
+            <input type="file" accept="image/*" onChange={handleReferenceImageFile} style={{ display: 'none' }} />
+          </label>
+        )
+      ) : (
+        <div
+          style={{
+            padding: '8px 12px',
+            borderRadius: '6px',
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+            border: '1px dashed var(--border-color)',
+            fontSize: '0.625rem',
+            color: 'var(--text-muted)',
+            textAlign: 'center',
+          }}
+        >
+          Reference photo skipped — ChatGPT will generate without reference layout.
+        </div>
       )}
     </div>
   );
@@ -2417,8 +2556,23 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             <FiFolder size={14} />
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-              Condo Photos (1, 2, 3)
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                Condo Photos ({useCondoImages ? `${condoImagesCount} of 3` : 'Off'})
+              </span>
+              <span
+                style={{
+                  fontSize: '0.53125rem',
+                  fontWeight: 700,
+                  padding: '1px 5px',
+                  borderRadius: '4px',
+                  backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                  color: '#10B981',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                }}
+              >
+                2nd in Chat
+              </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '1px' }}>
               <div
@@ -2474,82 +2628,135 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
-          {/* Change / Select Photos Button */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowFolderPicker((prev) => !prev);
-              setActiveCondoSlot(null);
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <ToggleSwitch
+            checked={useCondoImages}
+            onChange={(val) => {
+              setUseCondoImages(val);
+              updateConfig('useCondoImages', val);
             }}
-            title="Select & change condo photos"
-            style={{
-              padding: '3px 7px',
-              borderRadius: '6px',
-              border: '1px solid var(--border-color)',
-              backgroundColor: showFolderPicker
-                ? isDark
-                  ? 'rgba(255,255,255,0.12)'
-                  : '#E2E8F0'
-                : isDark
-                ? 'rgba(255,255,255,0.06)'
-                : '#F1F5F9',
-              color: 'var(--text-primary)',
-              fontSize: '0.625rem',
-              fontWeight: 500,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              transition: 'all 0.15s ease',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <FiFolder size={11} style={{ opacity: 0.7 }} />
-            <span>Change</span>
-          </button>
-
-          {/* Open Folder directly in macOS Finder */}
-          <button
-            type="button"
-            onClick={handleOpenFolderInFinder}
-            disabled={isOpeningFinder}
-            title={
-              matchedCondoInfo?.folder_path
-                ? `Open folder in macOS Finder: ${matchedCondoInfo.folder_path}`
-                : 'Open condo folder in macOS Finder'
-            }
-            style={{
-              padding: '3px 7px',
-              borderRadius: '6px',
-              border: '1px solid var(--border-color)',
-              backgroundColor: finderFeedback
-                ? isDark
-                  ? 'rgba(16, 185, 129, 0.15)'
-                  : '#DEF7EC'
-                : isDark
-                ? 'rgba(255,255,255,0.06)'
-                : '#F1F5F9',
-              color: finderFeedback ? '#10B981' : 'var(--text-primary)',
-              fontSize: '0.625rem',
-              fontWeight: 500,
-              cursor: isOpeningFinder ? 'wait' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              transition: 'all 0.15s ease',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {finderFeedback ? (
-              <FiCheck size={11} style={{ color: '#10B981' }} />
-            ) : (
-              <FiExternalLink size={11} style={{ opacity: 0.7 }} />
-            )}
-            <span>{finderFeedback ? 'Opened' : 'Open'}</span>
-          </button>
+            size="sm"
+            activeColor="#10B981"
+          />
         </div>
       </div>
+
+      {useCondoImages ? (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              {[
+                { count: 1, label: '1 Photo (#1)' },
+                { count: 2, label: '2 Photos (#1 & #2)' },
+                { count: 3, label: '3 Photos (All 3)' },
+              ].map((opt) => {
+                const isActive = condoImagesCount === opt.count;
+                return (
+                  <button
+                    key={opt.count}
+                    type="button"
+                    onClick={() => {
+                      setCondoImagesCount(opt.count);
+                      updateConfig('condoImagesCount', opt.count);
+                    }}
+                    style={{
+                      padding: '2px 7px',
+                      borderRadius: '5px',
+                      fontSize: '0.59375rem',
+                      fontWeight: isActive ? 700 : 500,
+                      backgroundColor: isActive
+                        ? 'rgba(16, 185, 129, 0.18)'
+                        : isDark
+                        ? 'rgba(255, 255, 255, 0.05)'
+                        : '#F1F5F9',
+                      color: isActive ? '#10B981' : 'var(--text-secondary)',
+                      border: isActive ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid var(--border-color)',
+                      cursor: 'pointer',
+                      transition: 'all 0.12s ease',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+              {/* Change / Select Photos Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFolderPicker((prev) => !prev);
+                  setActiveCondoSlot(null);
+                }}
+                title="Select & change condo photos"
+                style={{
+                  padding: '3px 7px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: showFolderPicker
+                    ? isDark
+                      ? 'rgba(255,255,255,0.12)'
+                      : '#E2E8F0'
+                    : isDark
+                    ? 'rgba(255,255,255,0.06)'
+                    : '#F1F5F9',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.625rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <FiFolder size={11} style={{ opacity: 0.7 }} />
+                <span>Change</span>
+              </button>
+
+              {/* Open Folder directly in macOS Finder */}
+              <button
+                type="button"
+                onClick={handleOpenFolderInFinder}
+                disabled={isOpeningFinder}
+                title={
+                  matchedCondoInfo?.folder_path
+                    ? `Open folder in macOS Finder: ${matchedCondoInfo.folder_path}`
+                    : 'Open condo folder in macOS Finder'
+                }
+                style={{
+                  padding: '3px 7px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: finderFeedback
+                    ? isDark
+                      ? 'rgba(16, 185, 129, 0.15)'
+                      : '#DEF7EC'
+                    : isDark
+                    ? 'rgba(255,255,255,0.06)'
+                    : '#F1F5F9',
+                  color: finderFeedback ? '#10B981' : 'var(--text-primary)',
+                  fontSize: '0.625rem',
+                  fontWeight: 500,
+                  cursor: isOpeningFinder ? 'wait' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {finderFeedback ? (
+                  <FiCheck size={11} style={{ color: '#10B981' }} />
+                ) : (
+                  <FiExternalLink size={11} style={{ opacity: 0.7 }} />
+                )}
+                <span>{finderFeedback ? 'Opened' : 'Open'}</span>
+              </button>
+            </div>
+          </div>
 
       {/* Condo Photo Selector Drawer (Strictly 3 photos, select / remove / change) */}
       {showFolderPicker && (
@@ -2966,8 +3173,293 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           );
         })}
       </div>
+        </>
+      ) : (
+        <div
+          style={{
+            padding: '8px 12px',
+            borderRadius: '6px',
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+            border: '1px dashed var(--border-color)',
+            fontSize: '0.625rem',
+            color: 'var(--text-muted)',
+            textAlign: 'center',
+          }}
+        >
+          Condo folder photos skipped — will not attach photos from folder.
+        </div>
+      )}
     </div>
   );
+
+  const renderEnhancedAttachedPhotosCard = () => {
+    const isEnhancedSrc = enhancedImagesSource === 'enhanced';
+    const sourceList = isEnhancedSrc ? availableEnhancedPhotos : availableSourcePhotos;
+    const effectiveAttachedPhotos = sourceList.slice(0, enhancedImagesCount);
+
+    return (
+      <div
+        style={{
+          borderRadius: '12px',
+          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+          border: '1px solid var(--border-color)',
+          padding: '0.875rem 1rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.65rem',
+          boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+            <div
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '7px',
+                backgroundColor: 'rgba(139, 92, 246, 0.12)',
+                color: '#8B5CF6',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <FiZap size={14} />
+            </div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                  Interior / Enhanced Photos
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.53125rem',
+                    fontWeight: 700,
+                    padding: '1px 5px',
+                    borderRadius: '4px',
+                    backgroundColor: 'rgba(139, 92, 246, 0.12)',
+                    color: '#8B5CF6',
+                    border: '1px solid rgba(139, 92, 246, 0.25)',
+                  }}
+                >
+                  3rd in Chat
+                </span>
+              </div>
+              <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '1px' }}>
+                {isEnhancedSrc ? 'From Enhance IMG node' : 'From Get Images node'}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span
+              style={{
+                fontSize: '0.5625rem',
+                fontWeight: 600,
+                padding: '2px 7px',
+                borderRadius: '10px',
+                backgroundColor: useEnhancedImages ? 'rgba(139, 92, 246, 0.12)' : (isDark ? 'rgba(255,255,255,0.05)' : '#F1F5F9'),
+                color: useEnhancedImages ? '#8B5CF6' : 'var(--text-muted)',
+                border: '1px solid var(--border-color)',
+              }}
+            >
+              {useEnhancedImages ? `${effectiveAttachedPhotos.length} Attached` : 'Skipped'}
+            </span>
+            <ToggleSwitch
+              checked={useEnhancedImages}
+              onChange={(val) => {
+                setUseEnhancedImages(val);
+                updateConfig('useEnhancedImages', val);
+              }}
+              size="sm"
+              activeColor="#8B5CF6"
+            />
+          </div>
+        </div>
+
+        {useEnhancedImages ? (
+          <>
+            {/* Source Selector & Count Selector Row */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {/* Source Switcher */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                  Photo Source:
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEnhancedImagesSource('enhanced');
+                      updateConfig('enhancedImagesSource', 'enhanced');
+                    }}
+                    style={{
+                      padding: '2px 7px',
+                      borderRadius: '5px',
+                      fontSize: '0.59375rem',
+                      fontWeight: isEnhancedSrc ? 700 : 500,
+                      backgroundColor: isEnhancedSrc
+                        ? 'rgba(139, 92, 246, 0.18)'
+                        : isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
+                      color: isEnhancedSrc ? '#8B5CF6' : 'var(--text-secondary)',
+                      border: isEnhancedSrc ? '1px solid rgba(139, 92, 246, 0.35)' : '1px solid var(--border-color)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    ✨ Enhanced ({availableEnhancedPhotos.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEnhancedImagesSource('get_images');
+                      updateConfig('enhancedImagesSource', 'get_images');
+                    }}
+                    style={{
+                      padding: '2px 7px',
+                      borderRadius: '5px',
+                      fontSize: '0.59375rem',
+                      fontWeight: !isEnhancedSrc ? 700 : 500,
+                      backgroundColor: !isEnhancedSrc
+                        ? 'rgba(139, 92, 246, 0.18)'
+                        : isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
+                      color: !isEnhancedSrc ? '#8B5CF6' : 'var(--text-secondary)',
+                      border: !isEnhancedSrc ? '1px solid rgba(139, 92, 246, 0.35)' : '1px solid var(--border-color)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    📷 Get Images ({availableSourcePhotos.length})
+                  </button>
+                </div>
+              </div>
+
+              {/* Count Selector Pills: 1 Photo, 3 Photos, 5 Photos, All */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                  Attach to Chat:
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {[
+                    { count: 1, label: '1 Photo' },
+                    { count: 3, label: '3 Photos' },
+                    { count: 5, label: '5 Photos' },
+                    { count: sourceList.length || 10, label: `All (${sourceList.length})` },
+                  ].map((opt) => {
+                    const isActive = enhancedImagesCount === opt.count;
+                    return (
+                      <button
+                        key={opt.count}
+                        type="button"
+                        onClick={() => {
+                          setEnhancedImagesCount(opt.count);
+                          updateConfig('enhancedImagesCount', opt.count);
+                        }}
+                        style={{
+                          padding: '2px 7px',
+                          borderRadius: '5px',
+                          fontSize: '0.59375rem',
+                          fontWeight: isActive ? 700 : 500,
+                          backgroundColor: isActive
+                            ? 'rgba(139, 92, 246, 0.2)'
+                            : isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
+                          color: isActive ? '#8B5CF6' : 'var(--text-secondary)',
+                          border: isActive ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid var(--border-color)',
+                          cursor: 'pointer',
+                          transition: 'all 0.12s ease',
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Thumbnail Preview Strip */}
+            {effectiveAttachedPhotos.length > 0 ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  overflowX: 'auto',
+                  padding: '4px 2px',
+                }}
+              >
+                {effectiveAttachedPhotos.map((photo, i) => (
+                  <div
+                    key={photo.url || i}
+                    style={{
+                      position: 'relative',
+                      width: '46px',
+                      height: '46px',
+                      borderRadius: '6px',
+                      overflow: 'hidden',
+                      border: '1px solid rgba(139, 92, 246, 0.35)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <img
+                      src={photo.url}
+                      alt={photo.filename || `Photo #${i + 1}`}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '2px',
+                        left: '2px',
+                        backgroundColor: 'rgba(0,0,0,0.65)',
+                        color: '#FFFFFF',
+                        fontSize: '0.5rem',
+                        fontWeight: 700,
+                        padding: '1px 3px',
+                        borderRadius: '3px',
+                        lineHeight: 1,
+                      }}
+                    >
+                      #{photo.index || i + 1}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+                  border: '1px dashed var(--border-color)',
+                  fontSize: '0.625rem',
+                  color: 'var(--text-muted)',
+                  textAlign: 'center',
+                }}
+              >
+                {isEnhancedSrc
+                  ? 'No enhanced photos available yet. Run Enhance IMG first or switch to "Get Images".'
+                  : 'No photos received from "Get Images" yet.'}
+              </div>
+            )}
+          </>
+        ) : (
+          <div
+            style={{
+              padding: '8px 12px',
+              borderRadius: '6px',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+              border: '1px dashed var(--border-color)',
+              fontSize: '0.625rem',
+              color: 'var(--text-muted)',
+              textAlign: 'center',
+            }}
+          >
+            Interior / Enhanced photos skipped — only reference & folder photos will attach.
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderImagesToEnhanceCard = () => (
     <div
@@ -4280,6 +4772,97 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       </div>
       )}
 
+      {/* ── ACTION MODE SWITCHER: GENERATE IMAGE VS ENHANCE IMAGES ── */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          padding: '3px',
+          borderRadius: '9px',
+          backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : 'rgba(0, 0, 0, 0.05)',
+          border: '1px solid var(--border-color)',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            setTabGroupMode('generate');
+            updateMultiConfig({
+              tabGroupMode: 'generate',
+              processKind: 'generate_image',
+            });
+          }}
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            padding: '6px 10px',
+            borderRadius: '7px',
+            fontSize: '0.6875rem',
+            fontWeight: currentTabGroupMode === 'generate' ? 700 : 500,
+            backgroundColor: currentTabGroupMode === 'generate'
+              ? (isDark ? 'rgba(59, 130, 246, 0.22)' : '#FFFFFF')
+              : 'transparent',
+            color: currentTabGroupMode === 'generate'
+              ? (isDark ? '#60A5FA' : '#2563EB')
+              : 'var(--text-muted)',
+            border: currentTabGroupMode === 'generate'
+              ? (isDark ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(0,0,0,0.08)')
+              : '1px solid transparent',
+            boxShadow: currentTabGroupMode === 'generate'
+              ? (isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.06)')
+              : 'none',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <FiZap size={13} />
+          <span>Generate Image (Composite)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setTabGroupMode('enhance');
+            updateMultiConfig({
+              tabGroupMode: 'enhance',
+              processKind: 'enhance_images',
+            });
+          }}
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            padding: '6px 10px',
+            borderRadius: '7px',
+            fontSize: '0.6875rem',
+            fontWeight: currentTabGroupMode === 'enhance' ? 700 : 500,
+            backgroundColor: currentTabGroupMode === 'enhance'
+              ? (isDark ? 'rgba(16, 185, 129, 0.22)' : '#FFFFFF')
+              : 'transparent',
+            color: currentTabGroupMode === 'enhance'
+              ? (isDark ? '#34D399' : '#059669')
+              : 'var(--text-muted)',
+            border: currentTabGroupMode === 'enhance'
+              ? (isDark ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(0,0,0,0.08)')
+              : '1px solid transparent',
+            boxShadow: currentTabGroupMode === 'enhance'
+              ? (isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.06)')
+              : 'none',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <FiSliders size={13} />
+          <span>Enhance Images (Batch Workers)</span>
+        </button>
+      </div>
+
       {/* ── TAB PROCESS MODULES (CONTROLLED BY SETTINGS) ── */}
       <div
         style={{
@@ -4366,10 +4949,13 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             )}
 
             {/* ── MODULE 1: REFERENCE PHOTO CARD (Hero only) ── */}
-            {isHeroNode && boxConfig.useReferenceImage !== false && renderReferenceImageCard()}
+            {isHeroNode && renderReferenceImageCard()}
 
             {/* ── MODULE 2: CONDO PHOTOS CARD (Hero only) ── */}
-            {isHeroNode && boxConfig.useCondoImages !== false && renderCondoPhotosCard()}
+            {isHeroNode && renderCondoPhotosCard()}
+
+            {/* ── MODULE 3: INTERIOR / ENHANCED PHOTOS CARD ── */}
+            {isHeroNode && renderEnhancedAttachedPhotosCard()}
 
             {/* ── MODULE 4: IMAGES TO ENHANCE CARD (if enabled) ── */}
             {Boolean(boxConfig.showImagesToEnhance) && renderImagesToEnhanceCard()}
@@ -5224,6 +5810,50 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           </button>
         )}
 
+        {/* ── CHATGPT ATTACHMENT PIPELINE SUMMARY BAR (For Hero / Generate Image mode) ── */}
+        {isHeroNode && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '5px',
+              padding: '8px 10px',
+              borderRadius: '8px',
+              backgroundColor: isDark ? 'rgba(0, 0, 0, 0.3)' : 'rgba(0, 0, 0, 0.03)',
+              border: '1px solid var(--border-color)',
+              fontSize: '0.65625rem',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+              <span style={{ fontWeight: 600 }}>📎 ChatGPT Attachments:</span>
+              <span style={{ fontWeight: 700, color: 'var(--accent-primary)' }}>
+                Total: {(useReferenceImage && referenceImage ? 1 : 0) + (useCondoImages ? Math.min(condoImagesCount, selectedCondoCount || condoImagesCount) : 0) + (useEnhancedImages ? Math.min(enhancedImagesCount, (enhancedImagesSource === 'enhanced' ? availableEnhancedPhotos.length : availableSourcePhotos.length) || enhancedImagesCount) : 0)} Photos
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', color: 'var(--text-secondary)' }}>
+              {useReferenceImage && referenceImage && (
+                <span style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(236, 72, 153, 0.15)', color: '#EC4899', fontWeight: 600 }}>
+                  1 Ref
+                </span>
+              )}
+              {useCondoImages && (
+                <span style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10B981', fontWeight: 600 }}>
+                  +{Math.min(condoImagesCount, selectedCondoCount || condoImagesCount)} Condo
+                </span>
+              )}
+              {useEnhancedImages && (
+                <span style={{ padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#8B5CF6', fontWeight: 600 }}>
+                  +{Math.min(enhancedImagesCount, (enhancedImagesSource === 'enhanced' ? availableEnhancedPhotos.length : availableSourcePhotos.length) || enhancedImagesCount)} {enhancedImagesSource === 'enhanced' ? 'Enhanced' : 'Source'}
+                </span>
+              )}
+              <span>➔</span>
+              <span style={{ color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }} title={resolvedPromptPreview || currentPromptText}>
+                💬 {promptSourceMode === 'upstream_ai' ? selectedUpstreamPromptObj?.title || 'AI Model Prompt' : effectivePromptKey || 'Direct Prompt'}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Run Action Button (Theme Primary Clean Apple Style) */}
         <button
           type="button"
@@ -5271,7 +5901,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               <FiLoader className="animate-spin" size={14} />
               <span>
                 {isHeroNode
-                  ? 'Generating Hero Image (1 Ref + 3 Condo Photos)...'
+                  ? `Generating Image (${(useReferenceImage && referenceImage ? 1 : 0) + (useCondoImages ? Math.min(condoImagesCount, selectedCondoCount || condoImagesCount) : 0) + (useEnhancedImages ? Math.min(enhancedImagesCount, (enhancedImagesSource === 'enhanced' ? availableEnhancedPhotos.length : availableSourcePhotos.length) || enhancedImagesCount) : 0)} Photos attached)...`
                   : `Processing ${activeImages.length} Images in ${boxConfig.workerTabCount || (isHeroNode ? 1 : 4)} Tabs...`}
               </span>
             </>
@@ -5280,8 +5910,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               <FiPlay size={13} />
               <span>
                 {isHeroNode
-                  ? `Run ${currentGroup.name || 'FB Hero'} (1 Ref + 3 Condo Photos · 1 Tab)`
-                  : `Run ${currentGroup.name || 'Enhance IMG'} (${activeImages.length} Images · ${boxConfig.workerTabCount || (isHeroNode ? 1 : 4)} Tabs)`}
+                  ? `Run ${currentGroup.name || boxConfig.title || 'FB Hero'} (${(useReferenceImage && referenceImage ? 1 : 0) + (useCondoImages ? Math.min(condoImagesCount, selectedCondoCount || condoImagesCount) : 0) + (useEnhancedImages ? Math.min(enhancedImagesCount, (enhancedImagesSource === 'enhanced' ? availableEnhancedPhotos.length : availableSourcePhotos.length) || enhancedImagesCount) : 0)} Photos · 1 Tab)`
+                  : `Run ${currentGroup.name || boxConfig.title || 'Enhance IMG'} (${activeImages.length} Images · ${boxConfig.workerTabCount || (isHeroNode ? 1 : 4)} Tabs)`}
               </span>
             </>
           )}

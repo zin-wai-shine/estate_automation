@@ -2733,7 +2733,7 @@
   // 7. Monitors ChatGPT in background for finished Hero image & triggers download
   let activeHeroJobId = null;
 
-  async function executeStage2Staging({ heroJobId, extractedPrompt, referenceImage, condoImages, condoName }) {
+  async function executeStage2Staging({ heroJobId, extractedPrompt, referenceImage, condoImages, enhancedImages, condoName }) {
     if (activeHeroJobId && activeHeroJobId === heroJobId) {
       console.log('[BOLTHAVEN] Hero staging already in progress for job:', heroJobId);
       return { success: true, heroJobId, status: 'already_running' };
@@ -2782,10 +2782,9 @@
     }
 
     if (Array.isArray(condoImages) && condoImages.length > 0) {
-      const condoSubset = condoImages.slice(0, 3); // STRICTLY at most 3 condo building photos!
-      console.log(`[BOLTHAVEN] Stage 2: Preparing ${condoSubset.length} condo building images (2nd, 3rd, 4th)...`);
-      for (let i = 0; i < condoSubset.length; i++) {
-        const img = condoSubset[i];
+      console.log(`[BOLTHAVEN] Stage 2: Preparing ${condoImages.length} condo building images (2nd)...`);
+      for (let i = 0; i < condoImages.length; i++) {
+        const img = condoImages[i];
         const imgUrl = img.data_url || img.url || img.full_path;
         if (!imgUrl) continue;
         try {
@@ -2799,8 +2798,25 @@
       }
     }
 
+    if (Array.isArray(enhancedImages) && enhancedImages.length > 0) {
+      console.log(`[BOLTHAVEN] Stage 2: Preparing ${enhancedImages.length} enhanced/interior images (3rd)...`);
+      for (let i = 0; i < enhancedImages.length; i++) {
+        const img = enhancedImages[i];
+        const imgUrl = img.data_url || img.url || img.full_path;
+        if (!imgUrl) continue;
+        try {
+          const blob = await fetchImageBlob(imgUrl, '');
+          const mimeType = blob.type || 'image/png';
+          const fname = img.filename || `interior_photo_${img.index || (i + 1)}.png`;
+          filesToAttach.push(new File([blob], fname, { type: mimeType }));
+        } catch (e) {
+          console.warn(`[BOLTHAVEN] Failed to prepare enhanced image #${i + 1}:`, e);
+        }
+      }
+    }
+
     const targetTotalImages = filesToAttach.length;
-    console.log(`[BOLTHAVEN] Stage 2: Target total images to attach: ${targetTotalImages} (1 Reference + ${targetTotalImages - (referenceImage ? 1 : 0)} Condo Photos)`);
+    console.log(`[BOLTHAVEN] Stage 2: Target total images to attach: ${targetTotalImages} (${referenceImage ? '1 Ref + ' : ''}${condoImages?.length || 0} Folder + ${enhancedImages?.length || 0} Enhanced)`);
 
     let totalImagesPasted = 0;
 
@@ -3192,6 +3208,7 @@
         extractedPrompt: request.extractedPrompt,
         referenceImage: request.referenceImage,
         condoImages: request.condoImages,
+        enhancedImages: request.enhancedImages,
         condoName: request.condoName,
       })
         .then((result) => sendResponse(result))
