@@ -2457,12 +2457,12 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
           <div
             style={{
-              width: '28px',
-              height: '28px',
-              borderRadius: '7px',
+              width: '26px',
+              height: '26px',
+              borderRadius: '6px',
               backgroundColor: 'rgba(16, 185, 129, 0.12)',
               color: '#10B981',
               display: 'flex',
@@ -2471,19 +2471,21 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               flexShrink: 0,
             }}
           >
-            <FiImage size={14} />
+            <FiImage size={13} />
           </div>
-          <div>
-            <div style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-              Image(s) to Enhance
-            </div>
-            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-              Target: Tab Group worker photos
-            </div>
+          <div
+            style={{
+              fontSize: '0.78125rem',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Image(s) to Enhance
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
           {receivedImages.length > 1 && (
             <button
               type="button"
@@ -2500,21 +2502,29 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 });
               }}
               style={{
-                fontSize: '0.5625rem',
+                fontSize: '0.625rem',
                 fontWeight: 600,
-                padding: '2px 7px',
+                padding: '2px 8px',
+                height: '24px',
                 borderRadius: '6px',
-                border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid #CBD5E1',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F1F5F9',
+                border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid #CBD5E1',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
                 color: isDark ? '#94A3B8' : '#64748B',
                 cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 transition: 'all 0.15s ease',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+                e.currentTarget.style.color = isDark ? '#F1F5F9' : '#1E293B';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F1F5F9';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9';
+                e.currentTarget.style.color = isDark ? '#94A3B8' : '#64748B';
               }}
             >
               {(imageSourceMode !== 'selected' || selectedImageIndices.length === receivedImages.length) ? 'Deselect All' : 'Select All'}
@@ -2522,14 +2532,20 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           )}
           <span
             style={{
-              fontSize: '0.5625rem',
+              fontSize: '0.625rem',
               fontWeight: 700,
               padding: '2px 8px',
-              borderRadius: '10px',
+              height: '24px',
+              borderRadius: '12px',
               backgroundColor: activeImages.length > 0 ? 'rgba(16, 185, 129, 0.12)' : isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
               color: activeImages.length > 0 ? '#10B981' : 'var(--text-secondary)',
               border: activeImages.length > 0 ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid var(--border-color)',
               letterSpacing: '0.02em',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
             {activeImages.length} of {receivedImages.length} Active
