@@ -11835,6 +11835,18 @@ export const FacebookWorkflowCanvas = forwardRef<
                     Boolean((box as any).outputCopy)
                   );
 
+                  const hasTopWireOrSocket = isChromeProfile || isChromeTabGroup || (isAttachedCropFormat && isThisFormatBelow);
+                  const hasTopLabel = isTextFormat || (isAttachedCropFormat && !isThisFormatBelow);
+                  const playButtonSide: 'top' | 'right' | 'left' = (
+                    isWatermark ||
+                    isTextFormat ||
+                    isAttachedCropFormat ||
+                    isChromeProfile ||
+                    isChromeTabGroup ||
+                    hasTopWireOrSocket ||
+                    hasTopLabel
+                  ) ? 'left' : 'top';
+
                   return (
                     <>
                       {Boolean(isEffectiveEnabled) && (hoveredNodeId === box.id || isSelected) &&
@@ -11853,13 +11865,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     : isGoogleSheetBox(box)
                                       ? '#10B981'
                                       : '#A855F7',
-                          isTextAI
-                            ? { left: '24px', top: '-38px', transform: 'none' }
-                            : isThisSheetCompleted
-                              ? { left: 'calc(50% - 17px)' }
-                              : undefined,
+                          playButtonSide === 'left'
+                            ? undefined
+                            : isTextAI || (isCropStudio && !cropFormatsAreBelow)
+                              ? { left: '24px', top: '-38px', transform: 'none' }
+                              : isThisSheetCompleted
+                                ? { left: 'calc(50% - 17px)' }
+                                : undefined,
                           box.title || 'Step',
-                          isTextFormat ? 'right' : 'top'
+                          playButtonSide
                         )}
 
                       {/* Floating Revert Row Button for Google Sheet when row has been added */}
