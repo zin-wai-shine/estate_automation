@@ -77,7 +77,7 @@ import { AIImageStudio } from './AIImageStudio';
 import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
 import { getPersistedReferenceImage, isReferenceImageExplicitlyDeleted } from '../browser-processing/referenceImageStorage';
 import { FBHeroSettingsSidebox, extractCleanCondoNameFromAiText } from '../browser-processing/FBHeroSettingsSidebox';
-import { ChromeTabGroupConnectDrawer } from '../browser-processing/ChromeTabGroupConnectDrawer';
+import { ChromeTabGroupConnectDrawer, type WorkflowImageSource } from '../browser-processing/ChromeTabGroupConnectDrawer';
 import { GoogleSheetSettingsSidebox } from './GoogleSheetSettingsSidebox';
 import { PhotoCropSettingsSidebox } from './PhotoCropSettingsSidebox';
 import { focusBrowserTabGroup, fetchBrowserProfiles, fetchTabGroups, fetchEnhancedDownloadedImages, stopAutomation } from '../browser-processing/browserAutomationService';
@@ -5626,6 +5626,88 @@ export const FacebookWorkflowCanvas = forwardRef<
 
     return list;
   }, [effectiveImages, watermarkedPhotos, allEnhancedPhotos, combineCropSlices]);
+
+  const computedWorkflowImageNodes = useMemo<WorkflowImageSource[]>(() => {
+    const formattedPropertyImages = (effectiveImages && effectiveImages.length > 0 ? effectiveImages : images || []).map((img: any, i: number) => ({
+      url: typeof img === 'string' ? img : (img?.url || img?.source_url || img?.stored_url || img?.src || ''),
+      index: typeof img?.index === 'number' ? img.index + 1 : i + 1,
+      filename: img?.filename || `Photo #${i + 1}`,
+    }));
+
+    const formattedEnhancedImages = Object.entries(allEnhancedPhotos || {}).map(([_k, url], i) => ({
+      url: String(url),
+      index: i + 1,
+      filename: `Enhanced Photo #${i + 1}`,
+    }));
+
+    let currentHero = heroImage;
+    if (!currentHero && typeof localStorage !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('bolthaven_last_hero_image');
+        if (saved) currentHero = JSON.parse(saved);
+      } catch (_) {}
+    }
+    const formattedHeroImages = currentHero?.url ? [{
+      url: currentHero.url,
+      index: 1,
+      filename: currentHero.fileName || 'FB Hero Photo',
+    }] : [];
+
+    const extBrowserBox = config.aiBoxes.find((b) => isExternalBrowserAIBox(b));
+    const externalBrowserTitle = extBrowserBox?.title || 'External Browser #1';
+
+    const nodes: WorkflowImageSource[] = [];
+
+    // 1. Root: Get Images (All Media)
+    nodes.push({
+      id: 'get-images',
+      title: (config.getImages as any)?.title || 'Get Images (All Media)',
+      nodeType: 'get-images',
+      images: formattedPropertyImages,
+      count: formattedPropertyImages.length,
+      description: `${formattedPropertyImages.length} listing photos`,
+    });
+
+    const enhanceTabBox = config.aiBoxes.find((b) =>
+      (isChromeTabGroupAIBox(b) || isEnhanceAIBox(b, config.connections) || b.processType === 'image_enhance') &&
+      (b.title?.toLowerCase().includes('enhance') || b.id.includes('enhance') || b.browserGroupName?.toLowerCase().includes('enhance'))
+    );
+
+    const heroTabBox = config.aiBoxes.find((b) =>
+      (isChromeTabGroupAIBox(b) || b.processType === 'ai_processor') &&
+      (b.title?.toLowerCase().includes('hero') || b.id.includes('hero') || b.browserGroupName?.toLowerCase().includes('hero'))
+    );
+
+    // 2. Child: Enhance IMG
+    const hasEnhanced = formattedEnhancedImages.length > 0;
+    const enhanceCandidateImages = hasEnhanced ? formattedEnhancedImages : formattedPropertyImages;
+    nodes.push({
+      id: enhanceTabBox?.id || 'tabgroup-enhance-img',
+      title: enhanceTabBox?.title || 'Enhance IMG',
+      groupTitle: externalBrowserTitle,
+      nodeType: 'enhance',
+      images: enhanceCandidateImages,
+      count: enhanceCandidateImages.length,
+      description: hasEnhanced
+        ? `${formattedEnhancedImages.length} enhanced photos`
+        : `${formattedPropertyImages.length} listing photos (to enhance)`,
+    });
+
+    // 3. Child: FB Hero
+    const hasHero = formattedHeroImages.length > 0;
+    const heroCandidateImages = hasHero ? formattedHeroImages : formattedPropertyImages.slice(0, 1);
+    nodes.push({
+      id: heroTabBox?.id || 'tabgroup-fb-hero',
+      title: heroTabBox?.title || 'FB Hero',
+      groupTitle: externalBrowserTitle,
+      nodeType: 'hero',
+      images: heroCandidateImages,
+      count: heroCandidateImages.length,
+      description: `${heroCandidateImages.length} hero photo${heroCandidateImages.length !== 1 ? 's' : ''}`,
+    });
+
+    return nodes;
+  }, [effectiveImages, images, allEnhancedPhotos, heroImage, config.aiBoxes, config.connections, config.getImages]);
 
   const handleOpenLightbox = (
     indexOrUrl: number | string,
@@ -18286,6 +18368,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               onCloseSettingsSidebox={() => setShowFBHeroSettingsSidebox(false)}
                               isSettingsSideboxOpen={showFBHeroSettingsSidebox}
                               onEnhancedPhotosUpdate={(photos) => setCompanionEnhancedMap((prev) => ({ ...prev, ...photos }))}
+                              workflowImageSources={computedWorkflowImageNodes}
                             />
                             <FBHeroSettingsSidebox
                               key={currentModalAIBox.id}
@@ -18307,6 +18390,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 upstreamTabGroups,
                                 images: effectiveBrowserImages,
                               }}
+                              workflowImageSources={computedWorkflowImageNodes}
                             />
                           </>
                         );
@@ -20713,33 +20797,25 @@ export const FacebookWorkflowCanvas = forwardRef<
           );
 
           // 1. Child: Enhance IMG
-          const hasEnhanced = formattedEnhancedImages.length > 0;
-          const enhanceCandidateImages = hasEnhanced ? formattedEnhancedImages : formattedPropertyImages;
           workflowImageNodes.push({
             id: enhanceTabBox?.id || 'tabgroup-enhance-img',
             title: enhanceTabBox?.title || 'Enhance IMG',
             groupTitle: externalBrowserTitle,
             nodeType: 'enhance',
-            images: enhanceCandidateImages,
-            count: enhanceCandidateImages.length,
-            description: hasEnhanced
-              ? `${formattedEnhancedImages.length} enhanced photos`
-              : `${formattedPropertyImages.length} listing photos (to enhance)`,
+            images: formattedEnhancedImages,
+            count: formattedEnhancedImages.length,
+            description: `${formattedEnhancedImages.length} enhanced photos`,
           });
 
           // 2. Child: FB Hero
-          const hasHero = formattedHeroImages.length > 0;
-          const heroCandidateImages = hasHero ? formattedHeroImages : formattedPropertyImages.slice(0, 1);
           workflowImageNodes.push({
             id: heroTabBox?.id || 'tabgroup-fb-hero',
             title: heroTabBox?.title || 'FB Hero',
             groupTitle: externalBrowserTitle,
             nodeType: 'hero',
-            images: heroCandidateImages,
-            count: heroCandidateImages.length,
-            description: hasHero
-              ? `${formattedHeroImages.length} hero photo${formattedHeroImages.length !== 1 ? 's' : ''}`
-              : `1 hero candidate photo`,
+            images: formattedHeroImages,
+            count: formattedHeroImages.length,
+            description: `${formattedHeroImages.length} hero photo${formattedHeroImages.length !== 1 ? 's' : ''}`,
           });
 
           // 3. Any additional connected image tab groups

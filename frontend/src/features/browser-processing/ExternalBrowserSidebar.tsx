@@ -86,6 +86,7 @@ import {
 } from './browserPromptUtils';
 import { loadAvailablePromptTemplates } from '../facebook-import/FacebookWorkflowCanvas';
 import { extractCleanCondoNameFromAiText } from './FBHeroSettingsSidebox';
+import { AttachmentGroupsManager, type AttachmentStep, resolveAttachedPhotosFromSteps, type WorkflowImageSource } from './AttachmentGroupsManager';
 import type {
   BrowserProfile,
   BrowserGroupItem,
@@ -127,6 +128,7 @@ interface ExternalBrowserSidebarProps {
   rawPostContent?: string;
   onRunCondoNameStep?: () => Promise<string | void>;
   onEnhancedPhotosUpdate?: (photos: Record<number, string>) => void;
+  workflowImageSources?: WorkflowImageSource[];
 }
 
 export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
@@ -150,6 +152,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   rawPostContent,
   onRunCondoNameStep,
   onEnhancedPhotosUpdate,
+  workflowImageSources = [],
 }) => {
   const isTabGroupNode = Boolean(
     propIsTabGroupNode ||
@@ -373,6 +376,37 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const [condoImagesCount, setCondoImagesCount] = useState<number>(() => {
     return boxConfig.condoImagesCount !== undefined ? boxConfig.condoImagesCount : 3;
   });
+
+  const [attachmentSteps, setAttachmentSteps] = useState<AttachmentStep[]>(() => {
+    if (Array.isArray(boxConfig.imageAttachmentSteps) && boxConfig.imageAttachmentSteps.length > 0) {
+      return boxConfig.imageAttachmentSteps;
+    }
+    return [
+      {
+        id: 'group-1',
+        title: 'Group 1',
+        count: 1,
+        sourceType: 'upload',
+        folderName: '',
+        enabled: true,
+      },
+    ];
+  });
+
+  useEffect(() => {
+    if (Array.isArray(boxConfig.imageAttachmentSteps) && boxConfig.imageAttachmentSteps.length > 0) {
+      setAttachmentSteps(boxConfig.imageAttachmentSteps);
+    }
+  }, [boxConfig.imageAttachmentSteps]);
+
+  const handleAttachmentStepsChange = (newSteps: AttachmentStep[]) => {
+    setAttachmentSteps(newSteps);
+    const total = newSteps.filter((s: AttachmentStep) => s.enabled).reduce((acc: number, s: AttachmentStep) => acc + s.count, 0);
+    updateMultiConfig({
+      imageAttachmentSteps: newSteps,
+      condoImagesCount: total,
+    });
+  };
   const [useEnhancedImages, setUseEnhancedImages] = useState<boolean>(() => {
     return boxConfig.useEnhancedImages !== undefined ? boxConfig.useEnhancedImages : true;
   });
@@ -1256,28 +1290,37 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         ? (activeReferenceImage?.url || referenceImage || boxConfig.referenceImage || (propertyContext?.images && propertyContext.images[0]?.url) || null)
         : null;
 
-      // 2. Condo / Folder Photos (2nd Attached)
+      // 2. Condo / Attached Group Photos (2nd Attached)
       let condoImagesToUse: any[] = [];
       const shouldAttachCondo = useCondoImages && boxConfig.useCondoImages !== false;
-      const targetCondoCount = typeof condoImagesCount === 'number' ? condoImagesCount : 3;
-      if (shouldAttachCondo && targetCondoCount > 0) {
-        const selectedCondoImgs = condoSlots.filter(Boolean);
-        if (selectedCondoImgs.length > 0) {
-          condoImagesToUse = selectedCondoImgs.slice(0, targetCondoCount);
-        } else if (matchedCondoInfo?.images && matchedCondoInfo.images.length > 0) {
-          condoImagesToUse = matchedCondoInfo.images.slice(0, targetCondoCount);
-        } else if (Array.isArray(boxConfig.condoImages) && boxConfig.condoImages.length > 0) {
-          condoImagesToUse = boxConfig.condoImages.slice(0, targetCondoCount);
-        } else if (propertyContext?.images && propertyContext.images.length > 0) {
-          condoImagesToUse = propertyContext.images.slice(0, targetCondoCount).map((img, i) => ({
-            index: i + 1,
-            filename: img.filename || `Condo Photo #${i + 1}`,
-            url: img.url,
-            data_url: img.url,
-          }));
+      if (shouldAttachCondo) {
+        const resolvedGroupPhotos = resolveAttachedPhotosFromSteps(
+          attachmentSteps,
+          workflowImageSources,
+          propertyContext?.images,
+          availableEnhancedPhotos
+        );
+        if (resolvedGroupPhotos.length > 0) {
+          condoImagesToUse = resolvedGroupPhotos;
+        } else {
+          const targetCondoCount = typeof condoImagesCount === 'number' ? condoImagesCount : 3;
+          const selectedCondoImgs = condoSlots.filter(Boolean);
+          if (selectedCondoImgs.length > 0) {
+            condoImagesToUse = selectedCondoImgs.slice(0, targetCondoCount);
+          } else if (matchedCondoInfo?.images && matchedCondoInfo.images.length > 0) {
+            condoImagesToUse = matchedCondoInfo.images.slice(0, targetCondoCount);
+          } else if (Array.isArray(boxConfig.condoImages) && boxConfig.condoImages.length > 0) {
+            condoImagesToUse = boxConfig.condoImages.slice(0, targetCondoCount);
+          } else if (propertyContext?.images && propertyContext.images.length > 0) {
+            condoImagesToUse = propertyContext.images.slice(0, targetCondoCount).map((img, i) => ({
+              index: i + 1,
+              filename: img.filename || `Condo Photo #${i + 1}`,
+              url: img.url,
+              data_url: img.url,
+            }));
+          }
         }
       }
-
       // 3. Interior / Enhanced Photos (3rd Attached)
       let enhancedImagesToUse: any[] = [];
       const shouldAttachEnhanced = useEnhancedImages && boxConfig.useEnhancedImages !== false;
@@ -2338,7 +2381,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                Reference Image
+                Reference Layout
               </span>
               <span
                 style={{
@@ -2355,7 +2398,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               </span>
             </div>
             <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-              Layout example attached first to ChatGPT
+              Example design attached first to guide composition
             </div>
           </div>
         </div>
@@ -4948,335 +4991,305 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             </div>
             )}
 
-            {/* ── MODULE 1: REFERENCE PHOTO CARD (Hero only) ── */}
-            {isHeroNode && renderReferenceImageCard()}
-
-            {/* ── MODULE 2: CONDO PHOTOS CARD (Hero only) ── */}
-            {isHeroNode && renderCondoPhotosCard()}
-
-            {/* ── MODULE 3: INTERIOR / ENHANCED PHOTOS CARD ── */}
-            {isHeroNode && renderEnhancedAttachedPhotosCard()}
-
-            {/* ── MODULE 4: IMAGES TO ENHANCE CARD (if enabled) ── */}
-            {Boolean(boxConfig.showImagesToEnhance) && renderImagesToEnhanceCard()}
-
-            {/* ── MODULE 3: PROMPT CONFIGURATION CARD ── */}
-            {boxConfig.usePromptConfig !== false && boxConfig.showEnhancementPrompt !== false && (
-              <div
-                style={{
-                  borderRadius: '12px',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-                  border: '1px solid var(--border-color)',
-                  padding: '0.875rem 1rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.65rem',
-                  boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                    <div
-                      style={{
-                        width: '28px',
-                        height: '28px',
-                        borderRadius: '7px',
-                        backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                        color: '#3B82F6',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <FiFileText size={14} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {isHeroNode ? 'Prompt Configuration' : 'Enhancement Prompt'}
-                      </div>
-                      <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                        {isHeroNode
-                          ? `${(boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1) ? 'Direct to Tab 2' : '2-Stage Browser'} • ${promptSourceMode === 'upstream_ai' ? 'Canvas AI' : promptSourceMode === 'custom' ? 'Custom Prompt' : 'Template'} (Set in Settings)`
-                          : 'Worker tab enhancement template'}
-                      </div>
-                    </div>
+            {/* ── NEW FLOW MODULES FOR HERO NODE ── */}
+            {isHeroNode && (
+              <>
+                {/* 1. Prompt Section */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: '0.02em', marginTop: '2px' }}>
+                    Prompt
                   </div>
 
-                  {/* Mode Indicator Badge (Only relevant for Hero nodes) */}
-                  {isHeroNode && (
-                    <span
-                      style={{
-                        fontSize: '0.5625rem',
-                        fontWeight: 700,
-                        padding: '2px 8px',
-                        borderRadius: '10px',
-                        backgroundColor: (boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1)
-                          ? 'rgba(59, 130, 246, 0.15)'
-                          : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
-                        color: (boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1)
-                          ? '#3B82F6'
-                          : 'var(--text-secondary)',
-                        border: (boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1)
-                          ? '1px solid rgba(59, 130, 246, 0.3)'
-                          : '1px solid var(--border-color)',
-                        letterSpacing: '0.02em',
-                      }}
-                      title="Staging flow mode can only be changed in Settings"
-                    >
-                      {(boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1) ? 'Direct' : '2-Stage'}
-                    </span>
-                  )}
-                </div>
-
-                {/* 1. Prompt Template Mode */}
-                {promptSourceMode === 'preset' && (
-                  <Select
-                    options={promptOptions.map((p) => ({
-                      value: p.id,
-                      label: p.name,
-                    }))}
-                    value={effectivePromptKey}
-                    onChange={(val) => {
-                      const strVal = String(val);
-                      setSelectedPromptKey(strVal);
-                      const found = promptOptions.find(
-                        (p) => String(p.id).trim().toLowerCase() === strVal.trim().toLowerCase() || p.name.trim().toLowerCase() === strVal.trim().toLowerCase()
-                      );
-                      const txt = found ? found.instructions : '';
-                      updateMultiConfig({
-                        browserPromptTemplateKey: strVal,
-                        ...(txt ? { browserPromptText: txt } : {}),
-                      });
-                    }}
-                  />
-                )}
-
-                {/* 2. AI Generate (Upstream AI Node) Mode */}
-                {promptSourceMode === 'upstream_ai' && (
-                  <Select
-                    options={effectiveUpstreamPrompts.map((p) => ({
-                      value: p.id,
-                      label: `🤖 ${p.title} (AI Model)`,
-                    }))}
-                    value={selectedUpstreamAiId || effectiveUpstreamPrompts[0]?.id}
-                    onChange={(val) => {
-                      const strVal = String(val);
-                      setSelectedUpstreamAiId(strVal);
-                      updateMultiConfig({
-                        selectedUpstreamAiId: strVal,
-                      });
-                    }}
-                  />
-                )}
-
-                {/* 3. Custom Prompt Mode */}
-                {promptSourceMode === 'custom' && (
-                  <textarea
-                    rows={2}
-                    value={customPromptText}
-                    onChange={(e) => {
-                      setCustomPromptText(e.target.value);
-                      updateMultiConfig({
-                        browserCustomPrompt: e.target.value,
-                        customPrompt: e.target.value,
-                      });
-                    }}
-                    placeholder="Enter custom image generation instructions..."
-                    style={{
-                      width: '100%',
-                      padding: '6px 8px',
-                      fontSize: '0.6875rem',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : '#FFFFFF',
-                      color: 'var(--text-primary)',
-                      resize: 'vertical',
-                    }}
-                  />
-                )}
-
-                {/* Condo Project Identification Bar with Reload Button */}
-                {isHeroNode && (
+                  {/* Connected Prompt Card */}
                   <div
                     style={{
+                      borderRadius: '12px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                      border: '1px solid var(--border-color)',
+                      padding: '0.875rem 1rem',
                       display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '8px',
-                      padding: '6px 10px',
-                      borderRadius: '8px',
-                      backgroundColor: isDark ? 'rgba(0, 0, 0, 0.22)' : 'rgba(0, 0, 0, 0.03)',
-                      border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.08)',
-                      fontSize: '0.6875rem',
-                      marginTop: '2px',
+                      flexDirection: 'column',
+                      gap: '0.65rem',
+                      boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
-                      <span style={{ fontSize: '13px', flexShrink: 0 }}>🏢</span>
-                      <span
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                        <div
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '7px',
+                            backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                            color: '#3B82F6',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <FiFileText size={14} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            Connected Prompt
+                          </div>
+                          <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                            AI prompt from canvas
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Canvas AI vs Custom pill switchers (Title casing: normal letters) */}
+                      <div
                         style={{
-                          fontWeight: 600,
-                          color: (condoSearchQuery || condoName) ? 'var(--text-primary)' : '#EF4444',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
+                          padding: '2px',
+                          borderRadius: '6px',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                         }}
-                        title={(condoSearchQuery || condoName) ? `Condo: ${condoSearchQuery || condoName}` : 'No condo name extracted yet'}
                       >
-                        {(condoSearchQuery || condoName) ? (condoSearchQuery || condoName) : 'No condo name extracted'}
-                      </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPromptSourceMode('upstream_ai');
+                            updateConfig('promptSourceMode', 'upstream_ai');
+                          }}
+                          style={{
+                            padding: '3px 10px',
+                            borderRadius: '4px',
+                            border: 'none',
+                            fontSize: '0.65625rem',
+                            fontWeight: 600,
+                            textTransform: 'none',
+                            backgroundColor: promptSourceMode === 'upstream_ai' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
+                            color: promptSourceMode === 'upstream_ai' ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Canvas AI
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPromptSourceMode('custom');
+                            updateConfig('promptSourceMode', 'custom');
+                          }}
+                          style={{
+                            padding: '3px 10px',
+                            borderRadius: '4px',
+                            border: 'none',
+                            fontSize: '0.65625rem',
+                            fontWeight: 600,
+                            textTransform: 'none',
+                            backgroundColor: promptSourceMode === 'custom' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
+                            color: promptSourceMode === 'custom' ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Custom
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleReloadCondoName}
-                      disabled={isReloadingCondoName}
-                      title="Reload / extract condo name from post"
-                      style={{
-                        flexShrink: 0,
-                        height: '24px',
-                        padding: '0 8px',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.625rem',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        cursor: isReloadingCondoName ? 'not-allowed' : 'pointer',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      <FiRefreshCw className={isReloadingCondoName ? 'spin' : ''} style={{ fontSize: '10px' }} />
-                      <span>{isReloadingCondoName ? 'Loading...' : 'Reload Condo'}</span>
-                    </button>
-                  </div>
-                )}
 
-                {/* View Prompt Button & Quick Copy Button */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onCloseSettingsSidebox?.();
-                      setShowPromptViewSidebox(true);
-                    }}
-                    style={{
-                      flex: 1,
-                      height: '32px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.6875rem',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    {promptSourceMode === 'upstream_ai' ? (
-                      <FiZap size={13} style={{ color: '#10B981' }} />
-                    ) : (
-                      <FiFileText size={13} style={{ color: '#3B82F6' }} />
+                    {/* Upstream AI Model dropdown */}
+                    {promptSourceMode === 'upstream_ai' && (
+                      <Select
+                        options={effectiveUpstreamPrompts.length > 0 ? effectiveUpstreamPrompts.map((p) => ({
+                          value: p.id,
+                          label: `${p.title} (AI Model)`,
+                        })) : [{ value: 'default', label: 'BoltHaven-FB Hero Prompt (AI Model)' }]}
+                        value={selectedUpstreamAiId || effectiveUpstreamPrompts[0]?.id || ''}
+                        onChange={(val) => {
+                          const strVal = String(val);
+                          setSelectedUpstreamAiId(strVal);
+                          updateMultiConfig({ selectedUpstreamAiId: strVal });
+                        }}
+                      />
                     )}
-                    <span>
-                      {promptSourceMode === 'upstream_ai'
-                        ? 'View AI Generated Prompt'
-                        : promptSourceMode === 'custom'
-                        ? 'View Custom Prompt'
-                        : 'View Prompt Template'}
-                    </span>
-                  </button>
 
-                  <button
-                    type="button"
-                    onClick={handleCopyPrompt}
-                    title="Copy full prompt"
-                    style={{
-                      height: '32px',
-                      padding: '0 10px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
-                      color: isCopied ? '#10B981' : 'var(--text-secondary)',
-                      fontSize: '0.6875rem',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {isCopied ? <FiCheck size={12} color="#10B981" /> : <FiCopy size={12} />}
-                    <span>{isCopied ? 'Copied' : 'Copy'}</span>
-                  </button>
-                </div>
+                    {/* Custom Prompt Mode */}
+                    {promptSourceMode === 'custom' && (
+                      <textarea
+                        rows={2}
+                        value={customPromptText}
+                        onChange={(e) => {
+                          setCustomPromptText(e.target.value);
+                          updateMultiConfig({
+                            browserCustomPrompt: e.target.value,
+                            customPrompt: e.target.value,
+                          });
+                        }}
+                        placeholder="Enter custom image generation instructions..."
+                        style={{
+                          width: '100%',
+                          padding: '6px 8px',
+                          fontSize: '0.6875rem',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color)',
+                          backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : '#FFFFFF',
+                          color: 'var(--text-primary)',
+                          resize: 'vertical',
+                        }}
+                      />
+                    )}
 
-                {/* Auto-Run Toggle & Status Bar (FB Hero Node) */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    background: autoRunEnabled ? 'rgba(16, 185, 129, 0.08)' : isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
-                    border: autoRunEnabled ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid var(--border-color)',
-                    marginTop: '4px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span
-                      style={{
-                        width: '7px',
-                        height: '7px',
-                        borderRadius: '50%',
-                        backgroundColor: autoRunEnabled ? '#10B981' : '#94A3B8',
-                        boxShadow: autoRunEnabled ? '0 0 8px rgba(16, 185, 129, 0.6)' : 'none',
-                      }}
-                    />
-                    <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: autoRunEnabled ? '#10B981' : 'var(--text-secondary)' }}>
-                      {autoRunCountdown !== null
-                        ? `⚡ Auto-starting in ${autoRunCountdown}s...`
-                        : autoRunEnabled
-                        ? 'Auto-Run: Active (Auto-runs tabs & photos)'
-                        : 'Auto-Run: Off (Manual click)'}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    {autoRunCountdown !== null && (
+                    {/* View Prompt Button & Quick Copy Button */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
                       <button
                         type="button"
-                        onClick={handleCancelAutoRun}
+                        onClick={() => {
+                          onCloseSettingsSidebox?.();
+                          setShowPromptViewSidebox(true);
+                        }}
                         style={{
-                          border: 'none',
-                          background: 'rgba(239, 68, 68, 0.12)',
-                          color: '#EF4444',
-                          fontSize: '0.625rem',
+                          flex: 1,
+                          height: '30px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color)',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.6875rem',
                           fontWeight: 600,
-                          padding: '2px 6px',
-                          borderRadius: '4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
                           cursor: 'pointer',
                         }}
                       >
-                        Cancel
+                        <FiZap size={13} style={{ color: '#10B981' }} />
+                        <span>View Prompt</span>
                       </button>
-                    )}
-                    <ToggleSwitch
-                      checked={autoRunEnabled}
-                      onChange={(val) => handleToggleAutoRun(val)}
-                      size="sm"
-                      activeColor="#10B981"
-                    />
+
+                      <button
+                        type="button"
+                        onClick={handleCopyPrompt}
+                        title="Copy full prompt"
+                        style={{
+                          height: '30px',
+                          padding: '0 10px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color)',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                          color: isCopied ? '#10B981' : 'var(--text-secondary)',
+                          fontSize: '0.6875rem',
+                          fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {isCopied ? <FiCheck size={12} /> : <FiCopy size={12} />}
+                        <span>{isCopied ? 'Copied' : 'Copy'}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
+
+                {/* 2. Attached Images Section */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: '0.02em' }}>
+                      Attached Images
+                    </span>
+                    <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                      {(useReferenceImage && referenceImage ? 1 : 0) + (useCondoImages ? attachmentSteps.filter((s: AttachmentStep) => s.enabled).reduce((a: number, b: AttachmentStep) => a + b.count, 0) : 0)} total photos
+                    </span>
+                  </div>
+
+                  {/* Reference Layout Card */}
+                  {renderReferenceImageCard()}
+
+                  {/* Condo Photos Multi-Group Manager */}
+                  <AttachmentGroupsManager
+                    steps={attachmentSteps}
+                    onChange={handleAttachmentStepsChange}
+                    isDark={isDark}
+                    useCondoImages={useCondoImages}
+                    onToggleUseCondoImages={(val) => {
+                      setUseCondoImages(val);
+                      updateConfig('useCondoImages', val);
+                    }}
+                    workflowImageSources={workflowImageSources}
+                    propertyImages={propertyContext?.images}
+                    enhancedImages={availableEnhancedPhotos}
+                    condoName={condoSearchQuery || condoName}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* ── MODULES FOR ENHANCE NODE (When not in Hero mode) ── */}
+            {!isHeroNode && (
+              <>
+                {Boolean(boxConfig.showImagesToEnhance) && renderImagesToEnhanceCard()}
+                {boxConfig.usePromptConfig !== false && boxConfig.showEnhancementPrompt !== false && (
+                  <div
+                    style={{
+                      borderRadius: '12px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                      border: '1px solid var(--border-color)',
+                      padding: '0.875rem 1rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.65rem',
+                      boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                        <div
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '7px',
+                            backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                            color: '#3B82F6',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <FiFileText size={14} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            Enhancement Prompt
+                          </div>
+                          <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                            Worker tab enhancement template
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <Select
+                      options={promptOptions.map((p) => ({
+                        value: p.id,
+                        label: p.name,
+                      }))}
+                      value={effectivePromptKey}
+                      onChange={(val) => {
+                        const strVal = String(val);
+                        setSelectedPromptKey(strVal);
+                        const found = promptOptions.find(
+                          (p) => String(p.id).trim().toLowerCase() === strVal.trim().toLowerCase() || p.name.trim().toLowerCase() === strVal.trim().toLowerCase()
+                        );
+                        const txt = found ? found.instructions : '';
+                        updateMultiConfig({
+                          browserPromptTemplateKey: strVal,
+                          ...(txt ? { browserPromptText: txt } : {}),
+                        });
+                      }}
+                    />
+                  </div>
+                )}
+              </>
             )}
 
 
