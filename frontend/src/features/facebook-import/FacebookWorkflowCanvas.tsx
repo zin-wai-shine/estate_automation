@@ -25874,10 +25874,10 @@ export const FacebookWorkflowCanvas = forwardRef<
             boxShadow: isDark
               ? '0 20px 45px rgba(0, 0, 0, 0.5), 0 4px 14px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
               : '0 20px 45px rgba(0, 0, 0, 0.14), 0 4px 14px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.7)',
-            padding: '11px 14px 13px 14px',
+            padding: '13px 15px',
             display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
+            alignItems: 'flex-start',
+            gap: '12px',
             fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
             animation: 'macNotificationSlideIn 0.32s cubic-bezier(0.16, 1, 0.3, 1)',
             userSelect: 'none',
@@ -25901,113 +25901,89 @@ export const FacebookWorkflowCanvas = forwardRef<
             }
           `}</style>
 
-          {/* macOS App Bar */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-              <div
-                style={{
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '5px',
-                  background: 'linear-gradient(135deg, #0284C7 0%, #2563EB 50%, #4F46E5 100%)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#FFFFFF',
-                  fontSize: '9px',
-                  fontWeight: 800,
-                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
-                }}
-              >
-                BH
-              </div>
-              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: isDark ? '#94A3B8' : '#64748B', letterSpacing: '0.01em' }}>
-                BoltHaven
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '0.68rem', color: isDark ? '#64748B' : '#94A3B8' }}>
-                now
-              </span>
-              <button
-                type="button"
-                onClick={() => setMacNotification(null)}
-                style={{
-                  width: '18px',
-                  height: '18px',
-                  borderRadius: '50%',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
-                  border: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: isDark ? '#94A3B8' : '#64748B',
-                  cursor: 'pointer',
-                  padding: 0,
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(0, 0, 0, 0.12)';
-                  e.currentTarget.style.color = isDark ? '#FFFFFF' : '#1E293B';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
-                  e.currentTarget.style.color = isDark ? '#94A3B8' : '#64748B';
-                }}
-                aria-label="Dismiss notification"
-              >
-                <FiX size={11} strokeWidth={2.5} />
-              </button>
-            </div>
+          {/* Status Icon */}
+          <div
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '9px',
+              backgroundColor:
+                macNotification.type === 'danger'
+                  ? (isDark ? 'rgba(239, 68, 68, 0.16)' : 'rgba(239, 68, 68, 0.12)')
+                  : macNotification.type === 'info'
+                    ? (isDark ? 'rgba(59, 130, 246, 0.16)' : 'rgba(59, 130, 246, 0.12)')
+                    : (isDark ? 'rgba(16, 185, 129, 0.16)' : 'rgba(16, 185, 129, 0.12)'),
+              border:
+                macNotification.type === 'danger'
+                  ? (isDark ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(239, 68, 68, 0.25)')
+                  : macNotification.type === 'info'
+                    ? (isDark ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(59, 130, 246, 0.25)')
+                    : (isDark ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(16, 185, 129, 0.25)'),
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color:
+                macNotification.type === 'danger'
+                  ? '#EF4444'
+                  : macNotification.type === 'info'
+                    ? '#3B82F6'
+                    : '#10B981',
+              flexShrink: 0,
+              marginTop: '1px',
+            }}
+          >
+            {macNotification.type === 'danger' ? (
+              <FiTrash2 size={16} />
+            ) : macNotification.type === 'info' ? (
+              <FiCrosshair size={16} />
+            ) : (
+              <FiCheck size={16} strokeWidth={2.5} />
+            )}
           </div>
 
-          {/* macOS Message Content */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-            <div
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '8px',
-                backgroundColor:
-                  macNotification.type === 'danger'
-                    ? (isDark ? 'rgba(239, 68, 68, 0.16)' : 'rgba(239, 68, 68, 0.12)')
-                    : macNotification.type === 'info'
-                      ? (isDark ? 'rgba(59, 130, 246, 0.16)' : 'rgba(59, 130, 246, 0.12)')
-                      : (isDark ? 'rgba(16, 185, 129, 0.16)' : 'rgba(16, 185, 129, 0.12)'),
-                border:
-                  macNotification.type === 'danger'
-                    ? (isDark ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(239, 68, 68, 0.25)')
-                    : macNotification.type === 'info'
-                      ? (isDark ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(59, 130, 246, 0.25)')
-                      : (isDark ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(16, 185, 129, 0.25)'),
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color:
-                  macNotification.type === 'danger'
-                    ? '#EF4444'
-                    : macNotification.type === 'info'
-                      ? '#3B82F6'
-                      : '#10B981',
-                flexShrink: 0,
-                marginTop: '1px',
-              }}
-            >
-              {macNotification.type === 'danger' ? (
-                <FiTrash2 size={16} />
-              ) : macNotification.type === 'info' ? (
-                <FiCrosshair size={16} />
-              ) : (
-                <FiCheck size={16} strokeWidth={2.5} />
-              )}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+          {/* Notification Title, Body, and Dismiss Button */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
               <div style={{ fontSize: '0.84rem', fontWeight: 650, color: isDark ? '#F1F5F9' : '#0F172A', lineHeight: 1.3 }}>
                 {macNotification.title}
               </div>
-              <div style={{ fontSize: '0.75rem', color: isDark ? '#CBD5E1' : '#475569', lineHeight: 1.45, wordBreak: 'break-word' }}>
-                {macNotification.message}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                <span style={{ fontSize: '0.68rem', color: isDark ? '#64748B' : '#94A3B8' }}>
+                  now
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMacNotification(null)}
+                  style={{
+                    width: '18px',
+                    height: '18px',
+                    borderRadius: '50%',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                    border: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: isDark ? '#94A3B8' : '#64748B',
+                    cursor: 'pointer',
+                    padding: 0,
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(0, 0, 0, 0.12)';
+                    e.currentTarget.style.color = isDark ? '#FFFFFF' : '#1E293B';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+                    e.currentTarget.style.color = isDark ? '#94A3B8' : '#64748B';
+                  }}
+                  aria-label="Dismiss notification"
+                >
+                  <FiX size={11} strokeWidth={2.5} />
+                </button>
               </div>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: isDark ? '#CBD5E1' : '#475569', lineHeight: 1.45, wordBreak: 'break-word' }}>
+              {macNotification.message}
             </div>
           </div>
         </div>,
