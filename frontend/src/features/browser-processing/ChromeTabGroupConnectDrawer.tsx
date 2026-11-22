@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   FiLayers,
   FiX,
@@ -19,6 +19,8 @@ import {
   FiTrash2,
   FiChevronDown,
   FiChevronUp,
+  FiSearch,
+  FiRefreshCw,
 } from 'react-icons/fi';
 import { Select } from '../../components/ui/Select';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
@@ -71,6 +73,12 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
   const [showFolderImagePicker, setShowFolderImagePicker] = useState<boolean>(false);
   const refFileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Condo Folders & Local Base Directory State
+  const [availableCondoFolders, setAvailableCondoFolders] = useState<string[]>([]);
+  const [baseCondoDirectory, setBaseCondoDirectory] = useState<string>('/Users/zinwaishine/Desktop/Condo Building');
+  const [activeFolderDropdownStepId, setActiveFolderDropdownStepId] = useState<string | null>(null);
+  const [folderSearchFilter, setFolderSearchFilter] = useState<string>('');
+
   // Dynamic Image Attachment Steps (Customizable sequence after Reference Image)
   const [attachmentSteps, setAttachmentSteps] = useState<Array<{
     id: string;
@@ -78,6 +86,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
     count: number;
     sourceType: 'folder' | 'upload' | 'enhanced';
     folderName: string;
+    folderImages?: Array<{ filename: string; data_url?: string; full_path?: string; index?: number }>;
     imageSelection?: string;
     uploadedUrls?: string[];
     enabled: boolean;
@@ -102,20 +111,81 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
     },
   ]);
 
+  const filteredCondoFolders = useMemo(() => {
+    if (!folderSearchFilter.trim()) return availableCondoFolders;
+    const q = folderSearchFilter.toLowerCase();
+    return availableCondoFolders.filter((f) => f.toLowerCase().includes(q));
+  }, [availableCondoFolders, folderSearchFilter]);
+
+  const loadCondoFolders = async (dir: string = baseCondoDirectory) => {
+    try {
+      const resp = await fetch(`http://127.0.0.1:9224/condo-folders?base_dir=${encodeURIComponent(dir)}`);
+      const data = await resp.json();
+      if (data?.status === 'success' && Array.isArray(data.folders)) {
+        setAvailableCondoFolders(data.folders);
+        if (data.base_dir) setBaseCondoDirectory(data.base_dir);
+      }
+    } catch (e) {
+      console.warn('Failed to load condo folders:', e);
+    }
+  };
+
+  const fetchImagesForStep = async (stepId: string, condoFolderName: string, baseDir: string = baseCondoDirectory) => {
+    if (!condoFolderName?.trim()) return;
+    try {
+      const resp = await fetch(
+        `http://127.0.0.1:9224/condo-images?condo_name=${encodeURIComponent(condoFolderName)}&base_dir=${encodeURIComponent(baseDir)}`
+      );
+      const data = await resp.json();
+      if (data?.status === 'success' && Array.isArray(data.images)) {
+        setAttachmentSteps((prev) =>
+          prev.map((s) =>
+            s.id === stepId
+              ? {
+                  ...s,
+                  folderName: data.matched_folder || condoFolderName,
+                  folderImages: data.images,
+                  count: Math.min(s.count, data.images.length || 1),
+                }
+              : s
+          )
+        );
+      }
+    } catch (e) {
+      console.warn('Failed to fetch condo images for step:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadCondoFolders();
+  }, []);
+
+  // On mount or when condo folders are loaded, load images for initial folder step
+  useEffect(() => {
+    attachmentSteps.forEach((s) => {
+      if (s.sourceType === 'folder' && s.folderName && (!s.folderImages || s.folderImages.length === 0)) {
+        fetchImagesForStep(s.id, s.folderName);
+      }
+    });
+  }, [availableCondoFolders]);
+
   const handleAddStep = () => {
     const nextIdx = attachmentSteps.length + 1;
+    const newStepId = `step-${Date.now()}`;
+    const initialFolder = condoName || 'Regent Home Bangna';
     setAttachmentSteps((prev) => [
       ...prev,
       {
-        id: `step-${Date.now()}`,
+        id: newStepId,
         title: `Image Source #${nextIdx}`,
         count: 1,
         sourceType: 'folder',
-        folderName: condoName || 'Condo Building',
+        folderName: initialFolder,
         imageSelection: '',
         enabled: true,
       },
     ]);
+    fetchImagesForStep(newStepId, initialFolder);
   };
 
   const handleRemoveStep = (id: string) => {
@@ -129,6 +199,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
       count: number;
       sourceType: 'folder' | 'upload' | 'enhanced';
       folderName: string;
+      folderImages?: Array<{ filename: string; data_url?: string; full_path?: string; index?: number }>;
       imageSelection?: string;
       uploadedUrls?: string[];
       enabled: boolean;
@@ -1246,47 +1317,331 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
 
                             {/* Row 3: Source Configuration */}
                             {step.sourceType === 'folder' && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', width: '38px', flexShrink: 0 }}>Folder:</span>
-                                  <input
-                                    type="text"
-                                    value={step.folderName}
-                                    onChange={(e) => handleUpdateStep(step.id, { folderName: e.target.value })}
-                                    placeholder="Folder name (e.g. Regent Home Bangna, Living Room)..."
-                                    style={{
-                                      flex: 1,
-                                      height: '26px',
-                                      padding: '0 8px',
-                                      borderRadius: '4px',
-                                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                      backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                                      color: isDark ? '#F0F6FC' : '#0F172A',
-                                      fontSize: '0.65625rem',
-                                      outline: 'none',
-                                    }}
-                                  />
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {/* Folder Selector */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', position: 'relative' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                      Condo Folder:
+                                    </span>
+                                    <span style={{ fontSize: '0.59375rem', color: isDark ? '#6E7681' : '#94A3B8' }}>
+                                      {availableCondoFolders.length} folders in ~/Desktop/Condo Building
+                                    </span>
+                                  </div>
+
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setActiveFolderDropdownStepId(activeFolderDropdownStepId === step.id ? null : step.id);
+                                        setFolderSearchFilter('');
+                                      }}
+                                      style={{
+                                        flex: 1,
+                                        height: '28px',
+                                        padding: '0 8px',
+                                        borderRadius: '4px',
+                                        border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                        backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                        color: isDark ? '#F0F6FC' : '#0F172A',
+                                        fontSize: '0.6875rem',
+                                        fontWeight: 500,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        cursor: 'pointer',
+                                        textAlign: 'left',
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                                        <FiFolder size={12} style={{ color: '#58A6FF', flexShrink: 0 }} />
+                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                          {step.folderName || 'Select Condo Folder...'}
+                                        </span>
+                                      </div>
+                                      <FiChevronDown size={12} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      title="Refresh folders from disk"
+                                      onClick={() => {
+                                        loadCondoFolders();
+                                        if (step.folderName) fetchImagesForStep(step.id, step.folderName);
+                                      }}
+                                      style={{
+                                        width: '28px',
+                                        height: '28px',
+                                        borderRadius: '4px',
+                                        border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                        backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                                        color: isDark ? '#8B949E' : '#64748B',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      <FiRefreshCw size={11} />
+                                    </button>
+                                  </div>
+
+                                  {/* Dropdown Menu */}
+                                  {activeFolderDropdownStepId === step.id && (
+                                    <>
+                                      <div
+                                        style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+                                        onClick={() => setActiveFolderDropdownStepId(null)}
+                                      />
+                                      <div
+                                        style={{
+                                          position: 'absolute',
+                                          top: '52px',
+                                          left: 0,
+                                          right: 0,
+                                          zIndex: 50,
+                                          borderRadius: '6px',
+                                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                          boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                                          padding: '6px',
+                                          display: 'flex',
+                                          flexDirection: 'column',
+                                          gap: '6px',
+                                        }}
+                                      >
+                                        <div
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '0 8px',
+                                            height: '26px',
+                                            borderRadius: '4px',
+                                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                            backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                                          }}
+                                        >
+                                          <FiSearch size={11} style={{ color: isDark ? '#8B949E' : '#64748B' }} />
+                                          <input
+                                            type="text"
+                                            autoFocus
+                                            value={folderSearchFilter}
+                                            onChange={(e) => setFolderSearchFilter(e.target.value)}
+                                            placeholder="Search condo name..."
+                                            style={{
+                                              flex: 1,
+                                              border: 'none',
+                                              background: 'transparent',
+                                              outline: 'none',
+                                              fontSize: '0.65625rem',
+                                              color: isDark ? '#F0F6FC' : '#0F172A',
+                                            }}
+                                          />
+                                        </div>
+
+                                        <div
+                                          style={{
+                                            maxHeight: '160px',
+                                            overflowY: 'auto',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '2px',
+                                          }}
+                                        >
+                                          {filteredCondoFolders.length === 0 ? (
+                                            <div style={{ padding: '8px', fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', textAlign: 'center' }}>
+                                              No matching condo folder found
+                                            </div>
+                                          ) : (
+                                            filteredCondoFolders.map((fName) => {
+                                              const isSelected = step.folderName === fName;
+                                              return (
+                                                <button
+                                                  key={fName}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    handleUpdateStep(step.id, { folderName: fName });
+                                                    fetchImagesForStep(step.id, fName);
+                                                    setActiveFolderDropdownStepId(null);
+                                                  }}
+                                                  style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px',
+                                                    padding: '5px 8px',
+                                                    borderRadius: '4px',
+                                                    border: 'none',
+                                                    backgroundColor: isSelected
+                                                      ? (isDark ? '#21262D' : '#E2E8F0')
+                                                      : 'transparent',
+                                                    color: isSelected ? '#58A6FF' : (isDark ? '#C9D1D9' : '#334155'),
+                                                    fontSize: '0.65625rem',
+                                                    fontWeight: isSelected ? 600 : 400,
+                                                    cursor: 'pointer',
+                                                    textAlign: 'left',
+                                                  }}
+                                                >
+                                                  <FiFolder size={11} style={{ flexShrink: 0, color: isSelected ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B') }} />
+                                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {fName}
+                                                  </span>
+                                                </button>
+                                              );
+                                            })
+                                          )}
+                                        </div>
+                                      </div>
+                                    </>
+                                  )}
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', width: '38px', flexShrink: 0 }}>Image:</span>
-                                  <input
-                                    type="text"
-                                    value={step.imageSelection || ''}
-                                    onChange={(e) => handleUpdateStep(step.id, { imageSelection: e.target.value })}
-                                    placeholder="Specific photo name or leave blank for first N..."
+
+                                {/* Photos Found and Count Selector */}
+                                {step.folderImages && step.folderImages.length > 0 ? (
+                                  <div
                                     style={{
-                                      flex: 1,
-                                      height: '26px',
-                                      padding: '0 8px',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: '6px',
+                                      padding: '6px 8px',
                                       borderRadius: '4px',
-                                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                      backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                                      color: isDark ? '#F0F6FC' : '#0F172A',
-                                      fontSize: '0.65625rem',
-                                      outline: 'none',
+                                      backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                                      border: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
                                     }}
-                                  />
-                                </div>
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                        Found {step.folderImages.length} photo{step.folderImages.length > 1 ? 's' : ''} inside folder
+                                      </span>
+                                      <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#58A6FF' }}>
+                                        Attaching {Math.min(step.count, step.folderImages.length)} photo{step.count > 1 ? 's' : ''}
+                                      </span>
+                                    </div>
+
+                                    {/* Quick count pills */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                                      <span style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B', marginRight: '2px' }}>
+                                        Get:
+                                      </span>
+                                      {Array.from({ length: Math.min(10, step.folderImages.length) }).map((_, idx) => {
+                                        const num = idx + 1;
+                                        const isSel = step.count === num;
+                                        return (
+                                          <button
+                                            key={num}
+                                            type="button"
+                                            onClick={() => handleUpdateStep(step.id, { count: num })}
+                                            style={{
+                                              padding: '2px 7px',
+                                              borderRadius: '3px',
+                                              fontSize: '0.625rem',
+                                              fontWeight: isSel ? 600 : 400,
+                                              backgroundColor: isSel ? (isDark ? '#21262D' : '#E2E8F0') : 'transparent',
+                                              color: isSel ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
+                                              border: isSel ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8') : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                              cursor: 'pointer',
+                                            }}
+                                          >
+                                            {num} {num === (step.folderImages?.length || 0) ? '(All)' : ''}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+
+                                    {/* Real photo thumbnails grid */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', padding: '2px 0' }}>
+                                      {step.folderImages.map((img, idx) => {
+                                        const isSelected = idx < step.count;
+                                        return (
+                                          <div
+                                            key={img.filename || idx}
+                                            onClick={() => handleUpdateStep(step.id, { count: idx + 1 })}
+                                            title={`Click to select up to photo #${idx + 1} (${img.filename})`}
+                                            style={{
+                                              width: '44px',
+                                              height: '44px',
+                                              borderRadius: '4px',
+                                              border: isSelected
+                                                ? '1.5px solid #2563EB'
+                                                : isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                                              opacity: isSelected ? 1 : 0.45,
+                                              overflow: 'hidden',
+                                              position: 'relative',
+                                              flexShrink: 0,
+                                              cursor: 'pointer',
+                                              backgroundColor: isDark ? '#161B22' : '#F1F5F9',
+                                              transition: 'all 0.15s ease',
+                                            }}
+                                          >
+                                            {img.data_url ? (
+                                              <img
+                                                src={img.data_url}
+                                                alt={img.filename}
+                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                              />
+                                            ) : (
+                                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isDark ? '#8B949E' : '#64748B' }}>
+                                                <FiImage size={14} />
+                                              </div>
+                                            )}
+                                            <span
+                                              style={{
+                                                position: 'absolute',
+                                                bottom: 1,
+                                                right: 1,
+                                                backgroundColor: isSelected ? 'rgba(37,99,235,0.85)' : 'rgba(0,0,0,0.65)',
+                                                color: '#fff',
+                                                fontSize: '7px',
+                                                fontWeight: 600,
+                                                padding: '1px 3px',
+                                                borderRadius: '2px',
+                                              }}
+                                            >
+                                              {isSelected ? `✓ #${idx + 1}` : `#${idx + 1}`}
+                                            </span>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div
+                                    style={{
+                                      padding: '6px 8px',
+                                      borderRadius: '4px',
+                                      backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                                      border: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                                      fontSize: '0.625rem',
+                                      color: isDark ? '#8B949E' : '#64748B',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                    }}
+                                  >
+                                    <span>
+                                      {step.folderName ? `No images found in "${step.folderName}"` : 'Select a condo folder to load photos'}
+                                    </span>
+                                    {step.folderName && (
+                                      <button
+                                        type="button"
+                                        onClick={() => fetchImagesForStep(step.id, step.folderName)}
+                                        style={{
+                                          background: 'transparent',
+                                          border: 'none',
+                                          color: '#58A6FF',
+                                          fontSize: '0.625rem',
+                                          cursor: 'pointer',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '3px',
+                                        }}
+                                      >
+                                        <FiRefreshCw size={10} /> Scan
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             )}
 
@@ -1863,7 +2218,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
 
                       {attachmentSteps.filter((s) => s.enabled).map((step, sIdx) => {
                         return Array.from({ length: Math.min(10, Math.max(1, step.count)) }).map((_, i) => {
-                          const img = step.uploadedUrls?.[i] || (step.sourceType === 'enhanced' ? enhancedImages[i]?.url : propertyImages[i]?.url);
+                          const img = step.uploadedUrls?.[i] || (step.sourceType === 'enhanced' ? enhancedImages[i]?.url : (step.folderImages?.[i]?.data_url || propertyImages[i]?.url));
                           const stepBadge = `S${sIdx + 1}-${i + 1}`;
                           return (
                             <div
