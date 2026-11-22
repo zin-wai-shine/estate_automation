@@ -4547,12 +4547,26 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const handleDownloadCombineFormatDirectly = async (assets: CombineMediaAssetItem[], formatTitle: string) => {
     setCombineDownloadDropdownFormatId(null);
-    if (!assets || assets.length === 0) return;
+    let targetAssets = assets;
+    if ((!targetAssets || targetAssets.length === 0) && (formatTitle === 'Get Images' || formatTitle.toLowerCase().includes('images'))) {
+      targetAssets = (effectiveImages || []).map((img, idx) => ({
+        id: `get-images-photo-${idx}`,
+        url: normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url) || '',
+        label: `Photo #${idx + 1}`,
+        formatTitle: 'Get Images',
+        photoIndex: idx,
+        tileIndex: 1,
+        totalTiles: 1,
+        isEnhanced: false,
+        formatId: 'get-images',
+      })).filter((a) => a.url);
+    }
+    if (!targetAssets || targetAssets.length === 0) return;
     setIsDownloadingCombineFormat(formatTitle);
     try {
-      for (let s = 0; s < assets.length; s++) {
-        await handleDownloadImage(assets[s].url, s);
-        if (s < assets.length - 1) {
+      for (let s = 0; s < targetAssets.length; s++) {
+        await handleDownloadImage(targetAssets[s].url, s);
+        if (s < targetAssets.length - 1) {
           await new Promise((r) => setTimeout(r, 250));
         }
       }
@@ -4563,14 +4577,28 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const handleDownloadCombineFormatWithFolder = async (assets: CombineMediaAssetItem[], formatTitle: string) => {
     setCombineDownloadDropdownFormatId(null);
-    if (!assets || assets.length === 0) return;
+    let targetAssets = assets;
+    if ((!targetAssets || targetAssets.length === 0) && (formatTitle === 'Get Images' || formatTitle.toLowerCase().includes('images'))) {
+      targetAssets = (effectiveImages || []).map((img, idx) => ({
+        id: `get-images-photo-${idx}`,
+        url: normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url) || '',
+        label: `Photo #${idx + 1}`,
+        formatTitle: 'Get Images',
+        photoIndex: idx,
+        tileIndex: 1,
+        totalTiles: 1,
+        isEnhanced: false,
+        formatId: 'get-images',
+      })).filter((a) => a.url);
+    }
+    if (!targetAssets || targetAssets.length === 0) return;
     setIsDownloadingCombineFormat(formatTitle);
     const cleanFolder = formatTitle.replace(/^Format:\s*/i, '').replace(/[\/\\?%*:|"<>]/g, '').trim() || 'Photos';
 
     try {
       const seenNames = new Set<string>();
       const payloadFiles = await Promise.all(
-        assets.map(async (item, i) => {
+        targetAssets.map(async (item, i) => {
           const photoNum = typeof item.photoIndex === 'number' ? item.photoIndex + 1 : i + 1;
           const tileSuffix = item.totalTiles && item.totalTiles > 1 ? `-tile-${item.tileIndex || 1}` : '';
           const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : 'jpg';
@@ -4638,13 +4666,27 @@ export const FacebookWorkflowCanvas = forwardRef<
     } catch (_) { }
 
     // Fallback to direct download
-    await handleDownloadCombineFormatDirectly(assets, formatTitle);
+    await handleDownloadCombineFormatDirectly(targetAssets, formatTitle);
     setIsDownloadingCombineFormat(null);
   };
 
   const handleDownloadCombineFormatZip = async (assets: CombineMediaAssetItem[], formatTitle: string) => {
     setCombineDownloadDropdownFormatId(null);
-    if (!assets || assets.length === 0) return;
+    let targetAssets = assets;
+    if ((!targetAssets || targetAssets.length === 0) && (formatTitle === 'Get Images' || formatTitle.toLowerCase().includes('images'))) {
+      targetAssets = (effectiveImages || []).map((img, idx) => ({
+        id: `get-images-photo-${idx}`,
+        url: normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url) || '',
+        label: `Photo #${idx + 1}`,
+        formatTitle: 'Get Images',
+        photoIndex: idx,
+        tileIndex: 1,
+        totalTiles: 1,
+        isEnhanced: false,
+        formatId: 'get-images',
+      })).filter((a) => a.url);
+    }
+    if (!targetAssets || targetAssets.length === 0) return;
     setIsDownloadingCombineFormat(formatTitle);
     const cleanFolder = formatTitle.replace(/^Format:\s*/i, '').replace(/[\/\\?%*:|"<>]/g, '').trim() || 'Photos';
 
@@ -4653,8 +4695,8 @@ export const FacebookWorkflowCanvas = forwardRef<
       const folder = zip.folder(cleanFolder);
       const seenZipNames = new Set<string>();
 
-      for (let i = 0; i < assets.length; i++) {
-        const item = assets[i];
+      for (let i = 0; i < targetAssets.length; i++) {
+        const item = targetAssets[i];
         const photoNum = typeof item.photoIndex === 'number' ? item.photoIndex + 1 : i + 1;
         const tileSuffix = item.totalTiles && item.totalTiles > 1 ? `-tile-${item.tileIndex || 1}` : '';
         const ext = (item.url.includes('image/png') || item.url.includes('.png')) ? 'png' : 'jpg';
@@ -14296,28 +14338,31 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                             // ── A) IMAGE FORMAT / WATERMARK / CROP CARD ──
                             if (isWatermark || isCrop || isImages) {
-                              const boxAssets = fromBox
+                              const rawImageAssets: CombineMediaAssetItem[] = isImages
+                                ? (effectiveImages || []).map((img, idx) => {
+                                    const rawUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url) || '';
+                                    return {
+                                      id: `get-images-photo-${idx}`,
+                                      url: rawUrl,
+                                      label: `Photo #${idx + 1}`,
+                                      formatTitle: 'Get Images',
+                                      photoIndex: idx,
+                                      tileIndex: 1,
+                                      totalTiles: 1,
+                                      isEnhanced: false,
+                                      formatId: 'get-images',
+                                    };
+                                  }).filter((a) => a.url)
+                                : [];
+
+                              const matchedAssets = fromBox
                                 ? combineMediaAssets.filter((a) => a.formatId === fromBox.id)
-                                : (isImages
-                                    ? (
-                                        combineMediaAssets.filter((a) => a.formatId === 'get-images').length > 0
-                                          ? combineMediaAssets.filter((a) => a.formatId === 'get-images')
-                                          : (effectiveImages || []).map((img, idx) => {
-                                              const rawUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url) || '';
-                                              return {
-                                                id: `get-images-photo-${idx}`,
-                                                url: rawUrl,
-                                                label: `Photo #${idx + 1}`,
-                                                formatTitle: 'Get Images',
-                                                photoIndex: idx,
-                                                tileIndex: 1,
-                                                totalTiles: 1,
-                                                isEnhanced: false,
-                                                formatId: 'get-images',
-                                              };
-                                            }).filter((a) => a.url)
-                                      )
-                                    : []);
+                                : (isImages ? combineMediaAssets.filter((a) => a.formatId === 'get-images') : []);
+
+                              const boxAssets: CombineMediaAssetItem[] = matchedAssets.length > 0
+                                ? matchedAssets
+                                : (isImages ? rawImageAssets : []);
+
                               const boxCount = boxAssets.length > 0
                                 ? boxAssets.length
                                 : isImages
@@ -14718,7 +14763,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                               Directly to Downloads Folder
                                             </span>
                                             <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                                              Save all {boxAssets.length} photos directly
+                                              Save all {boxAssets.length || (isImages ? effectiveImages?.length || 0 : 0)} photos directly
                                             </span>
                                           </div>
                                         </div>
