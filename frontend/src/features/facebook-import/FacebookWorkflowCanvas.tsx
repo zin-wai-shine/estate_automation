@@ -5723,6 +5723,53 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<DeleteConfirmTarget | null>(null);
   const [isDeletingSheetRow, setIsDeletingSheetRow] = useState<boolean>(false);
 
+  // Node Right-Click Context Menu State
+  interface ContextMenuState {
+    x: number;
+    y: number;
+    nodeId: string;
+    nodeType: 'trigger' | 'get-content' | 'get-images' | 'ai-box' | 'combine' | 'destination';
+    title: string;
+    box?: DynamicAIBoxConfig;
+    combineBox?: CombineBoxConfig;
+    destId?: string;
+    canRun: boolean;
+    canConnectNext: boolean;
+    canDelete: boolean;
+  }
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+
+  const handleNodeContextMenu = (
+    e: React.MouseEvent,
+    params: Omit<ContextMenuState, 'x' | 'y'>
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      ...params,
+      x: e.clientX,
+      y: e.clientY,
+    });
+  };
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClose = () => setContextMenu(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    window.addEventListener('click', handleClose);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('wheel', handleClose, { passive: true });
+    window.addEventListener('resize', handleClose);
+    return () => {
+      window.removeEventListener('click', handleClose);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('wheel', handleClose);
+      window.removeEventListener('resize', handleClose);
+    };
+  }, [contextMenu]);
+
   // Trigger Confirmation Modal to Revert / Delete Added Row from Google Sheet
   const handlePromptRevertRow = (box: any) => {
     const sheetName = box.googleSheetName || 'Sheet6';
@@ -10644,6 +10691,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                 onMouseDown={(e) => startDragNode('trigger', e)}
                 onClick={(e) => handleNodeClick({ type: 'trigger' }, e)}
                 onDoubleClick={(e) => handleNodeDoubleClick({ type: 'trigger' }, e)}
+                onContextMenu={(e) => {
+                  handleNodeContextMenu(e, {
+                    nodeId: 'trigger',
+                    nodeType: 'trigger',
+                    title: isManualTrigger ? 'Manual Input' : 'Extract Link',
+                    canRun: Boolean(onRunFromStep),
+                    canConnectNext: true,
+                    canDelete: true,
+                  });
+                }}
                 style={{
                   position: 'absolute',
                   left: `${config.trigger.x}px`,
@@ -10714,6 +10771,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                   onClick={(e) => handleNodeClick({ type: 'trigger' }, e)}
                 onDoubleClick={(e) => handleNodeDoubleClick({ type: 'trigger' }, e)}
+                onContextMenu={(e) => {
+                  handleNodeContextMenu(e, {
+                    nodeId: 'trigger',
+                    nodeType: 'trigger',
+                    title: isManualTrigger ? 'Manual Input' : 'Extract Link',
+                    canRun: Boolean(onRunFromStep),
+                    canConnectNext: true,
+                    canDelete: true,
+                  });
+                }}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>
                     {config.trigger.monitoredPageName || (isManualTrigger ? 'Manual Input' : 'Extract Link')}
@@ -10799,6 +10866,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
                 onClick={(e) => handleNodeClick({ type: 'get-content' }, e)}
                 onDoubleClick={(e) => handleNodeDoubleClick({ type: 'get-content' }, e)}
+                onContextMenu={(e) => {
+                  handleNodeContextMenu(e, {
+                    nodeId: 'get-content',
+                    nodeType: 'get-content',
+                    title: 'Get Content',
+                    canRun: Boolean(onRunFromStep),
+                    canConnectNext: true,
+                    canDelete: true,
+                  });
+                }}
                 style={{
                   position: 'absolute',
                   left: `${config.getContent.x}px`,
@@ -10893,6 +10970,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                   onClick={(e) => handleNodeClick({ type: 'get-content' }, e)}
                 onDoubleClick={(e) => handleNodeDoubleClick({ type: 'get-content' }, e)}
+                onContextMenu={(e) => {
+                  handleNodeContextMenu(e, {
+                    nodeId: 'get-content',
+                    nodeType: 'get-content',
+                    title: 'Get Content',
+                    canRun: Boolean(onRunFromStep),
+                    canConnectNext: true,
+                    canDelete: true,
+                  });
+                }}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>
                     Get Content
@@ -10984,6 +11071,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
                 onClick={(e) => handleNodeClick({ type: 'get-images' }, e)}
                 onDoubleClick={(e) => handleNodeDoubleClick({ type: 'get-images' }, e)}
+                onContextMenu={(e) => {
+                  handleNodeContextMenu(e, {
+                    nodeId: 'get-images',
+                    nodeType: 'get-images',
+                    title: 'Get Images',
+                    canRun: Boolean(onRunFromStep),
+                    canConnectNext: true,
+                    canDelete: true,
+                  });
+                }}
                 style={{
                   position: 'absolute',
                   left: `${config.getImages.x}px`,
@@ -11078,6 +11175,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                   onClick={(e) => handleNodeClick({ type: 'get-images' }, e)}
                 onDoubleClick={(e) => handleNodeDoubleClick({ type: 'get-images' }, e)}
+                onContextMenu={(e) => {
+                  handleNodeContextMenu(e, {
+                    nodeId: 'get-images',
+                    nodeType: 'get-images',
+                    title: 'Get Images',
+                    canRun: Boolean(onRunFromStep),
+                    canConnectNext: true,
+                    canDelete: true,
+                  });
+                }}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>
                     Get Images
@@ -11230,6 +11337,17 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
                 onClick={(e) => handleNodeClick({ type: 'ai-box', boxId: box.id }, e)}
                 onDoubleClick={(e) => handleNodeDoubleClick({ type: 'ai-box', boxId: box.id }, e)}
+                onContextMenu={(e) => {
+                  handleNodeContextMenu(e, {
+                    nodeId: box.id,
+                    nodeType: 'ai-box',
+                    title: box.title || 'AI Box',
+                    box,
+                    canRun: Boolean(onRunFromStep),
+                    canConnectNext: true,
+                    canDelete: true,
+                  });
+                }}
                 style={{
                   position: 'absolute',
                   left: `${box.x}px`,
@@ -11985,6 +12103,17 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
                 onClick={(e) => handleNodeClick({ type: 'combine', combineId: cb.id, id: cb.id }, e)}
                 onDoubleClick={(e) => handleNodeDoubleClick({ type: 'combine', combineId: cb.id, id: cb.id }, e)}
+                onContextMenu={(e) => {
+                  handleNodeContextMenu(e, {
+                    nodeId: cb.id,
+                    nodeType: 'combine',
+                    title: cb.title || 'Combine Box',
+                    combineBox: cb,
+                    canRun: false,
+                    canConnectNext: true,
+                    canDelete: true,
+                  });
+                }}
                 style={{
                   position: 'absolute',
                   left: `${cb.x}px`,
@@ -12059,6 +12188,17 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                   onClick={(e) => handleNodeClick({ type: 'combine', combineId: cb.id, id: cb.id }, e)}
                 onDoubleClick={(e) => handleNodeDoubleClick({ type: 'combine', combineId: cb.id, id: cb.id }, e)}
+                onContextMenu={(e) => {
+                  handleNodeContextMenu(e, {
+                    nodeId: cb.id,
+                    nodeType: 'combine',
+                    title: cb.title || 'Combine Box',
+                    combineBox: cb,
+                    canRun: false,
+                    canConnectNext: true,
+                    canDelete: true,
+                  });
+                }}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>{cb.title || 'Combine Box'}</span>
                   <span
@@ -12181,6 +12321,17 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
                 onClick={(e) => handleNodeClick({ type: 'destination', destinationId: destId }, e)}
                 onDoubleClick={(e) => handleNodeDoubleClick({ type: 'destination', destinationId: destId }, e)}
+                onContextMenu={(e) => {
+                  handleNodeContextMenu(e, {
+                    nodeId: destId,
+                    nodeType: 'destination',
+                    title: isFb ? 'Facebook Page' : isIg ? 'Instagram' : isTiktok ? 'TikTok' : isDbNode ? 'Database Queue' : 'Destination',
+                    destId,
+                    canRun: Boolean(onRunFromStep),
+                    canConnectNext: false,
+                    canDelete: true,
+                  });
+                }}
                 style={{
                   position: 'absolute',
                   left: `${destX}px`,
@@ -12432,6 +12583,17 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                   onClick={(e) => handleNodeClick({ type: 'destination', destinationId: destId }, e)}
                 onDoubleClick={(e) => handleNodeDoubleClick({ type: 'destination', destinationId: destId }, e)}
+                onContextMenu={(e) => {
+                  handleNodeContextMenu(e, {
+                    nodeId: destId,
+                    nodeType: 'destination',
+                    title: isFb ? 'Facebook Page' : isIg ? 'Instagram' : isTiktok ? 'TikTok' : isDbNode ? 'Database Queue' : 'Destination',
+                    destId,
+                    canRun: Boolean(onRunFromStep),
+                    canConnectNext: false,
+                    canDelete: true,
+                  });
+                }}
                 >
                   <span style={{ fontSize: '0.8125rem', fontWeight: 600, lineHeight: 1.25, color: 'var(--text-primary)', wordBreak: 'break-word', textAlign: 'center' }}>
                     {targetTitle}
@@ -24393,6 +24555,214 @@ export const FacebookWorkflowCanvas = forwardRef<
 
 
       </div>
+
+      {/* Node Right-Click Context Menu */}
+      {contextMenu && (
+        <div
+          className="canvas-node-context-menu"
+          style={{
+            position: 'fixed',
+            left: `${Math.min(contextMenu.x, window.innerWidth - 185)}px`,
+            top: `${Math.min(contextMenu.y, window.innerHeight - 170)}px`,
+            zIndex: 1000,
+            minWidth: '170px',
+            backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+            borderRadius: '8px',
+            boxShadow: isDark
+              ? '0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)'
+              : '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+            padding: '4px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '2px',
+            animation: 'fadeIn 0.12s ease-out',
+            userSelect: 'none',
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+        >
+          {/* Node Title Header */}
+          <div
+            style={{
+              padding: '6px 8px 5px 8px',
+              fontSize: '0.6875rem',
+              fontWeight: 600,
+              color: isDark ? '#8B949E' : '#64748B',
+              borderBottom: isDark ? '1px solid #2D333B' : '1px solid #F1F5F9',
+              marginBottom: '2px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {contextMenu.title}
+          </div>
+
+          {/* 1. Run / Stop */}
+          {contextMenu.canRun && (
+            <button
+              type="button"
+              className="context-menu-item"
+              onClick={() => {
+                const id = contextMenu.nodeId;
+                const isRunning = Boolean(
+                  (locallyRunningNodeId && locallyRunningNodeId === id) ||
+                  (executionState?.isRunning && executionState?.activeNodeIds?.includes(id))
+                );
+                setContextMenu(null);
+                if (isRunning) {
+                  window.dispatchEvent(new CustomEvent('ea_workflow_stop_all'));
+                  stopAutomation().catch(() => {});
+                  setLocallyRunningNodeId(null);
+                } else {
+                  onRunFromStep?.(id);
+                }
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                width: '100%',
+                padding: '7px 9px',
+                borderRadius: '5px',
+                border: 'none',
+                background: 'transparent',
+                color: isDark ? '#F0F6FC' : '#1E293B',
+                fontSize: '0.75rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+                textAlign: 'left',
+                transition: 'background-color 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(56, 189, 248, 0.12)' : '#F0F9FF';
+                e.currentTarget.style.color = '#38BDF8';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = isDark ? '#F0F6FC' : '#1E293B';
+              }}
+            >
+              <FiPlay size={13} style={{ fill: 'currentColor', flexShrink: 0 }} />
+              <span>Run</span>
+            </button>
+          )}
+
+          {/* 2. Connect Next */}
+          {contextMenu.canConnectNext && (
+            <button
+              type="button"
+              className="context-menu-item"
+              onClick={() => {
+                const item = contextMenu;
+                setContextMenu(null);
+                if (item.nodeType === 'ai-box' && item.box) {
+                  if (isExternalBrowserAIBox(item.box)) {
+                    handleOpenConnectDrawer(item.box.id, 'ai-box', item.box.title || 'Browser Automation', 'chrome-profile');
+                  } else if (isChromeProfileAIBox(item.box)) {
+                    handleOpenConnectDrawer(item.box.id, 'ai-box', item.box.title || 'Chrome Profile', 'chrome-tab-group');
+                  } else if (isCropStudioBox(item.box)) {
+                    handleOpenConnectDrawer(item.box.id, 'ai-box', item.box.title || 'Photo Format & Crop', 'crop-format');
+                  } else {
+                    handleOpenConnectDrawer(item.box.id, 'ai-box', item.box.title || 'Node');
+                  }
+                } else if (item.nodeType === 'combine' && item.combineBox) {
+                  handleOpenConnectDrawer(item.combineBox.id, 'combine', item.combineBox.title || 'Combine Box');
+                } else if (item.nodeType === 'trigger') {
+                  handleOpenConnectDrawer('trigger', 'trigger', 'Trigger');
+                } else if (item.nodeType === 'get-content') {
+                  handleOpenConnectDrawer('get-content', 'get-content', 'Get Content');
+                } else if (item.nodeType === 'get-images') {
+                  handleOpenConnectDrawer('get-images', 'get-images', 'Get Images');
+                }
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                width: '100%',
+                padding: '7px 9px',
+                borderRadius: '5px',
+                border: 'none',
+                background: 'transparent',
+                color: isDark ? '#F0F6FC' : '#1E293B',
+                fontSize: '0.75rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+                textAlign: 'left',
+                transition: 'background-color 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(139, 92, 246, 0.12)' : '#F5F3FF';
+                e.currentTarget.style.color = '#8B5CF6';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = isDark ? '#F0F6FC' : '#1E293B';
+              }}
+            >
+              <FiPlus size={14} style={{ flexShrink: 0 }} />
+              <span>Connect Next</span>
+            </button>
+          )}
+
+          {/* 3. Delete */}
+          {contextMenu.canDelete && (
+            <button
+              type="button"
+              className="context-menu-item"
+              onClick={() => {
+                const item = contextMenu;
+                setContextMenu(null);
+                if (item.nodeType === 'ai-box') {
+                  handleDeleteAIBox(item.nodeId);
+                } else if (item.nodeType === 'combine') {
+                  handleDeleteCombineBox(item.nodeId);
+                } else if (item.nodeType === 'destination' && item.destId) {
+                  handleDeleteDestination(undefined, item.destId);
+                } else if (item.nodeType === 'trigger') {
+                  handleDeleteTrigger();
+                } else if (item.nodeType === 'get-content') {
+                  handleDeleteGetContent();
+                } else if (item.nodeType === 'get-images') {
+                  handleDeleteGetImages();
+                }
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                width: '100%',
+                padding: '7px 9px',
+                borderRadius: '5px',
+                border: 'none',
+                background: 'transparent',
+                color: isDark ? '#F87171' : '#EF4444',
+                fontSize: '0.75rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+                textAlign: 'left',
+                transition: 'background-color 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEE2E2';
+                e.currentTarget.style.color = '#EF4444';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = isDark ? '#F87171' : '#EF4444';
+              }}
+            >
+              <FiTrash2 size={13} style={{ flexShrink: 0 }} />
+              <span>Delete</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* CONFIRMATION DIALOG / BOX FOR DELETIONS */}
       {deleteConfirmTarget && (
