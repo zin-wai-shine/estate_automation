@@ -48,6 +48,7 @@ import {
   FiSend,
   FiExternalLink,
   FiShare2,
+  FiLoader,
   FiLayout,
   FiEye,
   FiThumbsUp,
@@ -19100,6 +19101,94 @@ export const FacebookWorkflowCanvas = forwardRef<
                   </>
                 )}
               </div>
+
+              {/* Bottom Pinned Footer: True Footer Container (Outside Scroll Area) */}
+              <div
+                id="workflow-sidebar-pinned-footer"
+                style={{
+                  padding: '0.875rem 1rem',
+                  borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                  backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                  flexShrink: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                }}
+              >
+                {/* Fallback Run button for other non-ExternalBrowser runnable nodes */}
+                {(!isAIBox || (currentModalAIBox && !isExternalBrowserAIBox(currentModalAIBox) && currentModalAIBox.processType !== 'chrome_profile' && !isChromeTabGroupAIBox(currentModalAIBox) && !isGoogleSheetBox(currentModalAIBox))) && (isContent || isImages || (isAIBox && currentModalAIBox)) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isContent) onRunFromStep?.('get-content');
+                      else if (isImages) onRunFromStep?.('get-images');
+                      else if (isAIBox && currentModalAIBox) onRunFromStep?.(currentModalAIBox.id);
+                    }}
+                    disabled={Boolean(
+                      (isContent && getNodeExecutionStatus('get-content') === 'running') ||
+                      (isImages && getNodeExecutionStatus('get-images') === 'running') ||
+                      (isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))
+                    )}
+                    style={{
+                      width: '100%',
+                      height: '34px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--accent-primary, #2563EB)',
+                      backgroundColor: (
+                        (isContent && getNodeExecutionStatus('get-content') === 'running') ||
+                        (isImages && getNodeExecutionStatus('get-images') === 'running') ||
+                        (isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))
+                      ) ? 'rgba(37, 99, 235, 0.6)' : 'var(--accent-primary, #2563EB)',
+                      color: '#FFFFFF',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      cursor: (
+                        (isContent && getNodeExecutionStatus('get-content') === 'running') ||
+                        (isImages && getNodeExecutionStatus('get-images') === 'running') ||
+                        (isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))
+                      ) ? 'not-allowed' : 'pointer',
+                      boxShadow: 'none',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (
+                        !(isContent && getNodeExecutionStatus('get-content') === 'running') &&
+                        !(isImages && getNodeExecutionStatus('get-images') === 'running') &&
+                        !(isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))
+                      ) {
+                        e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover, #1D4ED8)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (
+                        !(isContent && getNodeExecutionStatus('get-content') === 'running') &&
+                        !(isImages && getNodeExecutionStatus('get-images') === 'running') &&
+                        !(isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))
+                      ) {
+                        e.currentTarget.style.backgroundColor = 'var(--accent-primary, #2563EB)';
+                      }
+                    }}
+                  >
+                    {((isContent && getNodeExecutionStatus('get-content') === 'running') ||
+                      (isImages && getNodeExecutionStatus('get-images') === 'running') ||
+                      (isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))) ? (
+                      <>
+                        <FiLoader className="animate-spin" size={13} />
+                        <span>Running...</span>
+                      </>
+                    ) : (
+                      <>
+                        <FiPlay size={12} />
+                        <span>Run</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
             </aside>
           );
         })()}
@@ -19785,6 +19874,63 @@ export const FacebookWorkflowCanvas = forwardRef<
                     onOpenSettingsSidebox={() => setShowPhotoCropSettingsSidebox((prev) => !prev)}
                     isSettingsSideboxOpen={showPhotoCropSettingsSidebox}
                   />
+                </div>
+
+                {/* Bottom Pinned Footer: True Footer Container (Outside Scroll Area) */}
+                <div
+                  style={{
+                    padding: '0.875rem 1rem',
+                    borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                    backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                    flexShrink: 0,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onRunFromStep?.(currentModalAIBox.id)}
+                    disabled={locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)}
+                    style={{
+                      width: '100%',
+                      height: '34px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--accent-primary, #2563EB)',
+                      backgroundColor: (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id))
+                        ? 'rgba(37, 99, 235, 0.6)'
+                        : 'var(--accent-primary, #2563EB)',
+                      color: '#FFFFFF',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      cursor: (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)) ? 'not-allowed' : 'pointer',
+                      boxShadow: 'none',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (locallyRunningNodeId !== currentModalAIBox.id && !executionState?.activeNodeIds?.includes(currentModalAIBox.id)) {
+                        e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover, #1D4ED8)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (locallyRunningNodeId !== currentModalAIBox.id && !executionState?.activeNodeIds?.includes(currentModalAIBox.id)) {
+                        e.currentTarget.style.backgroundColor = 'var(--accent-primary, #2563EB)';
+                      }
+                    }}
+                  >
+                    {(locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)) ? (
+                      <>
+                        <FiLoader className="animate-spin" size={13} />
+                        <span>Running...</span>
+                      </>
+                    ) : (
+                      <>
+                        <FiPlay size={12} />
+                        <span>Run</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </aside>
 

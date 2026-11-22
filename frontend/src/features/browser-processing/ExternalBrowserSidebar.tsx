@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   FiMonitor,
   FiRefreshCw,
@@ -129,6 +130,7 @@ interface ExternalBrowserSidebarProps {
   onRunCondoNameStep?: () => Promise<string | void>;
   onEnhancedPhotosUpdate?: (photos: Record<number, string>) => void;
   workflowImageSources?: WorkflowImageSource[];
+  footerContainer?: HTMLElement | null;
 }
 
 export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
@@ -153,7 +155,28 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   onRunCondoNameStep,
   onEnhancedPhotosUpdate,
   workflowImageSources = [],
+  footerContainer,
 }) => {
+  const [targetFooterEl, setTargetFooterEl] = useState<HTMLElement | null>(() => {
+    if (footerContainer) return footerContainer;
+    return typeof document !== 'undefined' ? document.getElementById('workflow-sidebar-pinned-footer') : null;
+  });
+
+  useEffect(() => {
+    if (footerContainer) {
+      setTargetFooterEl(footerContainer);
+      return;
+    }
+    const el = document.getElementById('workflow-sidebar-pinned-footer');
+    if (el) {
+      setTargetFooterEl(el);
+    } else {
+      const timer = setTimeout(() => {
+        setTargetFooterEl(document.getElementById('workflow-sidebar-pinned-footer'));
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [footerContainer]);
   const isTabGroupNode = Boolean(
     propIsTabGroupNode ||
     boxConfig.processType === 'chrome_tab_group' ||
@@ -5623,98 +5646,98 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         </>
       )}
 
-      {/* ── STICKY FOOTER RUN BUTTON (Clean Apple Style) ── */}
-      <div
-        style={{
-          position: 'sticky',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          padding: '0.75rem 1rem',
-          backgroundColor: isDark ? 'var(--bg-main, #0D1117)' : '#FFFFFF',
-          borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
-          boxShadow: isDark ? '0 -4px 16px rgba(0, 0, 0, 0.4)' : '0 -4px 12px rgba(0, 0, 0, 0.05)',
-          zIndex: 20,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '6px',
-          marginTop: 'auto',
-        }}
-      >
-        <button
-          type="button"
-          disabled={isAutomating || isRunningTwoStage}
-          onClick={() => {
-            if (isHeroNode) {
-              handleRunTwoStageTest();
-            } else {
-              setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
-              handleStartGroupAutomation();
-            }
-          }}
-          style={{
-            width: '100%',
-            height: '38px',
-            borderRadius: '8px',
-            border: '1px solid var(--accent-primary, #2563EB)',
-            backgroundColor: (isAutomating || isRunningTwoStage)
-              ? 'rgba(37, 99, 235, 0.6)'
-              : 'var(--accent-primary, #2563EB)',
-            color: '#FFFFFF',
-            fontSize: '0.8125rem',
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-            cursor: (isAutomating || isRunningTwoStage) ? 'not-allowed' : 'pointer',
-            boxShadow: '0 2px 6px rgba(37, 99, 235, 0.3)',
-            transition: 'all 0.15s ease',
-          }}
-          onMouseEnter={(e) => {
-            if (!isAutomating && !isRunningTwoStage) {
-              e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover, #1D4ED8)';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (!isAutomating && !isRunningTwoStage) {
-              e.currentTarget.style.backgroundColor = 'var(--accent-primary, #2563EB)';
-            }
-          }}
-        >
-          {isAutomating || isRunningTwoStage ? (
-            <>
-              <FiLoader className="animate-spin" size={14} />
-              <span>Running...</span>
-            </>
-          ) : (
-            <>
-              <FiPlay size={13} />
-              <span>Run</span>
-            </>
-          )}
-        </button>
+      {/* ── PINNED FOOTER RUN BUTTON (PORTALED TO TRUE SIDEBAR DRAWER FOOTER) ── */}
+      {(() => {
+        const runButtonContent = (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
+            <button
+              type="button"
+              disabled={isAutomating || isRunningTwoStage}
+              onClick={() => {
+                if (isHeroNode) {
+                  handleRunTwoStageTest();
+                } else {
+                  setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
+                  handleStartGroupAutomation();
+                }
+              }}
+              style={{
+                width: '100%',
+                height: '34px',
+                borderRadius: '6px',
+                border: '1px solid var(--accent-primary, #2563EB)',
+                backgroundColor: (isAutomating || isRunningTwoStage)
+                  ? 'rgba(37, 99, 235, 0.6)'
+                  : 'var(--accent-primary, #2563EB)',
+                color: '#FFFFFF',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                cursor: (isAutomating || isRunningTwoStage) ? 'not-allowed' : 'pointer',
+                boxShadow: 'none',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                if (!isAutomating && !isRunningTwoStage) {
+                  e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover, #1D4ED8)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isAutomating && !isRunningTwoStage) {
+                  e.currentTarget.style.backgroundColor = 'var(--accent-primary, #2563EB)';
+                }
+              }}
+            >
+              {isAutomating || isRunningTwoStage ? (
+                <>
+                  <FiLoader className="animate-spin" size={13} />
+                  <span>Running...</span>
+                </>
+              ) : (
+                <>
+                  <FiPlay size={12} />
+                  <span>Run</span>
+                </>
+              )}
+            </button>
 
-        {/* Stop Automation Button */}
-        {(isAutomating || isRunningTwoStage) && (
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={handleStopGroupAutomation}
-            style={{
-              fontSize: '0.6875rem',
-              fontWeight: 600,
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-            }}
-          >
-            <FiSquare size={11} /> Stop Automation
-          </Button>
-        )}
-      </div>
+            {/* Stop Automation Button */}
+            {(isAutomating || isRunningTwoStage) && (
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={handleStopGroupAutomation}
+                style={{
+                  fontSize: '0.6875rem',
+                  fontWeight: 600,
+                  width: '100%',
+                  height: '30px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                }}
+              >
+                <FiSquare size={11} /> Stop Automation
+              </Button>
+            )}
+          </div>
+        );
+
+        if (targetFooterEl) {
+          return createPortal(runButtonContent, targetFooterEl);
+        }
+
+        return (
+          <div style={{ marginTop: 'auto', paddingTop: '0.5rem', width: '100%' }}>
+            {runButtonContent}
+          </div>
+        );
+      })()}
 
       {/* ── PROMPT VIEW SIDEBOX (SLIDE-OVER PANEL LIKE SETTINGS) ── */}
       {showPromptViewSidebox && (

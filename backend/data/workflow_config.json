@@ -1,6 +1,6 @@
 {
   "has_saved_config": true,
-  "timestamp": 1795384286152,
+  "timestamp": 1795385981746,
   "workflow_formats": [
     {
       "config": {
@@ -593,6 +593,11 @@
                 "enabled": true,
                 "folderName": "Aspire Erawan Prime",
                 "id": "group-1",
+                "selectedIndices": [
+                  0,
+                  1,
+                  2
+                ],
                 "sourceType": "folder",
                 "title": "Group 1"
               }
@@ -625,8 +630,8 @@
             "useReferenceImage": true,
             "workerTabCount": 1,
             "workerTabMode": "new_tabs",
-            "x": 597.8929563455723,
-            "y": 900.2122722830674
+            "x": 589.4183800743862,
+            "y": 902.7546451644232
           },
           {
             "browserCondoImagesCount": 0,
@@ -1146,7 +1151,7 @@
             "workerCount": 1,
             "workerTabCount": 1,
             "x": 743.6279069767455,
-            "y": 898.7095859330691
+            "y": 899.5570435601877
           }
         ],
         "codeFormat": "AAA-######-AA",
@@ -1345,8 +1350,8 @@
           "y": 365
         },
         "panOffset": {
-          "x": 8,
-          "y": -424
+          "x": -77,
+          "y": -447
         },
         "trigger": {
           "autoClassifyProperty": true,
@@ -1365,14 +1370,14 @@
           "x": 80,
           "y": 365
         },
-        "zoom": 1.12
+        "zoom": 1.18
       },
       "createdAt": 1792648980268,
       "description": "Custom Facebook import extraction with dynamic AI prompt generator",
       "id": "format-1792648980268",
       "isPinned": true,
       "name": "Download FB Post",
-      "updatedAt": 1795384285733
+      "updatedAt": 1795385980726
     },
     {
       "config": {

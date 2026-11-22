@@ -37,6 +37,10 @@
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
 }
 
+#workflow-sidebar-pinned-footer:empty {
+  display: none !important;
+}
+
 /* White Light Mode Tokens */
 [data-theme='light'] {
   color-scheme: light;
