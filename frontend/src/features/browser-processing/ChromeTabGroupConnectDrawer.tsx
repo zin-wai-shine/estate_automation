@@ -1338,85 +1338,108 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                 })}
                               </div>
 
-                              {/* Compact Count Stepper */}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              {/* Compact Clean Count Stepper */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                                 <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Count:</span>
                                 <div
                                   style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : '#E2E8F0',
-                                    borderRadius: '4px',
-                                    padding: '1px',
-                                    border: isDark ? '1px solid rgba(255, 255, 255, 0.04)' : '1px solid rgba(0, 0, 0, 0.04)',
+                                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.4)' : '#F1F5F9',
+                                    borderRadius: '5px',
+                                    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+                                    height: '24px',
+                                    padding: '0 2px',
                                   }}
                                 >
                                   <button
                                     type="button"
                                     disabled={step.count <= 1}
                                     onClick={() => handleUpdateStep(step.id, { count: Math.max(1, step.count - 1) })}
-                                    title="Decrease photo count"
+                                    title="Decrease count"
                                     style={{
-                                      width: '18px',
-                                      height: '18px',
+                                      width: '20px',
+                                      height: '20px',
                                       borderRadius: '3px',
                                       border: 'none',
                                       backgroundColor: 'transparent',
-                                      color: isDark ? '#C9D1D9' : '#334155',
+                                      color: step.count <= 1 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155'),
                                       cursor: step.count <= 1 ? 'not-allowed' : 'pointer',
-                                      opacity: step.count <= 1 ? 0.3 : 1,
                                       display: 'flex',
                                       alignItems: 'center',
                                       justifyContent: 'center',
                                       padding: 0,
+                                      transition: 'all 0.12s ease',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (step.count > 1) {
+                                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0';
+                                        e.currentTarget.style.color = isDark ? '#F0F6FC' : '#0F172A';
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.backgroundColor = 'transparent';
+                                      e.currentTarget.style.color = step.count <= 1 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155');
                                     }}
                                   >
-                                    <FiMinus size={9} />
+                                    <FiMinus size={10} />
                                   </button>
                                   <input
-                                    type="number"
-                                    min={1}
-                                    max={10}
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
                                     value={step.count}
                                     onChange={(e) => {
-                                      const val = parseInt(e.target.value, 10);
+                                      const val = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10);
                                       handleUpdateStep(step.id, { count: isNaN(val) ? 1 : Math.min(10, Math.max(1, val)) });
                                     }}
                                     style={{
-                                      width: '24px',
-                                      height: '18px',
+                                      width: '22px',
+                                      height: '20px',
                                       textAlign: 'center',
-                                      borderRadius: '2px',
                                       border: 'none',
-                                      backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                      backgroundColor: 'transparent',
                                       color: isDark ? '#F0F6FC' : '#0F172A',
-                                      fontSize: '0.65625rem',
+                                      fontSize: '0.75rem',
                                       fontWeight: 600,
                                       outline: 'none',
                                       padding: 0,
+                                      margin: 0,
+                                      appearance: 'none',
+                                      MozAppearance: 'textfield',
                                     }}
                                   />
                                   <button
                                     type="button"
                                     disabled={step.count >= 10}
                                     onClick={() => handleUpdateStep(step.id, { count: Math.min(10, step.count + 1) })}
-                                    title="Increase photo count"
+                                    title="Increase count"
                                     style={{
-                                      width: '18px',
-                                      height: '18px',
+                                      width: '20px',
+                                      height: '20px',
                                       borderRadius: '3px',
                                       border: 'none',
                                       backgroundColor: 'transparent',
-                                      color: isDark ? '#C9D1D9' : '#334155',
+                                      color: step.count >= 10 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155'),
                                       cursor: step.count >= 10 ? 'not-allowed' : 'pointer',
-                                      opacity: step.count >= 10 ? 0.3 : 1,
                                       display: 'flex',
                                       alignItems: 'center',
                                       justifyContent: 'center',
                                       padding: 0,
+                                      transition: 'all 0.12s ease',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (step.count < 10) {
+                                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0';
+                                        e.currentTarget.style.color = isDark ? '#F0F6FC' : '#0F172A';
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.backgroundColor = 'transparent';
+                                      e.currentTarget.style.color = step.count >= 10 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155');
                                     }}
                                   >
-                                    <FiPlus size={9} />
+                                    <FiPlus size={10} />
                                   </button>
                                 </div>
                                 <span style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
