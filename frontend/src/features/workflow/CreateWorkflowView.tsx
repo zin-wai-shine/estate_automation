@@ -6031,49 +6031,77 @@ export const CreateWorkflowView: React.FC = () => {
           isOpen={showClearConfirmModal}
           onClose={() => setShowClearConfirmModal(false)}
           title={
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <div
                 style={{
-                  width: '30px',
-                  height: '30px',
-                  borderRadius: '50%',
-                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.12)',
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.08)',
+                  border: isDark ? '1px solid rgba(239, 68, 68, 0.22)' : '1px solid rgba(239, 68, 68, 0.18)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   color: isDark ? '#F87171' : '#DC2626',
                   flexShrink: 0,
+                  boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.05)',
                 }}
               >
-                <FiTrash2 size={15} />
+                <FiTrash2 size={17} />
               </div>
-              <span style={{ fontWeight: 600, fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
-                Clear Canvas Data & Results?
-              </span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontWeight: 650, fontSize: '0.95rem', color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                  Clear Canvas Data & Results
+                </span>
+                <span style={{ fontSize: '0.735rem', color: isDark ? '#94A3B8' : '#64748B' }}>
+                  Reset node outputs while keeping workflow intact
+                </span>
+              </div>
             </div>
           }
           maxWidth="460px"
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '0.25rem 0' }}>
-            <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
               Are you sure you want to clear all extracted post content, property photos, AI generated outputs, and execution results from the canvas? This will reset all nodes back to their ready state.
             </p>
 
             <div
               style={{
-                fontSize: '0.75rem',
-                color: isDark ? '#10B981' : '#059669',
-                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.08)',
-                padding: '0.625rem 0.75rem',
-                borderRadius: '0.5rem',
-                border: isDark ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(16, 185, 129, 0.2)',
                 display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
+                alignItems: 'flex-start',
+                gap: '0.625rem',
+                padding: '0.75rem 0.875rem',
+                borderRadius: '8px',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.07)' : '1px solid rgba(0, 0, 0, 0.06)',
               }}
             >
-              <FiCheckCircle size={15} style={{ flexShrink: 0 }} />
-              <span>Your workflow structure, prompt presets, browser profiles, and connections will remain untouched.</span>
+              <div
+                style={{
+                  width: '18px',
+                  height: '18px',
+                  borderRadius: '50%',
+                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.12)',
+                  border: isDark ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(16, 185, 129, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: isDark ? '#34D399' : '#059669',
+                  flexShrink: 0,
+                  marginTop: '1px',
+                }}
+              >
+                <FiCheck size={11} strokeWidth={3} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontSize: '0.775rem', fontWeight: 600, color: isDark ? '#E2E8F0' : '#1E293B' }}>
+                  Workflow Preserved
+                </span>
+                <span style={{ fontSize: '0.735rem', color: isDark ? '#94A3B8' : '#64748B', lineHeight: 1.45 }}>
+                  Your workflow structure, prompt presets, browser profiles, and connections will remain untouched.
+                </span>
+              </div>
             </div>
 
             <div
@@ -6081,36 +6109,79 @@ export const CreateWorkflowView: React.FC = () => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'flex-end',
-                gap: '0.75rem',
-                paddingTop: '0.75rem',
+                gap: '0.625rem',
+                paddingTop: '0.875rem',
                 borderTop: '1px solid var(--border-color)',
               }}
             >
-              <Button
-                variant="outline"
-                size="sm"
+              <button
+                type="button"
                 onClick={() => setShowClearConfirmModal(false)}
-                style={{ fontWeight: 600 }}
+                style={{
+                  height: '34px',
+                  padding: '0 14px',
+                  borderRadius: '7px',
+                  fontSize: '0.8125rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F8FAFC',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #E2E8F0',
+                  color: isDark ? '#E2E8F0' : '#475569',
+                  transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  outline: 'none',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : '#F1F5F9';
+                  e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.18)' : '#CBD5E1';
+                  e.currentTarget.style.color = isDark ? '#FFFFFF' : '#1E293B';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : '#F8FAFC';
+                  e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0';
+                  e.currentTarget.style.color = isDark ? '#E2E8F0' : '#475569';
+                }}
               >
                 Cancel
-              </Button>
-              <Button
-                variant="danger"
-                size="sm"
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   handleClearRunData();
                   setShowClearConfirmModal(false);
                 }}
-                leftIcon={<FiTrash2 size={13} />}
                 style={{
+                  height: '34px',
+                  padding: '0 14px',
+                  borderRadius: '7px',
+                  fontSize: '0.8125rem',
+                  fontWeight: 550,
+                  cursor: 'pointer',
                   backgroundColor: '#DC2626',
-                  borderColor: '#DC2626',
+                  border: '1px solid rgba(220, 38, 38, 0.8)',
                   color: '#FFFFFF',
-                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.25)',
+                  transition: 'background-color 0.15s ease, border-color 0.15s ease',
+                  outline: 'none',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#B91C1C';
+                  e.currentTarget.style.borderColor = '#991B1B';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#DC2626';
+                  e.currentTarget.style.borderColor = 'rgba(220, 38, 38, 0.8)';
                 }}
               >
-                Confirm Clear
-              </Button>
+                <FiTrash2 size={13} />
+                <span>Confirm Clear</span>
+              </button>
             </div>
           </div>
         </Modal>
