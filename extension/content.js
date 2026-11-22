@@ -45,7 +45,11 @@
         });
       }
       // Send wake-up message to ensure background worker immediately polls companion
-      chrome.runtime.sendMessage({ action: 'WAKE_UP_AND_POLL', url: window.location.href }).catch(() => {});
+      try {
+        chrome.runtime.sendMessage({ action: 'WAKE_UP_AND_POLL', url: window.location.href }, () => {
+          if (chrome.runtime.lastError) {}
+        });
+      } catch (e) {}
     } catch (e) {
       keepAlivePort = null;
     }
@@ -696,7 +700,6 @@
 
     return null;
   }
-  }
 
   // Trigger reliable multi-tier image download to disk and browser downloads directory
   async function downloadEnhancedImage(imgEl, finalUrl, fileName) {
@@ -1125,7 +1128,6 @@
 
     // Never search outside the new turns! If no complete image exists in new turns, it's still generating!
     return null;
-  }
   }
 
   // Detect ChatGPT error banner and locate the Retry button
@@ -1833,6 +1835,11 @@
         chrome.runtime.sendMessage(
           { action: 'FETCH_IMAGE_BASE64', url: primaryUrl, fallbackUrl: fallbackUrl },
           (response) => {
+            const lastErr = chrome.runtime.lastError;
+            if (lastErr) {
+              reject(new Error(lastErr.message || 'Background fetch port closed'));
+              return;
+            }
             if (response && response.success && response.dataUrl) {
               resolve(response.dataUrl);
             } else {
@@ -1850,6 +1857,10 @@
     if (!b64DataUrl) {
       const candidates = [primaryUrl, fallbackUrl].filter(Boolean);
       for (const u of candidates) {
+        if (u.startsWith('data:')) {
+          const b = dataUrlToBlob(u);
+          if (b) return b;
+        }
         try {
           const resp = await fetch(u);
           if (resp.ok) {
@@ -1860,6 +1871,8 @@
       throw lastError || new Error('Could not fetch image blob from candidate URLs');
     }
 
+    const b = dataUrlToBlob(b64DataUrl);
+    if (b) return b;
     const resp = await fetch(b64DataUrl);
     return await resp.blob();
   }
@@ -1909,7 +1922,7 @@
     return targetInput || null;
   }
 
-  // Attach a single image File into the ChatGPT composer cleanly without duplicating
+  // Attach a single image File into the ChatGPT composer cleanly with multi-method fallbacks
   async function attachImageFileToComposer(inputEl, file, maxExpected = 1, minExpected = 1, dataUrlHint = null) {
     const targetInputArea = inputEl || findPromptInput();
 
@@ -1926,7 +1939,7 @@
     const dt = new DataTransfer();
     dt.items.add(file);
 
-    // PRIMARY: Native input[type="file"]
+    // METHOD A: Native input[type="file"]
     const targetInput = await ensureChatGPTFileInput();
     if (targetInput) {
       try {
@@ -1945,7 +1958,7 @@
       }
 
       try {
-        const reactPropsKey = Object.keys(targetInput).find((k) => k.startsWith('__reactProps$'));
+        const reactPropsKey = Object.keys(targetInput).find((k) => k.startsWith('__reactProps$') || k.startsWith('__reactEventHandlers$'));
         if (reactPropsKey && targetInput[reactPropsKey]?.onChange) {
           targetInput[reactPropsKey].onChange({ target: targetInput, currentTarget: targetInput });
         }
@@ -1958,35 +1971,73 @@
       await new Promise((r) => setTimeout(r, 150));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
 
-      // Wait up to 8 seconds for the single attachment to register
-      const attachedMethodA = await waitForImageAttached(inputEl, 8000, minExpected);
+      // Wait up to 3 seconds for attachment to register
+      const attachedMethodA = await waitForImageAttached(inputEl, 3000, minExpected);
       if (attachedMethodA || getAttachedImagesCount(inputEl) >= minExpected) {
-        console.log(`[BOLTHAVEN] ✓ Attached image successfully (${getAttachedImagesCount(inputEl)} attached)`);
+        console.log(`[BOLTHAVEN] ✓ Attached image successfully via Method A (${getAttachedImagesCount(inputEl)} attached)`);
         return true;
       }
     }
 
-    // FALLBACK ONLY: ONLY if native file input was missing from DOM, try MAIN world injection ONCE
-    if (!targetInput && getAttachedImagesCount(inputEl) < minExpected && effectiveDataUrl && typeof effectiveDataUrl === 'string' && effectiveDataUrl.startsWith('data:')) {
+    // METHOD B: Synthetic Drag & Drop on composer target
+    const pm = document.querySelector('#prompt-textarea, .ProseMirror, textarea') || targetInputArea || document.querySelector('form');
+    if (pm) {
+      pm.focus();
       try {
-        console.log('[BOLTHAVEN] Fallback: Injecting ATTACH_IMAGE_MAIN_WORLD into MAIN world context...');
+        const dragEnter = new DragEvent('dragenter', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
+        const dragOver = new DragEvent('dragover', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
+        const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
+        pm.dispatchEvent(dragEnter);
+        pm.dispatchEvent(dragOver);
+        pm.dispatchEvent(dropEv);
+      } catch (e) {}
+
+      const attachedMethodB = await waitForImageAttached(inputEl, 2500, minExpected);
+      if (attachedMethodB || getAttachedImagesCount(inputEl) >= minExpected) {
+        console.log(`[BOLTHAVEN] ✓ Attached image successfully via Method B (Drop) (${getAttachedImagesCount(inputEl)} attached)`);
+        return true;
+      }
+
+      // METHOD C: Synthetic Clipboard Paste
+      try {
+        const pasteEv = new ClipboardEvent('paste', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          clipboardData: dt,
+        });
+        pm.dispatchEvent(pasteEv);
+      } catch (e) {}
+
+      const attachedMethodC = await waitForImageAttached(inputEl, 2500, minExpected);
+      if (attachedMethodC || getAttachedImagesCount(inputEl) >= minExpected) {
+        console.log(`[BOLTHAVEN] ✓ Attached image successfully via Method C (Paste) (${getAttachedImagesCount(inputEl)} attached)`);
+        return true;
+      }
+    }
+
+    // METHOD D: MAIN world injection (handles React Fiber & ProseMirror context without sandbox barriers)
+    if (effectiveDataUrl && typeof effectiveDataUrl === 'string' && effectiveDataUrl.startsWith('data:')) {
+      try {
+        console.log('[BOLTHAVEN] Method D: Injecting ATTACH_IMAGE_MAIN_WORLD into MAIN world context...');
         await new Promise((res) => {
           chrome.runtime.sendMessage({
             action: 'ATTACH_IMAGE_MAIN_WORLD',
             dataUrl: effectiveDataUrl,
             filename: file.name || 'property_image.jpg',
           }, (mRes) => {
+            if (chrome.runtime.lastError) {}
             res(mRes?.success ?? false);
           });
         });
 
-        const attachedMethodB = await waitForImageAttached(inputEl, 6000, minExpected);
-        if (attachedMethodB) {
-          console.log(`[BOLTHAVEN] ✓ Attached image via MAIN world (${getAttachedImagesCount(inputEl)} attached)`);
+        const attachedMethodD = await waitForImageAttached(inputEl, 6000, minExpected);
+        if (attachedMethodD || getAttachedImagesCount(inputEl) >= minExpected) {
+          console.log(`[BOLTHAVEN] ✓ Attached image via Method D (MAIN world) (${getAttachedImagesCount(inputEl)} attached)`);
           return true;
         }
       } catch (e) {
-        console.warn('[BOLTHAVEN] Method B error:', e);
+        console.warn('[BOLTHAVEN] Method D error:', e);
       }
     }
 
@@ -2504,16 +2555,26 @@
     const file = new File([blob], filename, { type: mimeType });
 
     console.log(`[BOLTHAVEN] Attaching single image #${job.original_position || 1}...`);
-    await attachImageFileToComposer(input, file, 1, 1, job.image_data_url || (primaryUrl.startsWith('data:') ? primaryUrl : null));
+    let attachOk = await attachImageFileToComposer(input, file, 1, 1, job.image_data_url || (primaryUrl.startsWith('data:') ? primaryUrl : null));
 
-    console.log(`[BOLTHAVEN] ✓ Step 1 Done: Single image #${job.original_position || 1} attached! Waiting for upload to finish...`);
-
-    // 2. Wait for the image upload to fully complete BEFORE typing the prompt (up to 15s)
+    // Wait for the image upload to fully complete BEFORE typing the prompt (up to 15s)
     const composerEl = getComposerContainer(input) || document;
     await waitForAttachmentUploadComplete(composerEl, 15000);
 
+    // Verify image is attached; if not, retry once
+    let curAttached = getAttachedImagesCount(input);
+    if (curAttached === 0) {
+      console.warn(`[BOLTHAVEN] ⚠️ Image #${job.original_position || 1} not detected after first pass. Retrying attachment...`);
+      attachOk = await attachImageFileToComposer(input, file, 1, 1, job.image_data_url || (primaryUrl.startsWith('data:') ? primaryUrl : null));
+      await waitForAttachmentUploadComplete(composerEl, 15000);
+      curAttached = getAttachedImagesCount(input);
+    }
+
+    if (curAttached === 0) {
+      throw new Error(`Failed to attach image #${job.original_position || 1} to ChatGPT composer. Aborting to prevent sending prompt without photo.`);
+    }
+
     // Verify strictly 1 image is attached before pasting prompt
-    const curAttached = getAttachedImagesCount(input);
     if (curAttached > 1) {
       console.warn(`[BOLTHAVEN] ⚠️ Multiple images (${curAttached}) detected in composer! Re-cleaning and attaching only image #${job.original_position || 1}...`);
       await cleanComposerInputCompletely(input);
@@ -2521,6 +2582,8 @@
       await attachImageFileToComposer(input, file, 1, 1, job.image_data_url || (primaryUrl.startsWith('data:') ? primaryUrl : null));
       await waitForAttachmentUploadComplete(composerEl, 15000);
     }
+
+    console.log(`[BOLTHAVEN] ✓ Step 1 Done: Single image #${job.original_position || 1} attached and verified!`);
 
     if (activeJobAborted) {
       clearPromptText(input);
@@ -2541,7 +2604,10 @@
       console.warn(`[BOLTHAVEN] ⚠️ Prompt text not detected in composer (${composerText ? composerText.length : 0} chars). Retrying via MAIN world injection...`);
       try {
         await new Promise((res) => {
-          chrome.runtime.sendMessage({ action: 'INSERT_PROMPT_MAIN_WORLD', text: promptText }, () => res());
+          chrome.runtime.sendMessage({ action: 'INSERT_PROMPT_MAIN_WORLD', text: promptText }, () => {
+            if (chrome.runtime.lastError) {}
+            res();
+          });
         });
       } catch (e) {}
       await new Promise((r) => setTimeout(r, 1000));
@@ -2883,16 +2949,19 @@
         targetInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
 
-        // Wait up to 15s for the attachments to register in composer
-        await waitForImageAttached(input, 15000, targetTotalImages);
-      } else {
-        // Fallback ONLY if file input was never found: attach sequentially
-        console.log('[BOLTHAVEN] File input not found, attaching sequentially...');
+        // Wait up to 5s for the batch input attachments to register in composer
+        await waitForImageAttached(input, 5000, targetTotalImages);
+      }
+
+      // If batch injection did not attach all images, attach sequentially with multi-method fallbacks
+      if (getAttachedImagesCount(input) < targetTotalImages) {
+        console.log(`[BOLTHAVEN] Batch attachment yielded ${getAttachedImagesCount(input)} of ${targetTotalImages}. Attaching sequentially with multi-method fallbacks...`);
         for (let i = 0; i < filesToAttach.length; i++) {
           if (activeJobAborted) throw new Error('Stage 2 aborted by user');
+          if (getAttachedImagesCount(input) >= targetTotalImages) break;
           const file = filesToAttach[i];
           await attachImageFileToComposer(input, file, targetTotalImages, i + 1);
-          await new Promise((r) => setTimeout(r, 1000));
+          await new Promise((r) => setTimeout(r, 600));
         }
       }
 
@@ -2977,11 +3046,11 @@
       if (activeJobAborted) {
         clearInterval(checkInterval);
         activeHeroJobId = null;
-        chrome.runtime.sendMessage({
+        safeSendMessage({
           action: 'HERO_GENERATION_FAILED',
           heroJobId,
           error: 'Hero image generation stopped by user',
-        }).catch(() => {});
+        });
         return;
       }
 
@@ -2989,11 +3058,11 @@
       if (elapsed > maxWaitMs) {
         clearInterval(checkInterval);
         activeHeroJobId = null;
-        chrome.runtime.sendMessage({
+        safeSendMessage({
           action: 'HERO_GENERATION_FAILED',
           heroJobId,
           error: 'ChatGPT Hero image generation timed out (6 min)',
-        }).catch(() => {});
+        });
         return;
       }
 
@@ -3017,11 +3086,11 @@
           } else {
             clearInterval(checkInterval);
             activeHeroJobId = null;
-            chrome.runtime.sendMessage({
+            safeSendMessage({
               action: 'HERO_GENERATION_FAILED',
               heroJobId,
               error: 'ChatGPT Hero generation failed after 3 stream retries',
-            }).catch(() => {});
+            });
             return;
           }
         }

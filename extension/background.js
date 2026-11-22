@@ -444,7 +444,11 @@ async function stopAllExtensionAutomation() {
     for (const slot of automation.tabSlots) {
       if (slot && slot.tabId) {
         notifiedTabIds.add(slot.tabId);
-        chrome.tabs.sendMessage(slot.tabId, { action: 'STOP_TAB_JOB' }).catch(() => {});
+        try {
+          chrome.tabs.sendMessage(slot.tabId, { action: 'STOP_TAB_JOB' }, () => {
+            if (chrome.runtime.lastError) {}
+          });
+        } catch (e) {}
       }
     }
   }
@@ -454,7 +458,11 @@ async function stopAllExtensionAutomation() {
     for (const t of allTabs) {
       if (t && t.id && (t.url || '').includes('chatgpt.com') && !notifiedTabIds.has(t.id)) {
         notifiedTabIds.add(t.id);
-        chrome.tabs.sendMessage(t.id, { action: 'STOP_TAB_JOB' }).catch(() => {});
+        try {
+          chrome.tabs.sendMessage(t.id, { action: 'STOP_TAB_JOB' }, () => {
+            if (chrome.runtime.lastError) {}
+          });
+        } catch (e) {}
       }
     }
   } catch (e) {}
@@ -668,10 +676,15 @@ async function fetchJobImageDataUrl(job) {
   }
   const primary = job.source_file_path || job.source_file_url || '';
   const fallback = job.source_file_url || job.source_file_path || '';
+  if (primary && typeof primary === 'string' && primary.startsWith('data:')) return primary;
+  if (fallback && typeof fallback === 'string' && fallback.startsWith('data:')) return fallback;
+
   const candidates = [];
 
   if (primary && primary.includes('/storage/')) {
     candidates.push(primary.startsWith('/') ? `${BOLTHAVEN_URL}${primary}` : primary);
+    const fname = primary.split('/').pop();
+    if (fname) candidates.push(`${COMPANION_URL}/downloaded-image?file=${encodeURIComponent(fname)}`);
   }
   if (fallback && fallback.includes('/storage/')) {
     candidates.push(fallback.startsWith('/') ? `${BOLTHAVEN_URL}${fallback}` : fallback);
@@ -684,6 +697,7 @@ async function fetchJobImageDataUrl(job) {
   }
 
   for (const rawUrl of candidates) {
+    if (rawUrl.startsWith('data:')) return rawUrl;
     try {
       console.log(`[BOLTHAVEN EXT] Pre-fetching image #${job.original_position || 1} for tab:`, rawUrl);
       const r = await fetch(rawUrl);
@@ -1664,113 +1678,140 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
   }
 
-  // Attach single image in MAIN world context
-  if (request.action === 'ATTACH_IMAGE_MAIN_WORLD') {
-    const tabId = sender.tab?.id;
-    const { dataUrl, filename } = request;
-    if (tabId && dataUrl) {
-      chrome.scripting.executeScript({
-        target: { tabId },
-        world: 'MAIN',
-        func: async (dUrl, fName) => {
-          try {
-            // Safe synchronous Base64 conversion without fetch (immune to ChatGPT CSP!)
+  // Attach image(s) in MAIN world context (handles single and multi-image attachments cleanly)
+  if (request.action === 'ATTACH_IMAGE_MAIN_WORLD' || request.action === 'ATTACH_IMAGES_MAIN_WORLD') {
+    const tabId = sender.tab?.id || request.tabId;
+    const items = request.action === 'ATTACH_IMAGES_MAIN_WORLD'
+      ? (Array.isArray(request.images) ? request.images : [])
+      : (request.dataUrl ? [{ dataUrl: request.dataUrl, filename: request.filename }] : []);
+
+    if (!tabId || items.length === 0) {
+      sendResponse({ success: false, error: 'No tabId or images provided' });
+      return true;
+    }
+
+    chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async (imagesList) => {
+        try {
+          const files = [];
+          for (const item of imagesList) {
+            const dUrl = item.dataUrl || '';
+            const fName = item.filename || 'image.jpg';
             const parts = dUrl.split(',');
-            if (parts.length < 2) return false;
+            if (parts.length < 2) continue;
             const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
             const bin = atob(parts[1]);
             const bytes = new Uint8Array(bin.length);
             for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
             const blob = new Blob([bytes], { type: mime });
-            const file = new File([blob], fName || 'image.jpg', { type: mime });
+            files.push(new File([blob], fName, { type: mime }));
+          }
 
-            const dt = new DataTransfer();
-            dt.items.add(file);
+          if (files.length === 0) return { ok: false, error: 'No valid files decoded' };
 
-            // 1. Locate file input in DOM and set files
-            let fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
-            let fileInput = fileInputs.find((i) => (i.accept || '').includes('image')) ||
-                            fileInputs[fileInputs.length - 1] ||
-                            fileInputs[0];
+          const dt = new DataTransfer();
+          files.forEach((f) => dt.items.add(f));
 
-            if (!fileInput) {
-              const attachBtn = (
-                document.querySelector('button[data-testid="attach-button"]') ||
-                document.querySelector('button[aria-label*="Attach" i]') ||
-                document.querySelector('button[aria-label*="Add files" i]') ||
-                document.querySelector('button[aria-label*="Add content" i]') ||
-                document.querySelector('button[data-testid*="attach" i]')
-              );
-              if (attachBtn) {
-                attachBtn.click();
-                await new Promise((r) => setTimeout(r, 250));
-                const menuItems = Array.from(document.querySelectorAll('[role="menuitem"], [role="menu"] button, div[class*="popover"] button'));
-                const uploadItem = menuItems.find((el) => {
-                  const t = (el.textContent || '').toLowerCase();
-                  return t.includes('upload') || t.includes('computer') || t.includes('photo') || t.includes('file');
-                });
-                if (uploadItem) {
-                  uploadItem.click();
-                  await new Promise((r) => setTimeout(r, 250));
-                }
+          // 1. Locate file input in DOM and set files
+          let fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
+          let fileInput = fileInputs.find((i) => (i.accept || '').includes('image')) ||
+                          fileInputs[fileInputs.length - 1] ||
+                          fileInputs[0];
 
-                fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
-                fileInput = fileInputs.find((i) => (i.accept || '').includes('image')) ||
-                            fileInputs[fileInputs.length - 1] ||
-                            fileInputs[0];
+          if (!fileInput) {
+            const attachBtn = (
+              document.querySelector('button[data-testid="attach-button"]') ||
+              document.querySelector('button[aria-label*="Attach" i]') ||
+              document.querySelector('button[aria-label*="Add files" i]') ||
+              document.querySelector('button[aria-label*="Add content" i]') ||
+              document.querySelector('button[data-testid*="attach" i]')
+            );
+            if (attachBtn) {
+              attachBtn.click();
+              await new Promise((r) => setTimeout(r, 200));
+              const menuItems = Array.from(document.querySelectorAll('[role="menuitem"], [role="menu"] button, div[class*="popover"] button'));
+              const uploadItem = menuItems.find((el) => {
+                const t = (el.textContent || '').toLowerCase();
+                return t.includes('upload') || t.includes('computer') || t.includes('photo') || t.includes('file');
+              });
+              if (uploadItem) {
+                uploadItem.click();
+                await new Promise((r) => setTimeout(r, 200));
               }
-            }
 
-            // If fileInput is present, inject file into fileInput ONLY and return!
-            if (fileInput) {
-              try {
-                const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files')?.set;
-                if (nativeSetter) {
-                  nativeSetter.call(fileInput, dt.files);
-                } else {
-                  fileInput.files = dt.files;
-                }
-              } catch (e) {
+              fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
+              fileInput = fileInputs.find((i) => (i.accept || '').includes('image')) ||
+                          fileInputs[fileInputs.length - 1] ||
+                          fileInputs[0];
+            }
+          }
+
+          let attachedViaInput = false;
+          if (fileInput) {
+            fileInput.multiple = true;
+            try {
+              const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files')?.set;
+              if (nativeSetter) {
+                nativeSetter.call(fileInput, dt.files);
+              } else {
                 fileInput.files = dt.files;
               }
-              if (fileInput._valueTracker) fileInput._valueTracker.setValue('');
-
-              try {
-                const reactPropsKey = Object.keys(fileInput).find((k) => k.startsWith('__reactProps$') || k.startsWith('__reactEventHandlers$'));
-                if (reactPropsKey && fileInput[reactPropsKey]?.onChange) {
-                  fileInput[reactPropsKey].onChange({ target: fileInput, currentTarget: fileInput });
-                }
-              } catch (e) {}
-
-              fileInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-              fileInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-
-              // Close popover and exit immediately
-              document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
-              return true;
+            } catch (e) {
+              fileInput.files = dt.files;
             }
+            if (fileInput._valueTracker) fileInput._valueTracker.setValue('');
 
-            // FALLBACK ONLY: If no file input could be mounted, dispatch single drop on prompt textarea
-            const pm = document.querySelector('#prompt-textarea, .ProseMirror, textarea');
-            if (pm) {
-              pm.focus();
-              try {
-                const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
-                pm.dispatchEvent(dropEv);
-                return true;
-              } catch (e) {}
-            }
+            try {
+              const reactPropsKey = Object.keys(fileInput).find((k) => k.startsWith('__reactProps$') || k.startsWith('__reactEventHandlers$'));
+              if (reactPropsKey && fileInput[reactPropsKey]?.onChange) {
+                fileInput[reactPropsKey].onChange({ target: fileInput, currentTarget: fileInput });
+              }
+            } catch (e) {}
 
-            return true;
-          } catch (e) {
-            return false;
+            fileInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            fileInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            attachedViaInput = true;
           }
-        },
-        args: [dataUrl, filename],
-      }).then((res) => sendResponse({ success: res?.[0]?.result ?? false }))
-        .catch((e) => sendResponse({ success: false, error: e.message }));
-      return true;
-    }
+
+          // 2. Synthetic Drag & Drop on composer target
+          const pm = document.querySelector('#prompt-textarea, .ProseMirror, textarea') || document.querySelector('form');
+          if (pm) {
+            pm.focus();
+            try {
+              const dragEnter = new DragEvent('dragenter', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
+              const dragOver = new DragEvent('dragover', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
+              const dropEv = new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt });
+              pm.dispatchEvent(dragEnter);
+              pm.dispatchEvent(dragOver);
+              pm.dispatchEvent(dropEv);
+            } catch (e) {}
+
+            // 3. Synthetic Clipboard Paste
+            try {
+              const pasteEv = new ClipboardEvent('paste', {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                clipboardData: dt,
+              });
+              pm.dispatchEvent(pasteEv);
+            } catch (e) {}
+          }
+
+          // Close popover
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+
+          return { ok: true, count: files.length, attachedViaInput };
+        } catch (e) {
+          return { ok: false, error: e.message };
+        }
+      },
+      args: [items],
+    }).then((res) => sendResponse({ success: res?.[0]?.result?.ok ?? false, detail: res?.[0]?.result }))
+      .catch((e) => sendResponse({ success: false, error: e.message }));
+    return true;
   }
   // Robust serialized image download handler
   if (request.action === 'DOWNLOAD_IMAGE' || request.action === 'DOWNLOAD_IMAGE_SERIAL') {
@@ -1798,13 +1839,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Fetch image as base64 to avoid CSP/Mixed content restrictions on ChatGPT page
   if (request.action === 'FETCH_IMAGE_BASE64') {
     const fetchAsDataUrl = async () => {
-      const candidates = [];
       const primary = request.url || '';
       const fallback = request.fallbackUrl || '';
 
-      // If local storage path (/storage/...) is present in primary or fallback, try it first
+      if (primary && typeof primary === 'string' && primary.startsWith('data:')) return primary;
+      if (fallback && typeof fallback === 'string' && fallback.startsWith('data:')) return fallback;
+
+      const candidates = [];
       if (primary && primary.includes('/storage/')) {
         candidates.push(primary.startsWith('/') ? `${BOLTHAVEN_URL}${primary}` : primary);
+        const fname = primary.split('/').pop();
+        if (fname) candidates.push(`${COMPANION_URL}/downloaded-image?file=${encodeURIComponent(fname)}`);
       }
       if (fallback && fallback.includes('/storage/')) {
         candidates.push(fallback.startsWith('/') ? `${BOLTHAVEN_URL}${fallback}` : fallback);
@@ -1818,9 +1863,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
       let lastError = null;
       for (const rawUrl of candidates) {
+        if (rawUrl.startsWith('data:')) return rawUrl;
         try {
           console.log('[BOLTHAVEN] Fetching image for base64 conversion:', rawUrl);
           const r = await fetch(rawUrl);
+          if (!r.ok) continue;
           const arrayBuffer = await r.arrayBuffer();
           const bytes = new Uint8Array(arrayBuffer);
           let binary = '';
@@ -2481,10 +2528,11 @@ async function pollCompanion() {
         if (chatTab) {
           await ensureContentScriptInjected(chatTab.id);
           chrome.tabs.sendMessage(chatTab.id, { action: 'TEST_ATTACH' }, (resp) => {
+            const err = chrome.runtime.lastError?.message;
             fetch(`${COMPANION_URL}/report-inspect`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(resp || { error: 'No response from tab' }),
+              body: JSON.stringify(resp || { error: err || 'No response from tab' }),
             }).catch(() => {});
           });
         } else {
@@ -2509,10 +2557,11 @@ async function pollCompanion() {
             resolved_prompt: 'Edit the attached original interior photograph into ONE clean, detailed, professional architectural real-estate image.',
           };
           chrome.tabs.sendMessage(chatTab.id, { action: 'SETUP_AND_SEND_JOB', job: sampleJob }, (resp) => {
+            const err = chrome.runtime.lastError?.message;
             fetch(`${COMPANION_URL}/report-inspect`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(resp || { error: 'No response from tab' }),
+              body: JSON.stringify(resp || { error: err || 'No response from tab' }),
             }).catch(() => {});
           });
         } else {
