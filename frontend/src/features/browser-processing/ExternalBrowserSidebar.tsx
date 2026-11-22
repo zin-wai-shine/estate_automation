@@ -1456,13 +1456,15 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   };
 
   useEffect(() => {
+    if (isHeroNode) return;
     loadQueue();
     const interval = setInterval(loadQueue, 4000);
     return () => clearInterval(interval);
-  }, [propertyContext?.id]);
+  }, [propertyContext?.id, isHeroNode]);
 
   // Poll automation progress and downloaded enhanced images
   useEffect(() => {
+    if (isHeroNode) return;
     let interval: any = null;
     const checkProgressAndImages = async () => {
       try {
@@ -5494,7 +5496,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       )}
 
       {/* SECTION: ENHANCED IMAGES RESULTS (Downloaded to Disk) */}
-      {receivedImages.length > 0 && enhancedImages.length > 0 && (
+      {!isHeroNode && receivedImages.length > 0 && enhancedImages.length > 0 && (
         <div
           style={{
             display: 'flex',
@@ -6069,7 +6071,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       )}
 
       {/* SECTION G — SMART IMAGE QUEUE */}
-      {(() => {
+      {!isHeroNode && (() => {
         // Strictly show jobs from current property run, or preview images from current "Get Images"
         const currentPropId = propertyContext?.id;
         const matchingQueueJobs = currentPropId
