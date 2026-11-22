@@ -5157,7 +5157,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           </div>
         )}
 
-        {/* If missing photos exist from previous run, provide 1-click "Work Missing Photos" button! */}
+        {/* If missing photos exist from previous run, provide 1-click clean "Resume Missing Photos" button */}
         {missingPositions.length > 0 && enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && !isHeroNode && (
           <button
             type="button"
@@ -5168,30 +5168,32 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             style={{
               width: '100%',
               height: '36px',
-              borderRadius: '8px',
-              border: '1px solid #F59E0B',
-              backgroundColor: 'rgba(245, 158, 11, 0.15)',
+              borderRadius: '6px',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
+              backgroundColor: 'rgba(245, 158, 11, 0.09)',
               color: '#F59E0B',
               fontSize: '0.8125rem',
-              fontWeight: 700,
+              fontWeight: 600,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '8px',
+              gap: '6px',
               cursor: 'pointer',
               marginBottom: '6px',
               transition: 'all 0.15s ease',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.25)';
+              e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.18)';
+              e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.45)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.15)';
+              e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.09)';
+              e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.3)';
             }}
             title={`Queue and enhance missing photos: ${missingPositions.map((p) => '#' + p).join(', ')}`}
           >
-            <FiRefreshCw size={13} />
-            <span>Work Missing ({missingPositions.length} Photos · [ {missingPositions.map((p) => '#' + p).join(', ')} ] )</span>
+            <FiPlay size={12} />
+            <span>Resume Missing Photos ({missingPositions.length})</span>
           </button>
         )}
 
@@ -5508,27 +5510,27 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             border: '1px solid rgba(16, 185, 129, 0.35)',
           }}
         >
+          {/* Header Row: Title & Status */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: '6px',
+              gap: '8px',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
               <div
                 style={{
-                  width: '18px',
-                  height: '18px',
+                  width: '16px',
+                  height: '16px',
                   borderRadius: '50%',
                   backgroundColor: missingPositions.length > 0 && enhancedImages.length === 0 ? '#F59E0B' : '#10B981',
                   color: '#FFFFFF',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '11px',
+                  fontSize: '10px',
                   fontWeight: 700,
                   flexShrink: 0,
                 }}
@@ -5538,8 +5540,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               <span
                 style={{
                   fontSize: '0.75rem',
-                  fontWeight: 700,
-                  color: missingPositions.length > 0 ? '#F59E0B' : '#10B981',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
                   whiteSpace: 'nowrap',
                 }}
               >
@@ -5550,58 +5552,144 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 <span
                   style={{
                     fontSize: '0.625rem',
-                    fontWeight: 700,
-                    padding: '1px 6px',
+                    fontWeight: 600,
+                    padding: '1px 5px',
                     borderRadius: '4px',
-                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                    backgroundColor: 'rgba(245, 158, 11, 0.12)',
                     color: '#F59E0B',
-                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                    border: '1px solid rgba(245, 158, 11, 0.25)',
                   }}
                 >
                   {missingPositions.length} Missing
                 </span>
               )}
             </div>
+
+            {/* When NO missing photos exist, quick actions sit right in header */}
+            {missingPositions.length === 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <button
+                  type="button"
+                  disabled={isRegettingImages}
+                  onClick={handleRegetEnhancedImages}
+                  style={{
+                    height: '24px',
+                    padding: '0 8px',
+                    fontSize: '0.6875rem',
+                    fontWeight: 500,
+                    borderRadius: '5px',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                    color: regetFeedback ? '#10B981' : 'var(--text-secondary)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                    e.currentTarget.style.color = 'var(--text-primary)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                    e.currentTarget.style.color = regetFeedback ? '#10B981' : 'var(--text-secondary)';
+                  }}
+                  title="Re-get and sync all enhanced photos from your drive / downloads"
+                >
+                  <FiRefreshCw size={10} className={isRegettingImages ? 'animate-spin' : ''} />
+                  <span>{regetFeedback || 'Sync'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    fetch('http://127.0.0.1:9224/reveal-file').catch(() => {});
+                  }}
+                  style={{
+                    height: '24px',
+                    padding: '0 8px',
+                    fontSize: '0.6875rem',
+                    fontWeight: 500,
+                    borderRadius: '5px',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                    color: 'var(--text-secondary)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                    e.currentTarget.style.color = 'var(--text-primary)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                    e.currentTarget.style.color = 'var(--text-secondary)';
+                  }}
+                  title="Open Downloads folder in macOS Finder"
+                >
+                  <FiFolder size={11} style={{ color: '#10B981' }} />
+                  <span>Downloads</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Clean Action Toolbar (Visible when missing photos exist) */}
+          {missingPositions.length > 0 && (
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '4px',
-                flexWrap: 'wrap',
-                marginLeft: 'auto',
+                gap: '5px',
+                paddingTop: '2px',
               }}
             >
-              {missingPositions.length > 0 && !isAutomating && !isRunningTwoStage && !isHeroNode && (
-                <Button
-                  size="sm"
-                  variant="secondary"
+              {/* 1. Resume / Regenerate Missing Photos */}
+              {!isAutomating && !isRunningTwoStage && !isHeroNode && (
+                <button
+                  type="button"
                   onClick={() => {
                     setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
                     handleStartGroupAutomation(missingPositions);
                   }}
                   style={{
-                    padding: '2px 7px',
-                    fontSize: '0.625rem',
+                    height: '26px',
+                    padding: '0 9px',
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
+                    borderRadius: '5px',
+                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    color: '#F59E0B',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '4px',
+                    cursor: 'pointer',
                     whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                    borderColor: 'rgba(245, 158, 11, 0.5)',
-                    color: '#F59E0B',
-                    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-                    fontWeight: 700,
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.18)';
+                    e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.45)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
+                    e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.3)';
                   }}
                   title={`Queue & enhance ${missingPositions.length} missing photo(s): ${missingPositions.map((p) => '#' + p).join(', ')}`}
                 >
-                  <FiPlay size={9} />
-                  <span>Regenerate Missing ({missingPositions.length})</span>
-                </Button>
+                  <FiPlay size={10} />
+                  <span>Resume ({missingPositions.length})</span>
+                </button>
               )}
-              {missingPositions.length > 0 && enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && (
-                <Button
-                  size="sm"
-                  variant="secondary"
+
+              {/* 2. Recover from Disk */}
+              {enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && (
+                <button
+                  type="button"
                   disabled={isRecovering}
                   onClick={async () => {
                     setIsRecovering(true);
@@ -5652,70 +5740,108 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     }
                   }}
                   style={{
-                    padding: '2px 7px',
-                    fontSize: '0.625rem',
+                    height: '26px',
+                    padding: '0 9px',
+                    fontSize: '0.6875rem',
+                    fontWeight: 500,
+                    borderRadius: '5px',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                    color: 'var(--text-secondary)',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '3px',
+                    gap: '4px',
+                    cursor: 'pointer',
                     whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                    borderColor: 'rgba(239, 68, 68, 0.45)',
-                    color: '#EF4444',
-                    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                    transition: 'all 0.15s ease',
                   }}
-                  title={`Missing ${missingPositions.length} photo(s): ${missingPositions.map((p) => `#${p}`).join(', ')}. Click to recover and re-queue missing photos!`}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                    e.currentTarget.style.color = 'var(--text-primary)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                    e.currentTarget.style.color = 'var(--text-secondary)';
+                  }}
+                  title={`Missing ${missingPositions.length} photo(s): ${missingPositions.map((p) => `#${p}`).join(', ')}. Click to recover missing photos from disk.`}
                 >
-                  <FiRefreshCw size={10} className={isRecovering ? 'animate-spin' : ''} />
+                  <FiRefreshCw size={10} style={{ color: '#F87171' }} className={isRecovering ? 'animate-spin' : ''} />
                   <span>Recover ({missingPositions.length})</span>
-                </Button>
+                </button>
               )}
-              {/* Re-get Enhanced Images Button */}
-              <Button
-                size="sm"
-                variant="secondary"
+
+              {/* 3. Re-get / Sync */}
+              <button
+                type="button"
                 disabled={isRegettingImages}
                 onClick={handleRegetEnhancedImages}
                 style={{
-                  padding: '2px 7px',
-                  fontSize: '0.625rem',
+                  height: '26px',
+                  padding: '0 9px',
+                  fontSize: '0.6875rem',
+                  fontWeight: 500,
+                  borderRadius: '5px',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                  color: regetFeedback ? '#10B981' : 'var(--text-secondary)',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '3px',
+                  gap: '4px',
+                  cursor: 'pointer',
                   whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                  borderColor: regetFeedback ? 'rgba(16, 185, 129, 0.45)' : undefined,
-                  color: regetFeedback ? '#10B981' : 'var(--text-primary)',
-                  backgroundColor: regetFeedback ? (isDark ? 'rgba(16, 185, 129, 0.12)' : '#DEF7EC') : undefined,
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                  e.currentTarget.style.color = 'var(--text-primary)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                  e.currentTarget.style.color = regetFeedback ? '#10B981' : 'var(--text-secondary)';
                 }}
                 title="Re-get and sync all enhanced photos from your drive / downloads"
               >
                 <FiRefreshCw size={10} className={isRegettingImages ? 'animate-spin' : ''} />
-                <span>{regetFeedback || 'Re-get'}</span>
-              </Button>
+                <span>{regetFeedback || 'Sync'}</span>
+              </button>
 
-              <Button
-                size="sm"
-                variant="secondary"
+              {/* 4. Downloads folder */}
+              <button
+                type="button"
                 onClick={() => {
                   fetch('http://127.0.0.1:9224/reveal-file').catch(() => {});
                 }}
                 style={{
-                  padding: '2px 7px',
-                  fontSize: '0.625rem',
+                  height: '26px',
+                  padding: '0 9px',
+                  fontSize: '0.6875rem',
+                  fontWeight: 500,
+                  borderRadius: '5px',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                  color: 'var(--text-secondary)',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '3px',
+                  gap: '4px',
+                  cursor: 'pointer',
                   whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                  borderColor: 'rgba(16, 185, 129, 0.35)',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                  e.currentTarget.style.color = 'var(--text-primary)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                  e.currentTarget.style.color = 'var(--text-secondary)';
                 }}
                 title="Open Downloads folder in macOS Finder"
               >
-                <FiFolder size={10} style={{ color: '#10B981' }} />
+                <FiFolder size={11} style={{ color: '#10B981' }} />
                 <span>Downloads</span>
-              </Button>
+              </button>
             </div>
-          </div>
+          )}
 
           {/* Grid of Enhanced and Missing Images */}
           <div
@@ -6100,34 +6226,59 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               </label>
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', marginLeft: 'auto' }}>
                 {missingPositions.length > 0 && enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && !isHeroNode && (
-                  <Button
-                    size="sm"
-                    variant="secondary"
+                  <button
+                    type="button"
                     onClick={() => {
                       setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
                       handleStartGroupAutomation(missingPositions);
                     }}
                     style={{
-                      padding: '2px 6px',
-                      fontSize: '0.625rem',
+                      height: '24px',
+                      padding: '0 8px',
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      borderRadius: '5px',
                       color: '#F59E0B',
-                      borderColor: 'rgba(245, 158, 11, 0.4)',
+                      border: '1px solid rgba(245, 158, 11, 0.3)',
                       backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.18)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
                     }}
                     title={`Queue & work ${missingPositions.length} missing photos: ${missingPositions.map((p) => '#' + p).join(', ')}`}
                   >
                     <FiPlay size={9} />
-                    <span>Work Missing ({missingPositions.length})</span>
-                  </Button>
+                    <span>Run Missing ({missingPositions.length})</span>
+                  </button>
                 )}
-                <Button
-                  size="sm"
-                  variant="secondary"
+                <button
+                  type="button"
                   onClick={loadQueue}
-                  style={{ padding: '2px 6px', fontSize: '0.625rem' }}
+                  style={{
+                    height: '24px',
+                    padding: '0 7px',
+                    fontSize: '0.6875rem',
+                    borderRadius: '5px',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                    color: 'var(--text-secondary)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  title="Refresh Queue"
                 >
                   <FiRefreshCw size={10} />
-                </Button>
+                </button>
               </div>
             </div>
 
