@@ -1409,7 +1409,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
       const promptToUse = (resolvedPromptPreview || currentPromptText || 'Create facebook advertisement from the attached reference and building photos').trim();
       const effectiveHeroGroupName = currentGroup?.name || targetGroupName || 'FB Hero';
-      const isDirectStaging = boxConfig.stagingMode !== 'two_stage';
+      const isDirectStaging = boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1 === true || (boxConfig.stagingMode !== 'two_stage' && boxConfig.stagingMode !== 'two_stage_tabs' && boxConfig.workerTabCount === 1);
 
       // 0. Instantly focus Chrome profile and ChatGPT tab
       focusBrowserTabGroup({
@@ -4539,7 +4539,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       </div>
 
       {/* SECTION C — CHROME TAB GROUPS MULTI-PIPELINE (RELATIVE TO SELECTED PROFILE) */}
-      {(isHeroNode ? Boolean(boxConfig.showTabGroupsPipelines) : boxConfig.showTabGroupsPipelines !== false) && (
+      {boxConfig.showTabGroupsPipelines !== false && (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -4580,7 +4580,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         ) : (
           displayGroups.map((group, groupIdx) => {
             const isEnhance = group.name.toLowerCase().includes('enhance');
-            const isHero = group.name.toLowerCase().includes('hero') || group.name.toLowerCase().includes('fb');
+            const isHero = isHeroNode || group.name.toLowerCase().includes('hero') || group.name.toLowerCase().includes('fb');
             const groupBg = isDark ? 'var(--bg-surface)' : '#F8FAFC';
             const groupBorder = '1px solid var(--border-color)';
             const allGroupTabs = group.tabs || [];
@@ -4629,8 +4629,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     onClick={async () => {
                       if (tabs.length > 0) {
                         try {
-                          const isHeroGrp = (group.name || '').toLowerCase().includes('hero');
-                          const grpCount = isHeroGrp ? 1 : (boxConfig.workerTabCount || tabs.length || 4);
+                          const isHeroGrp = isHeroNode || (group.name || '').toLowerCase().includes('hero') || (group.name || '').toLowerCase().includes('fb');
+                          const grpCount = isHeroGrp ? (boxConfig.stagingMode === 'direct_tab2' ? 1 : 2) : (boxConfig.workerTabCount || tabs.length || 4);
                           await focusBrowserTabGroup({
                             profileId: activeProfile?.id || selectedProfileId,
                             profileKey: activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro'),

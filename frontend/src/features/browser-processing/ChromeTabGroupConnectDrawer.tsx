@@ -436,6 +436,42 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
     'Create an attractive facebook property advertisement using the attached layout and condo photos.'
   );
 
+  // Staging Flow & Tab Groups Settings
+  const [stagingMode, setStagingMode] = useState<'two_stage_tabs' | 'direct_tab2'>('two_stage_tabs');
+  const [showTabGroupsPipelines, setShowTabGroupsPipelines] = useState<boolean>(true);
+
+  const appleTrackStyle: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '2px',
+    borderRadius: '8px',
+    backgroundColor: isDark ? 'rgba(118, 118, 128, 0.24)' : 'rgba(118, 118, 128, 0.12)',
+    border: isDark ? '0.5px solid rgba(255, 255, 255, 0.08)' : '0.5px solid rgba(0, 0, 0, 0.08)',
+    boxShadow: isDark ? 'inset 0 1px 2px rgba(0, 0, 0, 0.35)' : 'inset 0 1px 2px rgba(0, 0, 0, 0.06)',
+    gap: '2px',
+  };
+
+  const getAppleSegmentStyle = (isActive: boolean): React.CSSProperties => ({
+    padding: '3px 10px',
+    borderRadius: '6px',
+    border: 'none',
+    fontSize: '0.625rem',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, sans-serif',
+    fontWeight: isActive ? 600 : 500,
+    letterSpacing: '-0.01em',
+    cursor: 'pointer',
+    background: isActive
+      ? (isDark
+          ? 'linear-gradient(180deg, #1C8BFF 0%, #0071E3 100%)'
+          : 'linear-gradient(180deg, #0077ED 0%, #0066CC 100%)')
+      : 'transparent',
+    color: isActive
+      ? '#FFFFFF'
+      : (isDark ? '#8B949E' : '#64748B'),
+    transition: 'all 0.15s ease',
+    boxShadow: isActive ? (isDark ? '0 1px 3px rgba(0,0,0,0.5)' : '0 1px 2px rgba(0,0,0,0.15)') : 'none',
+  });
+
   // Enhance Mode Settings
   const [workerTabsCount, setWorkerTabsCount] = useState<number>(4);
   const [enhancePromptPreset, setEnhancePromptPreset] = useState<string>('photo_retouch');
@@ -483,14 +519,20 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
     const primaryFolderStep = enabledSteps.find((s) => s.sourceType === 'folder');
     const primaryWorkflowStep = enabledSteps.find((s) => s.sourceType === 'workflow' || s.sourceType === 'enhanced');
 
+    const isDirect = stagingMode === 'direct_tab2';
+    const effectiveWorkerCount = tabGroupMode === 'generate' ? (isDirect ? 1 : 2) : workerTabsCount;
+
     const customConfig: Record<string, any> = {
       title: finalName,
       browserGroupName: finalName,
       tabGroupMode,
       processKind: tabGroupMode === 'generate' ? 'generate_image' : 'enhance_images',
-      workerTabCount: tabGroupMode === 'generate' ? 1 : workerTabsCount,
-      workerCount: tabGroupMode === 'generate' ? 1 : workerTabsCount,
-      stagingMode: tabGroupMode === 'generate' ? 'direct_tab2' : undefined,
+      workerTabCount: effectiveWorkerCount,
+      workerCount: effectiveWorkerCount,
+      stagingMode: tabGroupMode === 'generate' ? stagingMode : undefined,
+      skipTab1: tabGroupMode === 'generate' ? isDirect : false,
+      subtitle: `${effectiveWorkerCount} ${effectiveWorkerCount === 1 ? 'Tab' : 'Tabs'}`,
+      showTabGroupsPipelines,
       useReferenceImage: tabGroupMode === 'generate' ? useReferenceImage : false,
       referenceImage: referenceImageUrl || undefined,
       referenceImageName: referenceImageName || undefined,
@@ -507,12 +549,13 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
       selectedUpstreamAiId: selectedPromptSource === 'upstream_ai' ? selectedUpstreamAiId : undefined,
       promptSourceMode: selectedPromptSource,
       browserCustomPrompt: selectedPromptSource === 'custom' ? customPromptText : undefined,
+      reuseSessionTabs: true,
     };
 
     onConnectTabGroup(
       {
         name: finalName,
-        tabs_count: tabGroupMode === 'generate' ? 1 : workerTabsCount,
+        tabs_count: effectiveWorkerCount,
       },
       customConfig
     );
@@ -1138,6 +1181,34 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     </div>
                   </div>
 
+                  {/* Staging Flow Mode */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '0.75rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
+                    <div>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                        Staging Flow
+                      </div>
+                      <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                        {stagingMode === 'two_stage_tabs' ? 'Step 1 Prompt + Step 2 Image (2 Tabs)' : 'Direct Image Composition (1 Tab)'}
+                      </div>
+                    </div>
+                    <div style={appleTrackStyle}>
+                      <button
+                        type="button"
+                        onClick={() => setStagingMode('two_stage_tabs')}
+                        style={getAppleSegmentStyle(stagingMode === 'two_stage_tabs')}
+                      >
+                        2-Stage (2 Tabs)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStagingMode('direct_tab2')}
+                        style={getAppleSegmentStyle(stagingMode === 'direct_tab2')}
+                      >
+                        Direct (1 Tab)
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Attached Images Section */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1496,6 +1567,116 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                       condoName={condoName}
                     />
                   </div>
+
+                  {/* 6. Tab Groups & Pipelines Card */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.5rem',
+                      padding: '0.875rem 1rem',
+                      borderRadius: '12px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                        <div
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '7px',
+                            backgroundColor: 'rgba(139, 92, 246, 0.12)',
+                            color: '#8B5CF6',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <FiLayers size={14} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                            6. Tab Groups & Pipelines
+                          </div>
+                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                            Multi-tab browser group orchestration
+                          </div>
+                        </div>
+                      </div>
+
+                      <ToggleSwitch
+                        checked={showTabGroupsPipelines}
+                        onChange={(val) => setShowTabGroupsPipelines(val)}
+                        size="sm"
+                        activeColor="#3B82F6"
+                      />
+                    </div>
+
+                    <div style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B', lineHeight: 1.35 }}>
+                      Display multi-pipeline Chrome tab workers and live group execution controls.
+                    </div>
+
+                    {showTabGroupsPipelines && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginTop: '4px' }}>
+                        {/* Target Group Row */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '6px 10px',
+                            borderRadius: '8px',
+                            backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : '#F1F5F9',
+                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Target Group:</span>
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                            {flowName.trim() || 'FB Hero'}
+                          </span>
+                        </div>
+
+                        {/* Parallel Workers Selector */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: '0.625rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
+                              Pipeline Staging Mode:
+                            </span>
+                            <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#3B82F6' }}>
+                              {stagingMode === 'two_stage_tabs' ? '2-Stage (2 Tabs: Step 1 Prompt + Step 2 Image)' : 'Direct Mode (1 Tab)'}
+                            </span>
+                          </div>
+
+                          <div style={{ ...appleTrackStyle, display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+                            <button
+                              type="button"
+                              onClick={() => setStagingMode('two_stage_tabs')}
+                              style={{ ...getAppleSegmentStyle(stagingMode === 'two_stage_tabs'), textAlign: 'center', justifyContent: 'center' }}
+                            >
+                              2 Tabs (2-Stage Flow)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setStagingMode('direct_tab2')}
+                              style={{ ...getAppleSegmentStyle(stagingMode === 'direct_tab2'), textAlign: 'center', justifyContent: 'center' }}
+                            >
+                              1 Tab (Direct Flow)
+                            </button>
+                          </div>
+
+                          <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B', paddingLeft: '2px' }}>
+                            {stagingMode === 'two_stage_tabs'
+                              ? 'Tab 1 executes Step 1 (generating prompt) -> Tab 2 executes Step 2 (generating final hero image).'
+                              : 'Single tab directly attaches reference image, condo photos, and sends prompt.'}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 /* ENHANCE MODE PIPELINE */
@@ -1807,7 +1988,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
               >
                 <FiLayers size={11} style={{ color: isDark ? '#8B949E' : '#64748B' }} />
                 <span>
-                  {flowName || 'Tab Group'} ({tabGroupMode === 'generate' ? 1 : workerTabsCount} Tab{workerTabsCount > 1 && tabGroupMode === 'enhance' ? 's' : ''})
+                  {flowName || 'Tab Group'} ({tabGroupMode === 'generate' ? (stagingMode === 'two_stage_tabs' ? '2 Tabs' : '1 Tab') : `${workerTabsCount} Tabs`})
                 </span>
               </div>
 
@@ -2097,7 +2278,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
               <FiCheck size={11} style={{ color: isDark ? '#3FB950' : '#166534' }} />
               <span>
                 {tabGroupMode === 'generate'
-                  ? `Staging Mode: 1 Tab with ${totalCompositePhotos} Photos Attached`
+                  ? (stagingMode === 'two_stage_tabs'
+                      ? `Staging Mode: 2-Stage (2 Tabs with ${totalCompositePhotos} Photos Attached)`
+                      : `Staging Mode: 1 Tab with ${totalCompositePhotos} Photos Attached`)
                   : `Batch Mode: ${workerTabsCount} Concurrent Worker Tabs`}
               </span>
             </div>
@@ -2124,7 +2307,11 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
           <FiMonitor size={12} />
           <span>Profile: <strong style={{ color: isDark ? '#F0F6FC' : '#0F172A' }}>{browserProfileName || fromTitle}</strong></span>
           <span>•</span>
-          <span>{tabGroupMode === 'generate' ? '1 Tab (Composite)' : `${workerTabsCount} Tabs (Batch)`}</span>
+          <span>
+            {tabGroupMode === 'generate'
+              ? (stagingMode === 'two_stage_tabs' ? '2 Tabs (2-Stage Composite)' : '1 Tab (Direct Composite)')
+              : `${workerTabsCount} Tabs (Batch)`}
+          </span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
