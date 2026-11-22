@@ -275,13 +275,14 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
     }
   }, [isMainBox, condoName]);
 
+  const stepsFolderKey = steps.map((s) => `${s.id}-${s.sourceType}-${s.folderName || ''}-${s.folderImages?.length || 0}`).join('|');
   useEffect(() => {
     steps.forEach((s) => {
       if (s.sourceType === 'folder' && s.folderName && (!s.folderImages || s.folderImages.length === 0)) {
         fetchImagesForStep(s.id, s.folderName);
       }
     });
-  }, [steps]);
+  }, [stepsFolderKey]);
 
   const filteredCondoFolders = useMemo(() => {
     if (!folderSearchFilter.trim()) return [];
@@ -1425,8 +1426,13 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
         const isFolder = modalStep.sourceType === 'folder';
         const selectedSrc = activeSources.find((s) => s.id === modalStep.workflowSourceId) || activeSources[0];
         const isEnhanceModal = selectedSrc?.nodeType === 'enhance' || selectedSrc?.title?.toLowerCase().includes('enhance') || modalStep.sourceType === 'enhanced' || modalStep.workflowSourceId === 'enhanced-images';
+        const cachedFolderImages = isFolder
+          ? ((modalStep.folderImages && modalStep.folderImages.length > 0)
+              ? modalStep.folderImages
+              : (condoImagesCacheRef.current[(condoName || modalStep.folderName || '').trim().toLowerCase()] || []))
+          : [];
         const imagesList = isFolder
-          ? (modalStep.folderImages || []).map((f, i) => ({ url: f.data_url || f.full_path || '', filename: f.filename || `Photo #${i + 1}` }))
+          ? cachedFolderImages.map((f, i) => ({ url: f.data_url || f.full_path || '', filename: f.filename || `Photo #${i + 1}` }))
           : ((selectedSrc?.images && selectedSrc.images.length > 0 && (!isEnhanceModal || selectedSrc.images !== propertyImages))
               ? selectedSrc.images
               : (isEnhanceModal ? (enhancedImages && enhancedImages.length > 0 ? enhancedImages : []) : propertyImages));
@@ -1436,293 +1442,351 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
           .reduce((acc, o) => acc + o.count, 0);
         const maxAllowed = isFolder ? Math.max(1, modalStep.count || 1) : Math.max(1, 10 - otherGroupsCount);
 
-        const currentSelected = modalStep.selectedIndices && modalStep.selectedIndices.length > 0
-          ? [...modalStep.selectedIndices]
-          : Array.from({ length: Math.min(modalStep.count, imagesList.length) }, (_, i) => i);
-
         return (
-          <div
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 100,
-              backgroundColor: 'rgba(0,0,0,0.7)',
-              backdropFilter: 'blur(3px)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '16px',
-            }}
-            onClick={() => setManualChooseModalStepId(null)}
-          >
+          <ManualChoosePhotosDialog
+            isDark={isDark}
+            modalStep={modalStep}
+            condoName={condoName || modalStep.folderName || ''}
+            maxAllowed={maxAllowed}
+            imagesList={imagesList}
+            isFolder={isFolder}
+            selectedSrc={selectedSrc}
+            onClose={() => setManualChooseModalStepId(null)}
+            onUpdateStep={handleUpdateStep}
+          />
+        );
+      })()}
+    </div>
+  );
+};
+
+interface ManualChoosePhotosDialogProps {
+  isDark: boolean;
+  modalStep: AttachmentStep;
+  condoName: string;
+  maxAllowed: number;
+  imagesList: Array<{ url: string; filename?: string; index?: number }>;
+  isFolder: boolean;
+  selectedSrc: any;
+  onClose: () => void;
+  onUpdateStep: (id: string, updates: Partial<AttachmentStep>) => void;
+}
+
+const ManualChoosePhotosDialog: React.FC<ManualChoosePhotosDialogProps> = ({
+  isDark,
+  modalStep,
+  condoName,
+  maxAllowed,
+  imagesList,
+  isFolder,
+  selectedSrc,
+  onClose,
+  onUpdateStep,
+}) => {
+  const [localSelected, setLocalSelected] = useState<number[]>(() => {
+    if (modalStep.selectedIndices && modalStep.selectedIndices.length > 0) {
+      return [...modalStep.selectedIndices];
+    }
+    return Array.from({ length: Math.min(modalStep.count, imagesList.length) }, (_, i) => i);
+  });
+
+  const toggleSelect = (idx: number) => {
+    let updated = [...localSelected];
+    const isChosen = localSelected.includes(idx);
+    if (isFolder) {
+      if (isChosen) {
+        if (modalStep.count === 1) {
+          return;
+        } else if (updated.length > 1) {
+          updated = updated.filter((i) => i !== idx);
+        }
+      } else {
+        if (modalStep.count === 1) {
+          updated = [idx];
+        } else if (updated.length < modalStep.count) {
+          updated.push(idx);
+        } else {
+          updated = [...updated.slice(1), idx];
+        }
+      }
+      setLocalSelected(updated);
+      onUpdateStep(modalStep.id, { selectedIndices: updated });
+    } else {
+      if (isChosen) {
+        if (updated.length > 1) {
+          updated = updated.filter((i) => i !== idx);
+        }
+      } else {
+        if (updated.length < maxAllowed) {
+          updated.push(idx);
+        }
+      }
+      setLocalSelected(updated);
+      onUpdateStep(modalStep.id, { selectedIndices: updated, count: updated.length });
+    }
+  };
+
+  const handleSelectFirst = () => {
+    const firstN = Array.from({ length: Math.min(modalStep.count, imagesList.length) }, (_, i) => i);
+    setLocalSelected(firstN);
+    onUpdateStep(modalStep.id, isFolder ? { selectedIndices: firstN } : { selectedIndices: firstN, count: firstN.length });
+  };
+
+  const handleSelectAll = () => {
+    const all = Array.from({ length: Math.min(maxAllowed, imagesList.length) }, (_, i) => i);
+    setLocalSelected(all);
+    onUpdateStep(modalStep.id, { selectedIndices: all, count: all.length });
+  };
+
+  const handleReset = () => {
+    const resetIndices = [0];
+    setLocalSelected(resetIndices);
+    onUpdateStep(modalStep.id, isFolder ? { selectedIndices: resetIndices } : { selectedIndices: resetIndices, count: 1 });
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 100,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        backdropFilter: 'blur(3px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '780px',
+          maxWidth: '95vw',
+          maxHeight: '90vh',
+          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+          borderRadius: '10px',
+          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+          boxShadow: '0 24px 48px rgba(0,0,0,0.6)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Modal Header */}
+        <div
+          style={{
+            padding: '14px 18px',
+            borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div
-              onClick={(e) => e.stopPropagation()}
               style={{
-                width: '780px',
-                maxWidth: '95vw',
-                maxHeight: '90vh',
-                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                borderRadius: '10px',
-                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                boxShadow: '0 24px 48px rgba(0,0,0,0.6)',
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                color: '#10B981',
                 display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
-              {/* Modal Header */}
-              <div
-                style={{
-                  padding: '14px 18px',
-                  borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '8px',
-                      backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                      color: '#10B981',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <FiCheckSquare size={17} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '0.875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                      Manual Choose Photos
-                    </div>
-                    <div style={{ fontSize: '0.65625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                      Select up to {maxAllowed} images from {isFolder ? (condoName || modalStep.folderName || 'Condo Folder') : (selectedSrc?.title || 'Workflow')} ({imagesList.length} photos found)
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setManualChooseModalStepId(null)}
-                  style={{ background: 'transparent', border: 'none', color: isDark ? '#8B949E' : '#64748B', cursor: 'pointer', padding: '6px' }}
-                >
-                  <FiX size={18} />
-                </button>
+              <FiCheckSquare size={17} />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                Manual Choose Photos
               </div>
-
-              {/* Action Toolbar */}
-              <div
-                style={{
-                  padding: '10px 18px',
-                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
-                  borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <span style={{ fontSize: '0.71875rem', fontWeight: 500, color: isDark ? '#C9D1D9' : '#334155' }}>
-                  Selected: <strong style={{ color: '#10B981', fontSize: '0.8125rem' }}>{currentSelected.length}</strong> / {maxAllowed} max
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const firstN = Array.from({ length: Math.min(modalStep.count, imagesList.length) }, (_, i) => i);
-                      handleUpdateStep(modalStep.id, isFolder ? { selectedIndices: firstN } : { selectedIndices: firstN, count: firstN.length });
-                    }}
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: '5px',
-                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                      backgroundColor: isDark ? '#21262D' : '#FFFFFF',
-                      color: isDark ? '#C9D1D9' : '#334155',
-                      fontSize: '0.65625rem',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Select First {modalStep.count}
-                  </button>
-                  {!isFolder && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const all = Array.from({ length: Math.min(maxAllowed, imagesList.length) }, (_, i) => i);
-                        handleUpdateStep(modalStep.id, { selectedIndices: all, count: all.length });
-                      }}
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: '5px',
-                        border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                        backgroundColor: isDark ? '#21262D' : '#FFFFFF',
-                        color: isDark ? '#C9D1D9' : '#334155',
-                        fontSize: '0.65625rem',
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Select All
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handleUpdateStep(modalStep.id, isFolder ? { selectedIndices: [0] } : { selectedIndices: [0], count: 1 })}
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: '5px',
-                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                      backgroundColor: isDark ? '#21262D' : '#FFFFFF',
-                      color: isDark ? '#C9D1D9' : '#334155',
-                      fontSize: '0.65625rem',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Reset
-                  </button>
-                </div>
-              </div>
-
-              {/* Grid of photos */}
-              <div
-                style={{
-                  padding: '16px',
-                  overflowY: 'auto',
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-                  gap: '12px',
-                  flex: 1,
-                  maxHeight: '520px',
-                }}
-              >
-                {imagesList.map((img: any, idx: number) => {
-                  const isChosen = currentSelected.includes(idx);
-                  const orderNum = currentSelected.indexOf(idx) + 1;
-                  return (
-                    <div
-                      key={idx}
-                      onClick={() => {
-                        let updated = [...currentSelected];
-                        if (isFolder) {
-                          if (isChosen) {
-                            if (modalStep.count === 1) {
-                              // keep selected
-                            } else if (updated.length > 1) {
-                              updated = updated.filter((i) => i !== idx);
-                            }
-                          } else {
-                            if (modalStep.count === 1) {
-                              updated = [idx];
-                            } else if (updated.length < modalStep.count) {
-                              updated.push(idx);
-                            } else {
-                              updated = [...updated.slice(1), idx];
-                            }
-                          }
-                          handleUpdateStep(modalStep.id, { selectedIndices: updated });
-                        } else {
-                          if (isChosen) {
-                            if (updated.length > 1) {
-                              updated = updated.filter((i) => i !== idx);
-                            }
-                          } else {
-                            if (updated.length < maxAllowed) {
-                              updated.push(idx);
-                            }
-                          }
-                          handleUpdateStep(modalStep.id, { selectedIndices: updated, count: updated.length });
-                        }
-                      }}
-                      style={{
-                        aspectRatio: '1',
-                        borderRadius: '8px',
-                        border: isChosen
-                          ? (isDark ? '2px solid rgba(5, 150, 105, 0.95)' : '2px solid #059669')
-                          : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                        boxShadow: isChosen
-                          ? (isDark ? '0 0 0 1px rgba(5, 150, 105, 0.3), 0 4px 12px rgba(5, 150, 105, 0.25)' : '0 0 0 1px rgba(5, 150, 105, 0.2), 0 4px 12px rgba(5, 150, 105, 0.2)')
-                          : 'none',
-                        opacity: isChosen ? 1 : 0.6,
-                        overflow: 'hidden',
-                        position: 'relative',
-                        cursor: 'pointer',
-                        backgroundColor: isChosen
-                          ? (isDark ? 'rgba(5, 150, 105, 0.08)' : 'rgba(5, 150, 105, 0.04)')
-                          : (isDark ? '#0D1117' : '#F1F5F9'),
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      {img.url ? (
-                        <img src={img.url} alt={`Photo #${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : (
-                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <FiImage size={24} color={isDark ? '#8B949E' : '#64748B'} />
-                        </div>
-                      )}
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: 6,
-                          right: 6,
-                          minWidth: '22px',
-                          height: '22px',
-                          padding: isChosen && currentSelected.length > 1 ? '0 6px' : '0',
-                          borderRadius: '9999px',
-                          backgroundColor: isChosen ? '#059669' : 'rgba(0,0,0,0.4)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: '#fff',
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          boxShadow: isChosen ? '0 2px 6px rgba(5,150,105,0.4)' : '0 2px 4px rgba(0,0,0,0.3)',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        {isChosen ? (currentSelected.length > 1 ? `✓ #${orderNum}` : '✓') : ''}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Modal Footer */}
-              <div
-                style={{
-                  padding: '10px 16px',
-                  borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'flex-end',
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setManualChooseModalStepId(null)}
-                  style={{
-                    padding: '6px 14px',
-                    borderRadius: '5px',
-                    backgroundColor: '#059669',
-                    color: '#FFFFFF',
-                    border: 'none',
-                    fontSize: '0.6875rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 6px rgba(5,150,105,0.35)',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  Done ({currentSelected.length} Photos Selected)
-                </button>
+              <div style={{ fontSize: '0.65625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                Select up to {maxAllowed} images from {isFolder ? (condoName || modalStep.folderName || 'Condo Folder') : (selectedSrc?.title || 'Workflow')} ({imagesList.length} photos found)
               </div>
             </div>
           </div>
-        );
-      })()}
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: 'transparent', border: 'none', color: isDark ? '#8B949E' : '#64748B', cursor: 'pointer', padding: '6px' }}
+          >
+            <FiX size={18} />
+          </button>
+        </div>
+
+        {/* Action Toolbar */}
+        <div
+          style={{
+            padding: '10px 18px',
+            backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+            borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <span style={{ fontSize: '0.71875rem', fontWeight: 500, color: isDark ? '#C9D1D9' : '#334155' }}>
+            Selected: <strong style={{ color: '#059669', fontSize: '0.8125rem' }}>{localSelected.length}</strong> / {maxAllowed} max
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={handleSelectFirst}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '5px',
+                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                backgroundColor: isDark ? '#21262D' : '#FFFFFF',
+                color: isDark ? '#C9D1D9' : '#334155',
+                fontSize: '0.65625rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              Select First {modalStep.count}
+            </button>
+            {!isFolder && (
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: '5px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  backgroundColor: isDark ? '#21262D' : '#FFFFFF',
+                  color: isDark ? '#C9D1D9' : '#334155',
+                  fontSize: '0.65625rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                Select All
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleReset}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '5px',
+                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                backgroundColor: isDark ? '#21262D' : '#FFFFFF',
+                color: isDark ? '#C9D1D9' : '#334155',
+                fontSize: '0.65625rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+
+        {/* Grid of photos */}
+        <div
+          style={{
+            padding: '16px',
+            overflowY: 'auto',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+            gap: '12px',
+            flex: 1,
+            maxHeight: '520px',
+          }}
+        >
+          {imagesList.map((img: any, idx: number) => {
+            const isChosen = localSelected.includes(idx);
+            const orderNum = localSelected.indexOf(idx) + 1;
+            return (
+              <div
+                key={idx}
+                onClick={() => toggleSelect(idx)}
+                style={{
+                  aspectRatio: '1',
+                  borderRadius: '8px',
+                  border: isChosen
+                    ? (isDark ? '2px solid rgba(5, 150, 105, 0.95)' : '2px solid #059669')
+                    : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                  boxShadow: isChosen
+                    ? (isDark ? '0 0 0 1px rgba(5, 150, 105, 0.3), 0 4px 12px rgba(5, 150, 105, 0.25)' : '0 0 0 1px rgba(5, 150, 105, 0.2), 0 4px 12px rgba(5, 150, 105, 0.2)')
+                    : 'none',
+                  opacity: isChosen ? 1 : 0.6,
+                  overflow: 'hidden',
+                  position: 'relative',
+                  cursor: 'pointer',
+                  backgroundColor: isChosen
+                    ? (isDark ? 'rgba(5, 150, 105, 0.08)' : 'rgba(5, 150, 105, 0.04)')
+                    : (isDark ? '#0D1117' : '#F1F5F9'),
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {img.url ? (
+                  <img src={img.url} alt={`Photo #${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <FiImage size={24} color={isDark ? '#8B949E' : '#64748B'} />
+                  </div>
+                )}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 6,
+                    right: 6,
+                    minWidth: '22px',
+                    height: '22px',
+                    padding: isChosen && localSelected.length > 1 ? '0 6px' : '0',
+                    borderRadius: '9999px',
+                    backgroundColor: isChosen ? '#059669' : 'rgba(0,0,0,0.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fff',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    boxShadow: isChosen ? '0 2px 6px rgba(5,150,105,0.4)' : '0 2px 4px rgba(0,0,0,0.3)',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {isChosen ? (localSelected.length > 1 ? `✓ #${orderNum}` : '✓') : ''}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Modal Footer */}
+        <div
+          style={{
+            padding: '10px 16px',
+            borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: '6px 14px',
+              borderRadius: '5px',
+              backgroundColor: '#059669',
+              color: '#FFFFFF',
+              border: 'none',
+              fontSize: '0.6875rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(5,150,105,0.35)',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            Done ({localSelected.length} Photos Selected)
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

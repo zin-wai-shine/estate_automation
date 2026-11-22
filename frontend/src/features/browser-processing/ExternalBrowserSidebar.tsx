@@ -402,8 +402,13 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const handleAttachmentStepsChange = (newSteps: AttachmentStep[]) => {
     setAttachmentSteps(newSteps);
     const total = newSteps.filter((s: AttachmentStep) => s.enabled).reduce((acc: number, s: AttachmentStep) => acc + s.count, 0);
+    // Sanitize steps so massive base64 folderImages is never persisted to backend workflow_config.json
+    const sanitizedSteps = newSteps.map((s: AttachmentStep) => {
+      const { folderImages: _omitted, ...rest } = s;
+      return rest;
+    });
     updateMultiConfig({
-      imageAttachmentSteps: newSteps,
+      imageAttachmentSteps: sanitizedSteps,
       condoImagesCount: total,
     });
   };

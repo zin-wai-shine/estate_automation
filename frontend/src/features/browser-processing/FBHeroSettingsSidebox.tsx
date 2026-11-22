@@ -164,8 +164,13 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   const handleAttachmentStepsChange = (newSteps: AttachmentStep[]) => {
     setAttachmentSteps(newSteps);
     const total = newSteps.filter((s) => s.enabled).reduce((acc, s) => acc + s.count, 0);
+    // Sanitize steps so massive base64 folderImages is never persisted to backend workflow_config.json
+    const sanitizedSteps = newSteps.map((s) => {
+      const { folderImages: _omitted, ...rest } = s;
+      return rest;
+    });
     updateSettings({
-      imageAttachmentSteps: newSteps,
+      imageAttachmentSteps: sanitizedSteps,
       condoImagesCount: total,
     });
   };
