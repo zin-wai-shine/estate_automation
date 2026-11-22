@@ -1276,31 +1276,63 @@
   function getComposerContainer(inputEl) {
     const input = inputEl || findPromptInput();
     if (!input) {
-      const explicit = document.querySelector('[class*="ComposerLayoutBody" i], [class*="ComposerLayoutRoot" i], form');
+      const explicit = document.querySelector('[class*="ComposerLayoutBody" i], [class*="ComposerLayoutRoot" i], #composer-background, form, main');
       return explicit || null;
     }
 
     // Modern ChatGPT structure:
     // Level 0: ProseMirror (#prompt-textarea)
     // Level 2: ComposerLayoutInput
-    // Level 6: ComposerLayoutBody (contains attachments row, input, and footer toolbar with Send button)
-    const layoutBody = input.closest('[class*="ComposerLayoutBody" i], [class*="ComposerLayoutRoot" i], [class*="composer" i]');
-    if (layoutBody) return layoutBody;
-
-    // Check standard form
-    const form = input.closest('form');
-    if (form) return form;
-
-    // Walk up until we reach a parent that contains the input AND the send button
+    // Level 6+: ComposerLayoutBody, form, #composer-background
     let cur = input.parentElement;
-    for (let depth = 0; depth < 5 && cur && cur !== document.body && cur !== document.documentElement; depth++) {
+    let best = null;
+    for (let depth = 0; depth < 12 && cur && cur !== document.body && cur !== document.documentElement; depth++) {
+      if (
+        cur.id === 'composer-background' ||
+        cur.tagName === 'FORM' ||
+        (cur.className && typeof cur.className === 'string' && (cur.className.includes('ComposerLayout') || cur.className.includes('composer')))
+      ) {
+        best = cur;
+        break;
+      }
       if (cur.querySelector('button[data-testid*="send" i], button[aria-label*="Send" i], button[data-testid*="fruitjuice-send-button"]')) {
-        return cur;
+        best = cur;
       }
       cur = cur.parentElement;
     }
+    if (best) return best;
 
-    return input.parentElement && input.parentElement.parentElement ? input.parentElement.parentElement : null;
+    const fallback = document.querySelector('#composer-background, form, [class*="ComposerLayoutBody" i]');
+    if (fallback) return fallback;
+
+    return input.parentElement && input.parentElement.parentElement ? input.parentElement.parentElement : document;
+  }
+
+  // Robust element clicker that dispatches full pointer + mouse event sequence (for React Fiber / Radix UI buttons)
+  function clickElementRobustly(el) {
+    if (!el) return false;
+    try { el.focus(); } catch (e) {}
+    try {
+      const rect = el.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const downOpts = { bubbles: true, cancelable: true, composed: true, view: window, clientX: cx, clientY: cy, button: 0, buttons: 1 };
+      el.dispatchEvent(new PointerEvent('pointerdown', { ...downOpts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
+      el.dispatchEvent(new MouseEvent('mousedown', downOpts));
+      const upOpts = { bubbles: true, cancelable: true, composed: true, view: window, clientX: cx, clientY: cy, button: 0, buttons: 0 };
+      el.dispatchEvent(new PointerEvent('pointerup', { ...upOpts, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
+      el.dispatchEvent(new MouseEvent('mouseup', upOpts));
+      el.dispatchEvent(new MouseEvent('click', upOpts));
+      el.click();
+      const svg = el.querySelector('svg');
+      if (svg) {
+        svg.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      }
+      return true;
+    } catch (e) {
+      try { el.click(); return true; } catch (e2) {}
+    }
+    return false;
   }
 
   // Find the attachment (+) button on the ChatGPT composer
@@ -1349,69 +1381,109 @@
 
   // Find thumbnail delete / remove buttons strictly inside the composer (excluding attach/plus button!)
   function findAttachmentRemoveButtons(inputEl) {
-    const composer = getComposerContainer(inputEl);
-    if (!composer || composer === document.body || composer === document.documentElement) return [];
+    const composer = getComposerContainer(inputEl) || document.querySelector('#composer-background, form, main') || document;
+    if (!composer) return [];
 
-    const allButtons = Array.from(composer.querySelectorAll('button:not(:disabled)'));
+    const searchRoots = [composer, document.querySelector('#composer-background'), document.querySelector('form')].filter(Boolean);
+    const seen = new Set();
+    const result = [];
 
-    return allButtons.filter((btn) => {
-      const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
-      const testid = (btn.getAttribute('data-testid') || '').toLowerCase();
-      const text = (btn.textContent || '').trim().toLowerCase();
+    for (const root of searchRoots) {
+      // 1. Buttons, role="button", and interactive elements inside composer
+      const candidates = Array.from(root.querySelectorAll('button, [role="button"], div[class*="close" i], div[class*="remove" i], div[class*="dismiss" i]'));
 
-      // Exclude Send, Attach (+), Model, Voice, Upload
-      if (
-        aria.includes('send') || aria.includes('plus') || aria.includes('add') ||
-        aria.includes('attach') || aria.includes('upload') ||
-        aria.includes('voice') || aria.includes('mic') || aria.includes('dictate') ||
-        aria.includes('model') || text === 'files' || text === 'send' ||
-        testid.includes('send') || testid.includes('attach') || testid.includes('upload')
-      ) {
-        return false;
+      for (const btn of candidates) {
+        if (seen.has(btn)) continue;
+        if (btn.disabled) continue;
+
+        const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
+        const testid = (btn.getAttribute('data-testid') || '').toLowerCase();
+        const title = (btn.getAttribute('title') || '').toLowerCase();
+        const text = (btn.textContent || '').trim().toLowerCase();
+
+        // Strictly exclude Send, Attach (+), Model, Voice, Upload
+        if (
+          aria.includes('send') || aria.includes('plus') || aria.includes('add') ||
+          aria.includes('attach') || aria.includes('upload') ||
+          aria.includes('voice') || aria.includes('mic') || aria.includes('dictate') ||
+          aria.includes('model') || text === 'files' || text === 'send' ||
+          testid.includes('send') || testid.includes('attach') || testid.includes('upload') ||
+          testid.includes('model') || testid.includes('plus')
+        ) {
+          continue;
+        }
+
+        // Explicit remove/delete labels on thumbnail cards (e.g. "Remove image_001.jpg", "Dismiss")
+        if (
+          aria.startsWith('remove') ||
+          aria.includes('remove') ||
+          aria.includes('delete') ||
+          aria.includes('dismiss') ||
+          aria.includes('close') ||
+          testid.includes('remove') ||
+          testid.includes('delete') ||
+          testid.includes('dismiss') ||
+          testid.includes('close') ||
+          title.includes('remove') ||
+          title.includes('delete') ||
+          title.includes('close')
+        ) {
+          seen.add(btn);
+          result.push(btn);
+          continue;
+        }
+
+        const parentThumb = btn.closest(
+          '[class*="thumbnail" i], [class*="file-tile" i], [data-testid*="attachment" i], [data-testid*="file-tile" i], div[class*="relative"][class*="rounded"], div[class*="relative"]:has(img), div[class*="rounded"]:has(img)'
+        );
+        if (parentThumb && (btn.querySelector('svg') || text.includes('✕') || text.includes('×') || text === 'x')) {
+          seen.add(btn);
+          result.push(btn);
+          continue;
+        }
       }
 
-      // Explicit remove/delete labels on thumbnail cards (e.g. "Remove image_001.jpg", "Dismiss")
-      if (
-        aria.startsWith('remove') ||
-        aria.includes('remove') ||
-        aria.includes('delete') ||
-        aria.includes('dismiss') ||
-        testid.includes('remove') ||
-        testid.includes('delete')
-      ) {
-        return true;
+      // 2. Query inside all thumbnail cards directly for remove buttons or close icons
+      const cards = root.querySelectorAll(
+        '[data-testid*="attachment" i], [data-testid*="file-tile" i], [class*="attachment-tile" i], [class*="file-tile" i], [class*="thumbnail" i], div[class*="relative"]:has(img), div[class*="rounded"]:has(img)'
+      );
+      for (const card of cards) {
+        const cr = card.getBoundingClientRect();
+        if (cr.width > 300 || cr.height > 300) continue;
+        const subBtns = card.querySelectorAll('button, [role="button"], [class*="close" i], [class*="remove" i], svg');
+        for (const sb of subBtns) {
+          const el = sb.tagName === 'svg' ? (sb.closest('button, [role="button"]') || sb) : sb;
+          if (!seen.has(el)) {
+            seen.add(el);
+            result.push(el);
+          }
+        }
       }
+    }
 
-      const parentThumb = btn.closest('[class*="thumbnail" i], [class*="file-tile" i], [data-testid*="attachment" i], div[class*="relative"][class*="rounded"]');
-      if (parentThumb && btn.querySelector('svg')) {
-        return true;
-      }
-
-      return false;
-    });
+    return result;
   }
 
   // Count distinct genuine image attachments present in the composer
   function getAttachedImagesCount(inputEl) {
-    const composer = getComposerContainer(inputEl) || document.querySelector('form, div#composer-background, [class*="composer" i]');
+    const composer = getComposerContainer(inputEl) || document.querySelector('form, div#composer-background, [class*="composer" i]') || document;
 
-    // 1. Remove buttons strictly inside composer or document
-    const removeBtns = findAttachmentRemoveButtons(composer || document);
-    if (removeBtns.length > 0) return removeBtns.length;
-
-    // 2. Thumbnail cards / tiles in ChatGPT composer (including active upload cards with spinners!)
+    // 1. Thumbnail cards / tiles in ChatGPT composer (including active upload cards with spinners!)
     if (composer) {
-      const cards = Array.from(composer.querySelectorAll(
-        '[data-testid*="attachment" i], ' +
-        '[data-testid*="file-tile" i], ' +
-        '[class*="attachment-tile" i], ' +
-        '[class*="file-tile" i], ' +
-        'div[class*="relative"][class*="rounded"]'
-      )).filter((el) => {
+      const cardSelectors = [
+        '[data-testid*="attachment" i]',
+        '[data-testid*="file-tile" i]',
+        '[class*="attachment-tile" i]',
+        '[class*="file-tile" i]',
+        'div[class*="relative"][class*="rounded"]:has(img, canvas)',
+        'div[class*="relative"]:has(img[src*="blob:"], img[src*="data:"], img[src*="oaiusercontent"])'
+      ].join(', ');
+
+      const cards = Array.from(composer.querySelectorAll(cardSelectors)).filter((el) => {
         if (el.tagName === 'BUTTON' || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return false;
-        if (el.closest('button, nav, header')) return false;
+        if (el.closest('button, nav, header, [data-message-author-role="assistant"], [data-message-author-role="user"]')) return false;
         const r = el.getBoundingClientRect();
-        const isCardSize = r.width >= 35 && r.width <= 260 && r.height >= 35 && r.height <= 260;
+        const isCardSize = r.width >= 30 && r.width <= 260 && r.height >= 30 && r.height <= 260;
         if (!isCardSize) return false;
         const hasImg = el.querySelector('img, canvas');
         const hasSpinner = el.querySelector('svg, circle, [class*="spin" i]');
@@ -1420,20 +1492,26 @@
       });
       if (cards.length > 0) return cards.length;
 
+      // 2. Remove buttons strictly inside composer or document
+      const removeBtns = findAttachmentRemoveButtons(composer);
+      if (removeBtns.length > 0) return removeBtns.length;
+
       // 3. Thumbnail images strictly inside composer (excluding icons/avatars)
       const thumbImgs = Array.from(composer.querySelectorAll('img')).filter((img) => {
+        if (img.closest('nav, header, [data-message-author-role="assistant"], [data-message-author-role="user"]')) return false;
         const src = img.src || img.getAttribute('src') || '';
         if (!src) return false;
         const lower = src.toLowerCase();
         if (lower.includes('avatar') || lower.includes('profile') || lower.includes('icon') || lower.includes('logo') || lower.includes('svg')) return false;
         if (lower.startsWith('blob:') || lower.startsWith('data:') || lower.includes('oaiusercontent') || lower.includes('files')) return true;
         const rect = img.getBoundingClientRect();
-        return (rect.width >= 24 && rect.height >= 24);
+        return (rect.width >= 24 && rect.height >= 24 && rect.width <= 300);
       });
       if (thumbImgs.length > 0) return thumbImgs.length;
 
       // 4. Any upload spinners / progress rings in composer (image actively uploading)
       const spinners = Array.from(composer.querySelectorAll('svg circle, [class*="animate-spin" i], [class*="progress" i]')).filter((s) => {
+        if (s.closest('nav, header, [data-message-author-role="assistant"]')) return false;
         const r = s.getBoundingClientRect();
         return r.width >= 14 && r.height >= 14;
       });
@@ -1443,8 +1521,8 @@
     // 5. Send button active while textarea is empty (in ChatGPT, Send button only enables with 0 text if image is attached!)
     const composerText = getComposerText(inputEl);
     if (!composerText || composerText.length === 0) {
-      const sendBtn = findSendButton();
-      if (sendBtn && isSendButtonReady(sendBtn)) {
+      const sendBtn = findComposerSendButton() || findSendButton();
+      if (sendBtn && isSendButtonReady(sendBtn) && !isAudioOrSpeechButton(sendBtn)) {
         return 1;
       }
     }
@@ -1459,22 +1537,119 @@
 
   // Clear any leftover attachments before starting a new job
   async function pruneExcessAttachments(inputEl, maxExpected = 0) {
-    const composer = getComposerContainer(inputEl);
+    const composer = getComposerContainer(inputEl) || document.querySelector('form, #composer-background, main') || document;
     if (!composer) return;
 
     let attempts = 0;
-    while (getAttachedImagesCount(composer) > maxExpected && attempts < 6) {
+    while (getAttachedImagesCount(composer) > maxExpected && attempts < 8) {
       attempts++;
-      console.log(`[BOLTHAVEN] Pruning attachments (attempt ${attempts}, count: ${getAttachedImagesCount(composer)})...`);
+      console.log(`[BOLTHAVEN] Pruning attachments (attempt ${attempts}, count: ${getAttachedImagesCount(composer)}, maxExpected: ${maxExpected})...`);
       const removeBtns = findAttachmentRemoveButtons(composer);
-      for (const btn of removeBtns) {
-        try {
-          btn.click();
-          await new Promise((r) => setTimeout(r, 150));
-        } catch (e) {}
+      if (removeBtns.length === 0) {
+        // Try clicking on thumbnail cards directly
+        const cards = composer.querySelectorAll(
+          '[data-testid*="attachment" i], [data-testid*="file-tile" i], [class*="attachment" i], [class*="file-tile" i], [class*="thumbnail" i], div:has(> img)'
+        );
+        for (const c of cards) {
+          const btn = c.querySelector('button, [role="button"], svg');
+          if (btn) clickElementRobustly(btn);
+        }
+      } else {
+        const toRemove = removeBtns.length - maxExpected;
+        for (let i = 0; i < (maxExpected === 0 ? removeBtns.length : Math.max(1, toRemove)); i++) {
+          if (removeBtns[i]) {
+            clickElementRobustly(removeBtns[i]);
+            await new Promise((r) => setTimeout(r, 120));
+          }
+        }
       }
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => setTimeout(r, 200));
     }
+  }
+
+  // Thoroughly and aggressively wipes out ALL text, drafts, chips, and attached images from ChatGPT composer
+  async function cleanComposerInputCompletely(inputEl) {
+    const promptArea = inputEl || findPromptInput();
+    const composer = getComposerContainer(promptArea) || document.querySelector('form, #composer-background, main') || document;
+
+    console.log('[BOLTHAVEN] 🧹 Executing complete chat input & attachment cleanup...');
+
+    // 1. Reset any native file inputs to release file handles
+    document.querySelectorAll('input[type="file"]').forEach((fi) => {
+      try {
+        fi.value = '';
+        if (fi._valueTracker) fi._valueTracker.setValue('');
+        fi.dispatchEvent(new Event('change', { bubbles: true }));
+      } catch (e) {}
+    });
+
+    // 2. Click all attachment remove buttons with robust pointer/mouse sequence
+    for (let loop = 0; loop < 5; loop++) {
+      const removeBtns = findAttachmentRemoveButtons(composer);
+      if (removeBtns.length === 0) break;
+      for (const btn of removeBtns) {
+        clickElementRobustly(btn);
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
+    // 3. Clear prompt area text completely across all paragraph tags in ProseMirror
+    if (promptArea) {
+      try {
+        promptArea.focus();
+        if (promptArea.tagName === 'TEXTAREA') {
+          promptArea.value = '';
+        } else {
+          // Select ENTIRE ProseMirror editor contents (all paragraphs) and delete
+          try {
+            const sel = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(promptArea);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            document.execCommand('delete', false, null);
+          } catch (e) {}
+
+          // Also remove all child nodes and leave single empty paragraph
+          while (promptArea.firstChild) {
+            promptArea.removeChild(promptArea.firstChild);
+          }
+          const p = document.createElement('p');
+          p.innerHTML = '<br>';
+          promptArea.appendChild(p);
+        }
+
+        promptArea.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'deleteContentBackward' }));
+        promptArea.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        promptArea.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+      } catch (e) {}
+    }
+
+    // 4. If attachments are still detected, dispatch Backspace/Delete keys on empty promptArea to delete preceding attachment chip
+    if (getAttachedImagesCount(promptArea) > 0 && promptArea) {
+      try {
+        promptArea.focus();
+        const backspaceOpts = { key: 'Backspace', code: 'Backspace', keyCode: 8, which: 8, bubbles: true, cancelable: true, composed: true };
+        for (let i = 0; i < 3; i++) {
+          promptArea.dispatchEvent(new KeyboardEvent('keydown', backspaceOpts));
+          promptArea.dispatchEvent(new KeyboardEvent('keyup', backspaceOpts));
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      } catch (e) {}
+    }
+
+    // 5. Final check of remove buttons
+    const remainingBtns = findAttachmentRemoveButtons(composer);
+    for (const btn of remainingBtns) {
+      clickElementRobustly(btn);
+    }
+
+    await new Promise((r) => setTimeout(r, 250));
+    const finalCount = getAttachedImagesCount(promptArea);
+    const finalText = getComposerText(promptArea);
+    console.log(`[BOLTHAVEN] 🧹 Clean input result: attachments=${finalCount}, textChars=${finalText.length}`);
+    return finalCount === 0 && finalText.length === 0;
   }
 
   // Wait until image attachment is genuinely detected in composer
@@ -1549,10 +1724,26 @@
         return;
       }
       promptArea.focus();
-      // Target ONLY the text paragraph inside promptArea, NEVER the container (which holds the attachment!)
-      const p = promptArea.querySelector('p');
-      if (p) {
-        p.textContent = '';
+      // Select all contents of promptArea and delete
+      try {
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(promptArea);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        document.execCommand('delete', false, null);
+      } catch (e) {}
+
+      const allPs = Array.from(promptArea.querySelectorAll('p'));
+      if (allPs.length > 0) {
+        allPs.forEach((p, idx) => {
+          if (idx === 0) {
+            p.textContent = '';
+            p.innerHTML = '<br>';
+          } else {
+            p.remove();
+          }
+        });
       } else {
         Array.from(promptArea.childNodes).forEach((node) => {
           if (node.nodeType === Node.TEXT_NODE) {
@@ -1560,6 +1751,7 @@
           }
         });
       }
+      promptArea.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'deleteContentBackward' }));
       promptArea.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
       promptArea.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
     } catch (e) {}
@@ -1851,12 +2043,14 @@
   async function attachImageFileToComposer(inputEl, file, maxExpected = 1, minExpected = 1, dataUrlHint = null) {
     const targetInputArea = inputEl || findPromptInput();
 
-    // 0. Clear leftover attachments before attaching this job's image (single-image mode only)
-    let currentCount = getAttachedImagesCount(targetInputArea);
-    if (maxExpected === 1 && currentCount > 0) {
-      console.log(`[BOLTHAVEN] Clearing ${currentCount} leftover attachments before attaching new image...`);
-      await pruneExcessAttachments(targetInputArea, 0);
-      await new Promise((r) => setTimeout(r, 300));
+    // 0. MUST CLEAN FIRST: If attaching a single image, enforce that 0 attachments exist BEFORE attaching!
+    if (maxExpected === 1) {
+      const initialCount = getAttachedImagesCount(targetInputArea);
+      if (initialCount > 0) {
+        console.log(`[BOLTHAVEN] Pre-attach check: ${initialCount} leftover attachment(s) found. Cleaning input completely first...`);
+        await cleanComposerInputCompletely(targetInputArea);
+        await new Promise((r) => setTimeout(r, 300));
+      }
     }
 
     if (activeJobAborted) return false;
@@ -2219,44 +2413,7 @@
 
   // Purge composer completely (removes all text, chips, pills, and attachments)
   async function purgeComposerCleanly(inputEl) {
-    const promptArea = inputEl || findPromptInput();
-    const composer = getComposerContainer(promptArea) || document.querySelector('form') || document;
-
-    // 1. Dismiss any text/pill chips in composer
-    try {
-      const dismissBtns = Array.from(composer.querySelectorAll('button')).filter((b) => {
-        const chip = b.closest('[class*="pill" i], [class*="chip" i], [class*="badge" i], div[class*="rounded"]');
-        if (!chip) return false;
-        if (chip.querySelector('img, canvas')) return false;
-        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-        const text = (b.textContent || '').trim().toLowerCase();
-        return aria.includes('remove') || aria.includes('close') || aria.includes('dismiss') || text.includes('✕') || Boolean(b.querySelector('svg'));
-      });
-      for (const btn of dismissBtns) {
-        try { btn.click(); } catch (e) {}
-      }
-    } catch (e) {}
-
-    // 2. Clear prompt textarea / ProseMirror completely
-    if (promptArea) {
-      promptArea.focus();
-      if (promptArea.tagName === 'TEXTAREA') {
-        promptArea.value = '';
-      } else {
-        try {
-          const sel = window.getSelection();
-          const range = document.createRange();
-          range.selectNodeContents(promptArea);
-          sel.removeAllRanges();
-          sel.addRange(range);
-          document.execCommand('delete', false, null);
-        } catch (e) {}
-        promptArea.innerHTML = '<p><br></p>';
-      }
-      promptArea.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'deleteContentBackward' }));
-      promptArea.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-      promptArea.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-    }
+    return await cleanComposerInputCompletely(inputEl);
   }
 
   // Reliable prompt inserter that keeps ProseMirror document model in sync
@@ -2265,22 +2422,22 @@
     const cleanText = promptText.trim();
     promptEl.focus();
 
+    // Select ENTIRE editor contents (all paragraphs) and replace cleanly
+    try {
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(promptEl);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.execCommand('delete', false, null);
+    } catch (e) {}
+
     let p = promptEl.querySelector('p');
     if (!p) {
       p = document.createElement('p');
       promptEl.appendChild(p);
     }
     p.focus();
-
-    // Select <p> contents and replace cleanly
-    try {
-      const sel = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(p);
-      sel.removeAllRanges();
-      sel.addRange(range);
-      document.execCommand('delete', false, null);
-    } catch (e) {}
 
     let inserted = false;
     try {
@@ -2487,11 +2644,24 @@
       if (src) preExistingImageUrls.add(src);
     });
 
-    // 0. RESET COMPOSER: Clean out any leftover attachments and residual text from previous runs completely
-    console.log(`[BOLTHAVEN] Resetting composer: removing leftover attachments & text for Image #${job.original_position || 1}...`);
-    await pruneExcessAttachments(input, 0);
-    clearPromptInputCleanly(input);
+    // 0. CLEAN INPUT FIRST: Completely wipe out any residual text, drafts, and attached images!
+    console.log(`[BOLTHAVEN] Step 0: Cleaning chat input first for Image #${job.original_position || 1}...`);
+    await cleanComposerInputCompletely(input);
     await new Promise((r) => setTimeout(r, 400));
+
+    // VERIFY: input must be strictly clean (0 attachments, 0 text) before attaching
+    let initialCount = getAttachedImagesCount(input);
+    if (initialCount > 0) {
+      console.warn(`[BOLTHAVEN] Attachments still detected (${initialCount}). Retrying complete clean...`);
+      await cleanComposerInputCompletely(input);
+      await new Promise((r) => setTimeout(r, 500));
+      initialCount = getAttachedImagesCount(input);
+      if (initialCount > 0) {
+        console.warn(`[BOLTHAVEN] ⚠️ Persistent attachment detected (${initialCount}). Reloading tab to guarantee clean chat input...`);
+        window.location.reload();
+        throw new Error('Chat input had stuck attachments from previous run. Reloaded tab to clean input — retrying.');
+      }
+    }
 
     // 1. Fetch and attach strictly single image
     const localPath = job.source_file_path || '';
@@ -2527,20 +2697,44 @@
     await waitForAttachmentUploadComplete(composerEl, 15000);
 
     if (activeJobAborted) {
-      clearPromptText(input);
+      await cleanComposerInputCompletely(input);
       throw new Error('Job stopped by user');
     }
 
-    // 3. Clear prompt input first, then set prompt text cleanly
+    // STRICT POST-ATTACH CHECK: Ensure there is NOT more than 1 image attached!
+    let countAfterUpload = getAttachedImagesCount(input);
+    if (countAfterUpload > 1) {
+      console.warn(`[BOLTHAVEN] ⚠️ Found ${countAfterUpload} images attached (expected 1)! Pruning excess attachments...`);
+      await pruneExcessAttachments(input, 1);
+      await new Promise((r) => setTimeout(r, 400));
+      countAfterUpload = getAttachedImagesCount(input);
+      if (countAfterUpload > 1) {
+        console.error(`[BOLTHAVEN] Failed to prune down to 1 attachment. Wiping input and re-attaching strictly 1 image...`);
+        await cleanComposerInputCompletely(input);
+        await new Promise((r) => setTimeout(r, 500));
+        await attachImageFileToComposer(input, file, 1, 1, job.image_data_url || (primaryUrl.startsWith('data:') ? primaryUrl : null));
+        await waitForAttachmentUploadComplete(getComposerContainer(input) || document, 15000);
+      }
+    }
+
+    // 3. Clear any leftover prompt text first, then set prompt text cleanly
     const promptText = (job.resolved_prompt || 'Enhance the attached architectural photo').trim();
     console.log(`[BOLTHAVEN] Setting prompt text (${promptText.length} chars)...`);
 
     const liveInput = findPromptInput() || input;
-    clearPromptInputCleanly(liveInput);
+    clearPromptText(liveInput);
     await new Promise((r) => setTimeout(r, 200));
 
     await insertPromptCleanly(liveInput, promptText);
     await new Promise((r) => setTimeout(r, 400));
+
+    // FINAL CRITICAL SAFETY CHECK: Verify exactly 1 image is attached before sending!
+    const finalAttachedCount = getAttachedImagesCount(liveInput);
+    if (finalAttachedCount > 1) {
+      console.error(`[BOLTHAVEN] ⛔ BLOCKED SEND: Detected ${finalAttachedCount} attached images! (Expected exactly 1). Cleaning input to prevent sending duplicate images.`);
+      await cleanComposerInputCompletely(liveInput);
+      throw new Error(`Send aborted: ${finalAttachedCount} images were attached in ChatGPT. Expected exactly 1. Input has been cleaned — retrying.`);
+    }
 
     // Record pre-existing assistant turn count before sending
     const preAssistantCount = document.querySelectorAll(
@@ -2548,7 +2742,7 @@
     ).length;
 
     // 4. Click Send button and wait for generation (NO tab reloading!)
-    console.log(`[BOLTHAVEN] Sending prompt + image #${job.original_position || 1} to ChatGPT...`);
+    console.log(`[BOLTHAVEN] Sending prompt + single image #${job.original_position || 1} to ChatGPT...`);
     const sendSuccess = await triggerSendRobustly(liveInput);
     console.log(`[BOLTHAVEN] Send triggered (status: ${sendSuccess}). Launching watcher...`);
 
