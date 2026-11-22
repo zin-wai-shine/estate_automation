@@ -4752,7 +4752,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 </span>
               )}
               <span>➔</span>
-              <span style={{ color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }} title={resolvedPromptPreview || currentPromptText}>
+              <span style={{ color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }}>
                 💬 {promptSourceMode === 'upstream_ai' ? selectedUpstreamPromptObj?.title || 'AI Model Prompt' : effectivePromptKey || 'Direct Prompt'}
               </span>
             </div>
