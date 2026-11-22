@@ -125,6 +125,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
   const [availableCondoFolders, setAvailableCondoFolders] = useState<string[]>([]);
   const [baseCondoDirectory, setBaseCondoDirectory] = useState<string>('/Users/zinwaishine/Desktop/Condo Building');
   const [activeFolderDropdownStepId, setActiveFolderDropdownStepId] = useState<string | null>(null);
+  const [activeWorkflowDropdownStepId, setActiveWorkflowDropdownStepId] = useState<string | null>(null);
   const [folderSearchFilter, setFolderSearchFilter] = useState<string>('');
 
   // Child Attachment Groups inside Condo Photos
@@ -2099,90 +2100,227 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                               const sourceImages = selectedSource?.images && selectedSource.images.length > 0
                                 ? selectedSource.images
                                 : (selectedSource?.nodeType === 'enhance' ? enhancedImages : propertyImages);
+                              const isDropdownOpen = activeWorkflowDropdownStepId === step.id;
 
                               return (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                      <Select
-                                        options={workflowSourceOptions}
-                                        value={step.workflowSourceId || activeWorkflowSources[0]?.id || ''}
-                                        onChange={(val) => handleUpdateStep(step.id, { workflowSourceId: String(val) })}
-                                        height="28px"
-                                      />
-                                    </div>
+                                  {/* Sleek Full-Width Workflow Source Selector Bar */}
+                                  <div style={{ position: 'relative' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveWorkflowDropdownStepId(isDropdownOpen ? null : step.id)}
+                                      style={{
+                                        width: '100%',
+                                        height: '32px',
+                                        padding: '0 10px',
+                                        borderRadius: '5px',
+                                        border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                        backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                        color: isDark ? '#F0F6FC' : '#0F172A',
+                                        fontSize: '0.6875rem',
+                                        fontWeight: 500,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.12s ease',
+                                        outline: 'none',
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1, marginRight: '8px' }}>
+                                        <FiLayers size={13} style={{ color: '#58A6FF', flexShrink: 0 }} />
+                                        <span style={{ fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                          {selectedSource?.title || 'Select workflow source...'}
+                                        </span>
+                                      </div>
+
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                                        <span
+                                          style={{
+                                            fontSize: '0.59375rem',
+                                            fontWeight: 500,
+                                            padding: '1px 6px',
+                                            borderRadius: '10px',
+                                            backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                                            color: isDark ? '#8B949E' : '#64748B',
+                                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                          }}
+                                        >
+                                          {sourceImages.length} photo{sourceImages.length !== 1 ? 's' : ''}
+                                        </span>
+                                        <FiChevronDown
+                                          size={12}
+                                          style={{
+                                            color: isDark ? '#8B949E' : '#64748B',
+                                            transform: isDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                                            transition: 'transform 0.15s ease',
+                                          }}
+                                        />
+                                      </div>
+                                    </button>
+
+                                    {/* Dropdown Menu Popover */}
+                                    {isDropdownOpen && (
+                                      <>
+                                        <div
+                                          style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+                                          onClick={() => setActiveWorkflowDropdownStepId(null)}
+                                        />
+                                        <div
+                                          style={{
+                                            position: 'absolute',
+                                            top: '36px',
+                                            left: 0,
+                                            right: 0,
+                                            zIndex: 50,
+                                            borderRadius: '6px',
+                                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                            boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+                                            padding: '4px',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '2px',
+                                          }}
+                                        >
+                                          {activeWorkflowSources.map((src) => {
+                                            const isCurrent = src.id === selectedSource?.id;
+                                            const count = src.images?.length ?? src.count ?? 0;
+                                            return (
+                                              <button
+                                                key={src.id}
+                                                type="button"
+                                                onClick={() => {
+                                                  handleUpdateStep(step.id, { workflowSourceId: src.id });
+                                                  setActiveWorkflowDropdownStepId(null);
+                                                }}
+                                                style={{
+                                                  width: '100%',
+                                                  height: '32px',
+                                                  padding: '0 10px',
+                                                  borderRadius: '4px',
+                                                  border: 'none',
+                                                  backgroundColor: isCurrent
+                                                    ? (isDark ? '#21262D' : '#E2E8F0')
+                                                    : 'transparent',
+                                                  color: isCurrent
+                                                    ? (isDark ? '#F0F6FC' : '#0F172A')
+                                                    : (isDark ? '#C9D1D9' : '#334155'),
+                                                  fontSize: '0.6875rem',
+                                                  fontWeight: isCurrent ? 600 : 400,
+                                                  display: 'flex',
+                                                  alignItems: 'center',
+                                                  justifyContent: 'space-between',
+                                                  cursor: 'pointer',
+                                                  transition: 'all 0.1s ease',
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                  if (!isCurrent) {
+                                                    e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                                                  }
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                  if (!isCurrent) {
+                                                    e.currentTarget.style.backgroundColor = 'transparent';
+                                                  }
+                                                }}
+                                              >
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                  <FiLayers size={12} style={{ color: isCurrent ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B') }} />
+                                                  <span>{src.title}</span>
+                                                </div>
+
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                  <span
+                                                    style={{
+                                                      fontSize: '0.59375rem',
+                                                      color: isDark ? '#8B949E' : '#64748B',
+                                                    }}
+                                                  >
+                                                    {count} photo{count !== 1 ? 's' : ''}
+                                                  </span>
+                                                  {isCurrent && (
+                                                    <FiCheck size={12} style={{ color: '#58A6FF' }} />
+                                                  )}
+                                                </div>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+
+                                  {/* Sub-bar with Live Count and Stepper */}
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                      {sourceImages.length > 0
+                                        ? `Found ${sourceImages.length} photo${sourceImages.length !== 1 ? 's' : ''} in ${selectedSource?.title || 'Workflow'}`
+                                        : `Pulling from ${selectedSource?.title || 'Workflow'}`}
+                                    </span>
                                     {renderCountStepper(step)}
                                   </div>
 
                                   {/* Real photo thumbnails grid for selected workflow node */}
-                                  {sourceImages && sourceImages.length > 0 ? (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', padding: '2px 0' }}>
-                                        {sourceImages.slice(0, 10).map((img, tIdx) => {
-                                          const isSelected = tIdx < step.count;
-                                          return (
-                                            <div
-                                              key={tIdx}
-                                              onClick={() => {
-                                                const otherGroupsCount = attachmentSteps
-                                                  .filter((other) => other.id !== step.id && other.enabled)
-                                                  .reduce((acc, other) => acc + other.count, 0);
-                                                const maxAllowed = Math.max(1, 10 - otherGroupsCount);
-                                                handleUpdateStep(step.id, { count: Math.min(maxAllowed, tIdx + 1) });
-                                              }}
+                                  {sourceImages && sourceImages.length > 0 && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', padding: '2px 0' }}>
+                                      {sourceImages.slice(0, 10).map((img, tIdx) => {
+                                        const isSelected = tIdx < step.count;
+                                        return (
+                                          <div
+                                            key={tIdx}
+                                            onClick={() => {
+                                              const otherGroupsCount = attachmentSteps
+                                                .filter((other) => other.id !== step.id && other.enabled)
+                                                .reduce((acc, other) => acc + other.count, 0);
+                                              const maxAllowed = Math.max(1, 10 - otherGroupsCount);
+                                              handleUpdateStep(step.id, { count: Math.min(maxAllowed, tIdx + 1) });
+                                            }}
+                                            style={{
+                                              width: '42px',
+                                              height: '42px',
+                                              borderRadius: '4px',
+                                              border: isSelected
+                                                ? (isDark ? '1.5px solid #58A6FF' : '1.5px solid #2563EB')
+                                                : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
+                                              opacity: isSelected ? 1 : 0.4,
+                                              overflow: 'hidden',
+                                              position: 'relative',
+                                              flexShrink: 0,
+                                              cursor: 'pointer',
+                                              backgroundColor: isDark ? '#161B22' : '#F1F5F9',
+                                              transition: 'all 0.15s ease',
+                                            }}
+                                          >
+                                            {img.url ? (
+                                              <img
+                                                src={img.url}
+                                                alt={`Photo #${tIdx + 1}`}
+                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                              />
+                                            ) : (
+                                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isDark ? '#8B949E' : '#64748B' }}>
+                                                <FiImage size={13} />
+                                              </div>
+                                            )}
+                                            <span
                                               style={{
-                                                width: '42px',
-                                                height: '42px',
-                                                borderRadius: '4px',
-                                                border: isSelected
-                                                  ? (isDark ? '1.5px solid #58A6FF' : '1.5px solid #2563EB')
-                                                  : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
-                                                opacity: isSelected ? 1 : 0.4,
-                                                overflow: 'hidden',
-                                                position: 'relative',
-                                                flexShrink: 0,
-                                                cursor: 'pointer',
-                                                backgroundColor: isDark ? '#161B22' : '#F1F5F9',
-                                                transition: 'all 0.15s ease',
+                                                position: 'absolute',
+                                                bottom: 1,
+                                                right: 1,
+                                                backgroundColor: isSelected ? 'rgba(37,99,235,0.85)' : 'rgba(0,0,0,0.65)',
+                                                color: '#fff',
+                                                fontSize: '7px',
+                                                fontWeight: 600,
+                                                padding: '1px 3px',
+                                                borderRadius: '2px',
                                               }}
                                             >
-                                              {img.url ? (
-                                                <img
-                                                  src={img.url}
-                                                  alt={`Photo #${tIdx + 1}`}
-                                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                                />
-                                              ) : (
-                                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isDark ? '#8B949E' : '#64748B' }}>
-                                                  <FiImage size={13} />
-                                                </div>
-                                              )}
-                                              <span
-                                                style={{
-                                                  position: 'absolute',
-                                                  bottom: 1,
-                                                  right: 1,
-                                                  backgroundColor: isSelected ? 'rgba(37,99,235,0.85)' : 'rgba(0,0,0,0.65)',
-                                                  color: '#fff',
-                                                  fontSize: '7px',
-                                                  fontWeight: 600,
-                                                  padding: '1px 3px',
-                                                  borderRadius: '2px',
-                                                }}
-                                              >
-                                                {isSelected ? `✓ #${tIdx + 1}` : `#${tIdx + 1}`}
-                                              </span>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                      <span style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                                        Pulling {step.count} photo(s) from {selectedSource?.title || 'workflow'}.
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                                      Will pull {step.count} photo(s) from {selectedSource?.title || 'connected workflow node'}.
+                                              {isSelected ? `✓ #${tIdx + 1}` : `#${tIdx + 1}`}
+                                            </span>
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   )}
                                 </div>

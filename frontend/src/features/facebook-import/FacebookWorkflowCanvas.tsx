@@ -20679,19 +20679,19 @@ export const FacebookWorkflowCanvas = forwardRef<
 
           const connectedImageBoxes = config.aiBoxes.filter((b) => {
             if (b.id === fromNodeId) return false;
+            // Exclude text formats or text prompt boxes
+            if (isTextFormatAIBox(b) || isTextAIBox(b, config.connections) || isChromeProfileAIBox(b)) return false;
             const isConn = (config.connections || []).some(
               (c) => c.fromNodeId === b.id || c.toNodeId === b.id
             );
             return (
               isConn &&
-              (isImageAIBox(b, config.connections) ||
-               isEnhanceAIBox(b, config.connections) ||
+              (isEnhanceAIBox(b, config.connections) ||
                isCropStudioBox(b) ||
                isWatermarkAIBox(b) ||
-               isExternalBrowserAIBox(b) ||
                b.processType === 'image_enhance' ||
-               b.title?.toLowerCase().includes('enhance') ||
-               b.title?.toLowerCase().includes('image'))
+               b.processType === 'image_edit' ||
+               (b.title?.toLowerCase().includes('enhance') && !b.title?.toLowerCase().includes('prompt')))
             );
           });
 
