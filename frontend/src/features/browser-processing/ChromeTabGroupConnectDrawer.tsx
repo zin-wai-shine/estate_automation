@@ -71,12 +71,73 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
   const [showFolderImagePicker, setShowFolderImagePicker] = useState<boolean>(false);
   const refFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [useCondoImages, setUseCondoImages] = useState<boolean>(true);
-  const [condoImagesCount, setCondoImagesCount] = useState<number>(3);
-  const [condoFolderName, setCondoFolderName] = useState<string>(condoName || 'Condo Building');
-  const [useEnhancedImages, setUseEnhancedImages] = useState<boolean>(true);
-  const [enhancedImagesSource, setEnhancedImagesSource] = useState<'enhanced' | 'get_images'>('enhanced');
-  const [enhancedImagesCount, setEnhancedImagesCount] = useState<number>(5);
+  // Dynamic Image Attachment Steps (Customizable sequence after Reference Image)
+  const [attachmentSteps, setAttachmentSteps] = useState<Array<{
+    id: string;
+    title: string;
+    count: number;
+    sourceType: 'folder' | 'upload' | 'enhanced';
+    folderName: string;
+    imageSelection?: string;
+    uploadedUrls?: string[];
+    enabled: boolean;
+  }>>([
+    {
+      id: 'step-condo',
+      title: 'Condo Photos',
+      count: 1,
+      sourceType: 'folder',
+      folderName: condoName || 'Regent Home Bangna',
+      imageSelection: '',
+      enabled: true,
+    },
+    {
+      id: 'step-interior',
+      title: 'Interior Photos',
+      count: 4,
+      sourceType: 'enhanced',
+      folderName: 'Interior',
+      imageSelection: '',
+      enabled: true,
+    },
+  ]);
+
+  const handleAddStep = () => {
+    const nextIdx = attachmentSteps.length + 1;
+    setAttachmentSteps((prev) => [
+      ...prev,
+      {
+        id: `step-${Date.now()}`,
+        title: `Image Source #${nextIdx}`,
+        count: 1,
+        sourceType: 'folder',
+        folderName: condoName || 'Condo Building',
+        imageSelection: '',
+        enabled: true,
+      },
+    ]);
+  };
+
+  const handleRemoveStep = (id: string) => {
+    setAttachmentSteps((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  const handleUpdateStep = (
+    id: string,
+    updates: Partial<{
+      title: string;
+      count: number;
+      sourceType: 'folder' | 'upload' | 'enhanced';
+      folderName: string;
+      imageSelection?: string;
+      uploadedUrls?: string[];
+      enabled: boolean;
+    }>
+  ) => {
+    setAttachmentSteps((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
+    );
+  };
 
   // File upload and removal handlers
   const handleReferenceImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -143,13 +204,20 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
 
   // Image calculations
   const effectiveRefPhotosCount = useReferenceImage ? 1 : 0;
-  const effectiveCondoPhotosCount = useCondoImages ? condoImagesCount : 0;
-  const effectiveEnhancedPhotosCount = useEnhancedImages ? enhancedImagesCount : 0;
-  const totalCompositePhotos = effectiveRefPhotosCount + effectiveCondoPhotosCount + effectiveEnhancedPhotosCount;
+  const totalStepPhotos = useMemo(() => {
+    return attachmentSteps
+      .filter((s) => s.enabled)
+      .reduce((sum, s) => sum + Math.min(10, Math.max(1, s.count)), 0);
+  }, [attachmentSteps]);
+  const totalCompositePhotos = effectiveRefPhotosCount + totalStepPhotos;
 
   // Handle Create Flow Click
   const handleCreateAndConnectFlow = () => {
     const finalName = flowName.trim() || (tabGroupMode === 'generate' ? 'FB Hero' : 'Enhance IMG');
+    const enabledSteps = attachmentSteps.filter((s) => s.enabled);
+    const primaryFolderStep = enabledSteps.find((s) => s.sourceType === 'folder');
+    const primaryEnhancedStep = enabledSteps.find((s) => s.sourceType === 'enhanced');
+
     const customConfig: Record<string, any> = {
       title: finalName,
       browserGroupName: finalName,
@@ -162,12 +230,15 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
       referenceImage: referenceImageUrl || undefined,
       referenceImageName: referenceImageName || undefined,
       referenceFolderName: referenceFolderName || undefined,
-      useCondoImages: tabGroupMode === 'generate' ? useCondoImages : false,
-      condoImagesCount: tabGroupMode === 'generate' ? Math.min(10, Math.max(1, condoImagesCount)) : 0,
-      condoFolderName: condoFolderName || undefined,
-      useEnhancedImages: tabGroupMode === 'generate' ? useEnhancedImages : false,
-      enhancedImagesSource: tabGroupMode === 'generate' ? enhancedImagesSource : 'enhanced',
-      enhancedImagesCount: tabGroupMode === 'generate' ? enhancedImagesCount : 5,
+      imageAttachmentSteps: tabGroupMode === 'generate' ? enabledSteps : [],
+      totalAttachmentPhotos: tabGroupMode === 'generate' ? totalCompositePhotos : 0,
+      // Backwards-compatible fields:
+      useCondoImages: tabGroupMode === 'generate' ? Boolean(primaryFolderStep) : false,
+      condoImagesCount: tabGroupMode === 'generate' ? (primaryFolderStep ? primaryFolderStep.count : 0) : 0,
+      condoFolderName: tabGroupMode === 'generate' ? (primaryFolderStep?.folderName || condoName || 'Regent Home Bangna') : undefined,
+      useEnhancedImages: tabGroupMode === 'generate' ? Boolean(primaryEnhancedStep) : false,
+      enhancedImagesSource: 'enhanced',
+      enhancedImagesCount: tabGroupMode === 'generate' ? (primaryEnhancedStep ? primaryEnhancedStep.count : 0) : 0,
       selectedUpstreamAiId: selectedPromptSource === 'upstream_ai' ? selectedUpstreamAiId : undefined,
       promptSourceMode: selectedPromptSource,
       browserCustomPrompt: selectedPromptSource === 'custom' ? customPromptText : undefined,
@@ -976,237 +1047,340 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     )}
                   </div>
 
-                  {/* Item 2: Condo Photos */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <FiFolder size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
-                        <div>
-                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                            Condo Photos
+                  {/* Dynamic Image Attachment Steps (Customizable sequence after Reference Layout) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {attachmentSteps.map((step, idx) => (
+                      <div
+                        key={step.id}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '10px',
+                          paddingBottom: '1rem',
+                          borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9',
+                        }}
+                      >
+                        {/* Header: Icon + Step Badge + Title + Switch + Delete */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                            <div style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }}>
+                              {step.sourceType === 'folder' ? (
+                                <FiFolder size={15} />
+                              ) : step.sourceType === 'upload' ? (
+                                <FiUpload size={15} />
+                              ) : (
+                                <FiLayers size={15} />
+                              )}
+                            </div>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span
+                                  style={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 600,
+                                    color: isDark ? '#58A6FF' : '#2563EB',
+                                    backgroundColor: isDark ? 'rgba(88, 166, 255, 0.1)' : '#EFF6FF',
+                                    padding: '1px 5px',
+                                    borderRadius: '3px',
+                                  }}
+                                >
+                                  #{idx + 2} in Chat
+                                </span>
+                                <input
+                                  type="text"
+                                  value={step.title}
+                                  onChange={(e) => handleUpdateStep(step.id, { title: e.target.value })}
+                                  style={{
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 600,
+                                    color: isDark ? '#F0F6FC' : '#0F172A',
+                                    background: 'transparent',
+                                    border: 'none',
+                                    outline: 'none',
+                                    padding: 0,
+                                    minWidth: '120px',
+                                  }}
+                                />
+                              </div>
+                              <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                {step.sourceType === 'folder'
+                                  ? `From folder: ${step.folderName || 'Selected folder'}`
+                                  : step.sourceType === 'upload'
+                                  ? 'Manual user uploaded images'
+                                  : 'Canvas AI enhanced images'}
+                              </div>
+                            </div>
                           </div>
-                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                            Exterior & facility photos (10 max)
-                          </div>
-                        </div>
-                      </div>
-                      <ToggleSwitch
-                        checked={useCondoImages}
-                        onChange={(val) => setUseCondoImages(val)}
-                        size="sm"
-                        activeColor="#2563EB"
-                      />
-                    </div>
 
-                    {useCondoImages && (
-                      <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'nowrap' }}>
-                          {/* Manual Number Input */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                            <span style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>Count:</span>
-                            <input
-                              type="number"
-                              min={1}
-                              max={10}
-                              value={condoImagesCount}
-                              onChange={(e) => {
-                                const val = parseInt(e.target.value, 10);
-                                if (isNaN(val)) {
-                                  setCondoImagesCount(1);
-                                } else {
-                                  setCondoImagesCount(Math.min(10, Math.max(1, val)));
-                                }
-                              }}
-                              style={{
-                                width: '38px',
-                                height: '28px',
-                                textAlign: 'center',
-                                borderRadius: '4px',
-                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                                color: isDark ? '#F0F6FC' : '#0F172A',
-                                fontSize: '0.75rem',
-                                fontWeight: 600,
-                                outline: 'none',
-                              }}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                            {attachmentSteps.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveStep(step.id)}
+                                title="Delete this image source"
+                                style={{
+                                  width: '24px',
+                                  height: '24px',
+                                  borderRadius: '4px',
+                                  backgroundColor: isDark ? 'rgba(248, 81, 73, 0.08)' : '#FEF2F2',
+                                  color: isDark ? '#F85149' : '#DC2626',
+                                  border: isDark ? '1px solid rgba(248, 81, 73, 0.25)' : '1px solid #FECACA',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  padding: 0,
+                                }}
+                              >
+                                <FiTrash2 size={11} />
+                              </button>
+                            )}
+                            <ToggleSwitch
+                              checked={step.enabled}
+                              onChange={(val) => handleUpdateStep(step.id, { enabled: val })}
+                              size="sm"
+                              activeColor="#2563EB"
                             />
-                            <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>(Max 10)</span>
                           </div>
+                        </div>
 
-                          {/* Quick Presets */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                            {[
-                              { count: 1, label: '1' },
-                              { count: 2, label: '2' },
-                              { count: 3, label: '3' },
-                              { count: 5, label: '5' },
-                              { count: 10, label: '10' },
-                            ].map((opt) => {
-                              const isSel = condoImagesCount === opt.count;
-                              return (
-                                <button
-                                  key={opt.count}
-                                  type="button"
-                                  onClick={() => setCondoImagesCount(opt.count)}
+                        {step.enabled && (
+                          <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {/* Row 1: Count */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'nowrap' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                                <span style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>Count:</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={10}
+                                  value={step.count}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value, 10);
+                                    handleUpdateStep(step.id, { count: isNaN(val) ? 1 : Math.min(10, Math.max(1, val)) });
+                                  }}
                                   style={{
-                                    padding: '3px 8px',
+                                    width: '38px',
+                                    height: '28px',
+                                    textAlign: 'center',
+                                    borderRadius: '4px',
+                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                    backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                    color: isDark ? '#F0F6FC' : '#0F172A',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    outline: 'none',
+                                  }}
+                                />
+                                <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Photos (Max 10)</span>
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                                {[1, 2, 3, 4, 5, 10].map((c) => {
+                                  const isSel = step.count === c;
+                                  return (
+                                    <button
+                                      key={c}
+                                      type="button"
+                                      onClick={() => handleUpdateStep(step.id, { count: c })}
+                                      style={{
+                                        padding: '3px 7px',
+                                        borderRadius: '4px',
+                                        fontSize: '0.65625rem',
+                                        fontWeight: isSel ? 600 : 400,
+                                        backgroundColor: isSel
+                                          ? (isDark ? '#21262D' : '#E2E8F0')
+                                          : 'transparent',
+                                        color: isSel
+                                          ? (isDark ? '#F0F6FC' : '#0F172A')
+                                          : (isDark ? '#8B949E' : '#64748B'),
+                                        border: isSel
+                                          ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
+                                          : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                        cursor: 'pointer',
+                                        transition: 'all 0.12s ease',
+                                      }}
+                                    >
+                                      {c}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Row 2: Source Type */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                              <span style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>Source:</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                {(['folder', 'upload', 'enhanced'] as const).map((st) => {
+                                  const isSel = step.sourceType === st;
+                                  return (
+                                    <button
+                                      key={st}
+                                      type="button"
+                                      onClick={() => handleUpdateStep(step.id, { sourceType: st })}
+                                      style={{
+                                        padding: '3px 10px',
+                                        borderRadius: '4px',
+                                        fontSize: '0.65625rem',
+                                        fontWeight: isSel ? 600 : 400,
+                                        backgroundColor: isSel
+                                          ? (isDark ? '#21262D' : '#E2E8F0')
+                                          : 'transparent',
+                                        color: isSel
+                                          ? (isDark ? '#F0F6FC' : '#0F172A')
+                                          : (isDark ? '#8B949E' : '#64748B'),
+                                        border: isSel
+                                          ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
+                                          : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                        cursor: 'pointer',
+                                        textTransform: 'capitalize',
+                                      }}
+                                    >
+                                      {st}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Row 3: Source Configuration */}
+                            {step.sourceType === 'folder' && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', width: '38px', flexShrink: 0 }}>Folder:</span>
+                                  <input
+                                    type="text"
+                                    value={step.folderName}
+                                    onChange={(e) => handleUpdateStep(step.id, { folderName: e.target.value })}
+                                    placeholder="Folder name (e.g. Regent Home Bangna, Living Room)..."
+                                    style={{
+                                      flex: 1,
+                                      height: '26px',
+                                      padding: '0 8px',
+                                      borderRadius: '4px',
+                                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                      backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                      color: isDark ? '#F0F6FC' : '#0F172A',
+                                      fontSize: '0.65625rem',
+                                      outline: 'none',
+                                    }}
+                                  />
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', width: '38px', flexShrink: 0 }}>Image:</span>
+                                  <input
+                                    type="text"
+                                    value={step.imageSelection || ''}
+                                    onChange={(e) => handleUpdateStep(step.id, { imageSelection: e.target.value })}
+                                    placeholder="Specific photo name or leave blank for first N..."
+                                    style={{
+                                      flex: 1,
+                                      height: '26px',
+                                      padding: '0 8px',
+                                      borderRadius: '4px',
+                                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                      backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                      color: isDark ? '#F0F6FC' : '#0F172A',
+                                      fontSize: '0.65625rem',
+                                      outline: 'none',
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {step.sourceType === 'upload' && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <label
+                                  style={{
+                                    height: '28px',
+                                    padding: '0 10px',
                                     borderRadius: '4px',
                                     fontSize: '0.65625rem',
-                                    fontWeight: isSel ? 600 : 400,
-                                    backgroundColor: isSel
-                                      ? (isDark ? '#21262D' : '#E2E8F0')
-                                      : 'transparent',
-                                    color: isSel
-                                      ? (isDark ? '#F0F6FC' : '#0F172A')
-                                      : (isDark ? '#8B949E' : '#64748B'),
-                                    border: isSel
-                                      ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                                      : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                    fontWeight: 500,
+                                    backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                                    color: isDark ? '#E6EDF3' : '#334155',
+                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                                     cursor: 'pointer',
-                                    transition: 'all 0.12s ease',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
                                   }}
                                 >
-                                  {opt.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
+                                  <FiUpload size={12} />
+                                  <span>Choose Files ({step.uploadedUrls?.length || 0}/{step.count})</span>
+                                  <input
+                                    type="file"
+                                    multiple
+                                    accept="image/*"
+                                    onChange={(e) => {
+                                      const files = Array.from(e.target.files || []);
+                                      if (files.length === 0) return;
+                                      const urls: string[] = [];
+                                      let readCount = 0;
+                                      files.slice(0, step.count).forEach((f) => {
+                                        const reader = new FileReader();
+                                        reader.onload = (ev) => {
+                                          if (ev.target?.result) urls.push(ev.target.result as string);
+                                          readCount++;
+                                          if (readCount === Math.min(files.length, step.count)) {
+                                            handleUpdateStep(step.id, { uploadedUrls: urls });
+                                          }
+                                        };
+                                        reader.readAsDataURL(f);
+                                      });
+                                    }}
+                                    style={{ display: 'none' }}
+                                  />
+                                </label>
+                                <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                  {step.uploadedUrls?.length ? `${step.uploadedUrls.length} file(s) ready` : `Select up to ${step.count} image(s)`}
+                                </span>
+                              </div>
+                            )}
 
-                        {/* Manual Folder Input */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', width: '38px', flexShrink: 0 }}>Folder:</span>
-                          <input
-                            type="text"
-                            value={condoFolderName}
-                            onChange={(e) => setCondoFolderName(e.target.value)}
-                            placeholder="Condo folder name..."
-                            style={{
-                              flex: 1,
-                              height: '26px',
-                              padding: '0 8px',
-                              borderRadius: '4px',
-                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                              color: isDark ? '#F0F6FC' : '#0F172A',
-                              fontSize: '0.65625rem',
-                              outline: 'none',
-                            }}
-                          />
-                        </div>
+                            {step.sourceType === 'enhanced' && (
+                              <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                Will pull {step.count} enhanced room photo(s) from Canvas AI processor.
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
+                    ))}
 
-                  {/* Item 3: Interior Photos */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <FiLayers size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
-                        <div>
-                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                            Interior Photos
-                          </div>
-                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                            Enhanced room photos attached together
-                          </div>
-                        </div>
-                      </div>
-                      <ToggleSwitch
-                        checked={useEnhancedImages}
-                        onChange={(val) => setUseEnhancedImages(val)}
-                        size="sm"
-                        activeColor="#2563EB"
-                      />
-                    </div>
-
-                    {useEnhancedImages && (
-                      <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>Source:</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <button
-                              type="button"
-                              onClick={() => setEnhancedImagesSource('enhanced')}
-                              style={{
-                                padding: '4px 12px',
-                                borderRadius: '4px',
-                                fontSize: '0.65625rem',
-                                fontWeight: enhancedImagesSource === 'enhanced' ? 600 : 400,
-                                backgroundColor: enhancedImagesSource === 'enhanced'
-                                  ? (isDark ? '#21262D' : '#E2E8F0')
-                                  : 'transparent',
-                                color: enhancedImagesSource === 'enhanced'
-                                  ? (isDark ? '#F0F6FC' : '#0F172A')
-                                  : (isDark ? '#8B949E' : '#64748B'),
-                                border: enhancedImagesSource === 'enhanced'
-                                  ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                                  : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                                cursor: 'pointer',
-                              }}
-                            >
-                              Enhanced
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEnhancedImagesSource('get_images')}
-                              style={{
-                                padding: '4px 12px',
-                                borderRadius: '4px',
-                                fontSize: '0.65625rem',
-                                fontWeight: enhancedImagesSource === 'get_images' ? 600 : 400,
-                                backgroundColor: enhancedImagesSource === 'get_images'
-                                  ? (isDark ? '#21262D' : '#E2E8F0')
-                                  : 'transparent',
-                                color: enhancedImagesSource === 'get_images'
-                                  ? (isDark ? '#F0F6FC' : '#0F172A')
-                                  : (isDark ? '#8B949E' : '#64748B'),
-                                border: enhancedImagesSource === 'get_images'
-                                  ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                                  : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                                cursor: 'pointer',
-                              }}
-                            >
-                              Get Images
-                            </button>
-                          </div>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>Attach:</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            {[1, 3, 5, 99].map((count) => {
-                              const isSel = enhancedImagesCount === count;
-                              return (
-                                <button
-                                  key={count}
-                                  type="button"
-                                  onClick={() => setEnhancedImagesCount(count)}
-                                  style={{
-                                    padding: '4px 10px',
-                                    borderRadius: '4px',
-                                    fontSize: '0.65625rem',
-                                    fontWeight: isSel ? 600 : 400,
-                                    backgroundColor: isSel
-                                      ? (isDark ? '#21262D' : '#E2E8F0')
-                                      : 'transparent',
-                                    color: isSel
-                                      ? (isDark ? '#F0F6FC' : '#0F172A')
-                                      : (isDark ? '#8B949E' : '#64748B'),
-                                    border: isSel
-                                      ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                                      : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  {count === 99 ? 'All' : `${count} Photos`}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                    {/* Add Image Source Button */}
+                    <button
+                      type="button"
+                      onClick={handleAddStep}
+                      style={{
+                        height: '32px',
+                        borderRadius: '5px',
+                        fontSize: '0.6875rem',
+                        fontWeight: 500,
+                        backgroundColor: 'transparent',
+                        border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                        color: isDark ? '#8B949E' : '#64748B',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        transition: 'all 0.12s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = isDark ? '#58A6FF' : '#2563EB';
+                        e.currentTarget.style.color = isDark ? '#58A6FF' : '#2563EB';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
+                        e.currentTarget.style.color = isDark ? '#8B949E' : '#64748B';
+                      }}
+                    >
+                      <FiPlus size={12} />
+                      <span>Add Image Source</span>
+                    </button>
                   </div>
 
                   {/* Item 4: Connected Prompt */}
@@ -1630,8 +1804,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                       </div>
                     )}
 
-                    {useCondoImages && (
+                    {attachmentSteps.filter((s) => s.enabled).map((step, idx) => (
                       <div
+                        key={step.id}
                         style={{
                           padding: '2px 6px',
                           borderRadius: '4px',
@@ -1645,34 +1820,22 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                           gap: '4px',
                         }}
                       >
-                        <FiFolder size={10} />
-                        <span>Condo ({condoImagesCount} Photos)</span>
+                        {step.sourceType === 'folder' ? (
+                          <FiFolder size={10} />
+                        ) : step.sourceType === 'upload' ? (
+                          <FiUpload size={10} />
+                        ) : (
+                          <FiLayers size={10} />
+                        )}
+                        <span>
+                          #{idx + 2}: {step.title} ({step.count} Photo{step.count > 1 ? 's' : ''})
+                        </span>
                       </div>
-                    )}
-
-                    {useEnhancedImages && (
-                      <div
-                        style={{
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          backgroundColor: isDark ? '#21262D' : '#E2E8F0',
-                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                          color: isDark ? '#C9D1D9' : '#334155',
-                          fontSize: '0.59375rem',
-                          fontWeight: 500,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}
-                      >
-                        <FiLayers size={10} />
-                        <span>{enhancedImagesSource === 'enhanced' ? 'Enhanced' : 'Source'} ({enhancedImagesCount} Photos)</span>
-                      </div>
-                    )}
+                    ))}
                   </div>
 
                   {/* Thumbnail Strip */}
-                  {((useReferenceImage && referenceImageUrl) || (useCondoImages && (propertyImages.length > 0 || condoImagesCount > 0)) || (useEnhancedImages && (enhancedImages.length > 0 || propertyImages.length > 0))) && (
+                  {(useReferenceImage || attachmentSteps.some((s) => s.enabled && s.count > 0)) && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflowX: 'auto', padding: '2px 0' }}>
                       {useReferenceImage && (
                         <div
@@ -1697,53 +1860,43 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                           <span style={{ position: 'absolute', bottom: 1, right: 1, backgroundColor: 'rgba(0,0,0,0.75)', color: '#fff', fontSize: '7px', padding: '1px 3px', borderRadius: '2px' }}>#1</span>
                         </div>
                       )}
-                      {useCondoImages && Array.from({ length: Math.min(10, Math.max(1, condoImagesCount)) }).map((_, i) => {
-                        const img = propertyImages[i];
-                        return (
-                          <div
-                            key={`condo-${i}`}
-                            style={{
-                              width: '38px',
-                              height: '38px',
-                              borderRadius: '4px',
-                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                              overflow: 'hidden',
-                              flexShrink: 0,
-                              position: 'relative',
-                              backgroundColor: '#1E293B',
-                            }}
-                          >
-                            {img?.url ? (
-                              <img src={img.url} alt={`Condo ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            ) : (
-                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isDark ? '#8B949E' : '#64748B' }}>
-                                <FiFolder size={12} />
-                              </div>
-                            )}
-                            <span style={{ position: 'absolute', bottom: 1, right: 1, backgroundColor: 'rgba(0,0,0,0.75)', color: '#fff', fontSize: '7px', padding: '1px 3px', borderRadius: '2px' }}>C{i + 1}</span>
-                          </div>
-                        );
+
+                      {attachmentSteps.filter((s) => s.enabled).map((step, sIdx) => {
+                        return Array.from({ length: Math.min(10, Math.max(1, step.count)) }).map((_, i) => {
+                          const img = step.uploadedUrls?.[i] || (step.sourceType === 'enhanced' ? enhancedImages[i]?.url : propertyImages[i]?.url);
+                          const stepBadge = `S${sIdx + 1}-${i + 1}`;
+                          return (
+                            <div
+                              key={`${step.id}-${i}`}
+                              style={{
+                                width: '38px',
+                                height: '38px',
+                                borderRadius: '4px',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                overflow: 'hidden',
+                                flexShrink: 0,
+                                position: 'relative',
+                                backgroundColor: '#1E293B',
+                              }}
+                            >
+                              {img ? (
+                                <img src={img} alt={`${step.title} ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              ) : (
+                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isDark ? '#8B949E' : '#64748B' }}>
+                                  {step.sourceType === 'folder' ? (
+                                    <FiFolder size={12} />
+                                  ) : step.sourceType === 'upload' ? (
+                                    <FiUpload size={12} />
+                                  ) : (
+                                    <FiLayers size={12} />
+                                  )}
+                                </div>
+                              )}
+                              <span style={{ position: 'absolute', bottom: 1, right: 1, backgroundColor: 'rgba(0,0,0,0.75)', color: '#fff', fontSize: '7px', padding: '1px 3px', borderRadius: '2px' }}>{stepBadge}</span>
+                            </div>
+                          );
+                        });
                       })}
-                      {useEnhancedImages && (enhancedImagesSource === 'enhanced' && enhancedImages.length > 0 ? enhancedImages : propertyImages)
-                        .slice(0, enhancedImagesCount)
-                        .map((img, i) => (
-                          <div
-                            key={`enh-${i}`}
-                            style={{
-                              width: '38px',
-                              height: '38px',
-                              borderRadius: '4px',
-                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                              overflow: 'hidden',
-                              flexShrink: 0,
-                              position: 'relative',
-                              backgroundColor: '#1E293B',
-                            }}
-                          >
-                            <img src={img.url} alt={`Photo ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            <span style={{ position: 'absolute', bottom: 1, right: 1, backgroundColor: 'rgba(0,0,0,0.7)', color: '#fff', fontSize: '7px', padding: '1px 2px', borderRadius: '2px' }}>P{i + 1}</span>
-                          </div>
-                        ))}
                     </div>
                   )}
 
