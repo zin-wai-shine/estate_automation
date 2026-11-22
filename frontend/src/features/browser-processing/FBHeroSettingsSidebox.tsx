@@ -157,7 +157,15 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
 
   useEffect(() => {
     if (Array.isArray(boxConfig.imageAttachmentSteps) && boxConfig.imageAttachmentSteps.length > 0) {
-      setAttachmentSteps(boxConfig.imageAttachmentSteps);
+      setAttachmentSteps((prev) => {
+        return boxConfig.imageAttachmentSteps.map((incoming: AttachmentStep) => {
+          const existing = prev.find((p) => p.id === incoming.id);
+          return {
+            ...incoming,
+            folderImages: existing?.folderImages || incoming.folderImages,
+          };
+        });
+      });
     }
   }, [boxConfig.imageAttachmentSteps]);
 

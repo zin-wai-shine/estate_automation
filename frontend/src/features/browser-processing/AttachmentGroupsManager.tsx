@@ -212,19 +212,29 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
     } catch (_) {}
   };
 
+  const inFlightFetchRef = React.useRef<Record<string, boolean>>({});
+
   const fetchImagesForStep = async (stepId: string, folder: string, forceReload: boolean = false) => {
     const trimmed = (folder || '').trim();
     if (!trimmed) return;
     const cacheKey = trimmed.toLowerCase();
+    const fetchKey = `${stepId}:${cacheKey}`;
 
-    // In-memory cache check: if already loaded and not force reloading, apply instantly with zero network/disk delay!
-    if (!forceReload && condoImagesCacheRef.current[cacheKey] && condoImagesCacheRef.current[cacheKey].length > 0) {
-      handleUpdateStep(stepId, {
-        folderImages: condoImagesCacheRef.current[cacheKey],
-      });
-      return;
+    if (!forceReload) {
+      if (inFlightFetchRef.current[fetchKey]) return;
+      if (condoImagesCacheRef.current[cacheKey] && condoImagesCacheRef.current[cacheKey].length > 0) {
+        const targetStep = steps.find((s) => s.id === stepId);
+        if (targetStep?.folderImages && targetStep.folderImages.length === condoImagesCacheRef.current[cacheKey].length) {
+          return;
+        }
+        handleUpdateStep(stepId, {
+          folderImages: condoImagesCacheRef.current[cacheKey],
+        });
+        return;
+      }
     }
 
+    inFlightFetchRef.current[fetchKey] = true;
     try {
       const resp = await fetch(
         `http://127.0.0.1:9224/condo-images?condo_name=${encodeURIComponent(trimmed)}&folder=${encodeURIComponent(trimmed)}&base_dir=${encodeURIComponent(baseCondoDirectory)}`
@@ -249,7 +259,10 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
           folderImages: mappedImages,
         });
       }
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      inFlightFetchRef.current[fetchKey] = false;
+    }
   };
 
   useEffect(() => {
@@ -275,14 +288,17 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
     }
   }, [isMainBox, condoName]);
 
-  const stepsFolderKey = steps.map((s) => `${s.id}-${s.sourceType}-${s.folderName || ''}-${s.folderImages?.length || 0}`).join('|');
+  const stepsFolderKey = steps.map((s) => `${s.id}:${s.sourceType}:${(s.folderName || '').trim().toLowerCase()}`).join('|');
   useEffect(() => {
     steps.forEach((s) => {
-      if (s.sourceType === 'folder' && s.folderName && (!s.folderImages || s.folderImages.length === 0)) {
-        fetchImagesForStep(s.id, s.folderName);
+      if (s.sourceType === 'folder') {
+        const folder = (s.folderName || condoName || '').trim();
+        if (folder && (!s.folderImages || s.folderImages.length === 0)) {
+          fetchImagesForStep(s.id, folder);
+        }
       }
     });
-  }, [stepsFolderKey]);
+  }, [stepsFolderKey, condoName]);
 
   const filteredCondoFolders = useMemo(() => {
     if (!folderSearchFilter.trim()) return [];
@@ -781,164 +797,174 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                       })()}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-                        <span style={{ fontSize: '0.625rem', color: reloadingStepId === step.id ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {reloadingStepId === step.id
-                            ? `Reloading photos in ${condoName || step.folderName || 'folder'}...`
-                            : `Found ${step.folderImages?.length || 0} photos in ${condoName || step.folderName || 'folder'}`}
-                        </span>
-                        {step.folderImages && step.folderImages.length > 0 && (() => {
-                          const isManuallyChosen = Boolean(step.selectedIndices && step.selectedIndices.length > 0);
-                          return (
-                            <button
-                              type="button"
-                              onClick={() => setManualChooseModalStepId(step.id)}
-                              style={{
-                                height: '24px',
-                                padding: '0 9px',
-                                borderRadius: '5px',
-                                fontSize: '0.625rem',
-                                fontWeight: 600,
-                                border: isManuallyChosen
-                                  ? '1px solid #1D4ED8'
-                                  : (isDark ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid #BFDBFE'),
-                                backgroundColor: isManuallyChosen
-                                  ? '#2563EB'
-                                  : (isDark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF'),
-                                color: isManuallyChosen
-                                  ? '#FFFFFF'
-                                  : (isDark ? '#60A5FA' : '#2563EB'),
-                                boxShadow: isManuallyChosen
-                                  ? '0 1px 3px rgba(37, 99, 235, 0.4), 0 1px 2px rgba(0, 0, 0, 0.1)'
-                                  : (isDark ? '0 1px 2px rgba(0, 0, 0, 0.2)' : '0 1px 2px rgba(0, 0, 0, 0.05)'),
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '5px',
-                                flexShrink: 0,
-                                transition: 'all 0.15s ease',
-                              }}
-                            >
-                              <FiCheckSquare size={12} color={isManuallyChosen ? '#FFFFFF' : (isDark ? '#60A5FA' : '#2563EB')} />
-                              <span>
-                                {isManuallyChosen
-                                  ? `Manual: ${step.selectedIndices!.length} Chosen`
-                                  : 'Manual Choose'}
-                              </span>
-                            </button>
-                          );
-                        })()}
-                      </div>
-                      {renderCountStepper(step)}
-                    </div>
-
-                    {step.folderImages && step.folderImages.length > 0 && (() => {
-                      const targetCount = Math.max(1, step.count || 1);
-                      const currentSelected = (step.selectedIndices && step.selectedIndices.length > 0)
-                        ? step.selectedIndices
-                        : Array.from({ length: Math.min(targetCount, step.folderImages.length) }, (_, i) => i);
+                    {(() => {
+                      const effectiveFolderImages = (step.folderImages && step.folderImages.length > 0)
+                        ? step.folderImages
+                        : (condoImagesCacheRef.current[(condoName || step.folderName || '').trim().toLowerCase()] || []);
 
                       return (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflowX: 'auto', padding: '3px 0' }}>
-                          {step.folderImages.map((img, idx) => {
-                            const isSelected = currentSelected.includes(idx);
-                            const selectionOrder = currentSelected.indexOf(idx) + 1;
-
-                            return (
-                              <div
-                                key={idx}
-                                onClick={() => {
-                                  let updated = [...currentSelected];
-                                  if (updated.includes(idx)) {
-                                    if (targetCount === 1) {
-                                      // only 1 allowed, keep selected
-                                    } else if (updated.length > 1) {
-                                      updated = updated.filter((i) => i !== idx);
-                                    }
-                                  } else {
-                                    if (targetCount === 1) {
-                                      updated = [idx];
-                                    } else if (updated.length < targetCount) {
-                                      updated.push(idx);
-                                    } else {
-                                      // At setup count: replace first pick with new pick
-                                      updated = [...updated.slice(1), idx];
-                                    }
-                                  }
-                                  handleUpdateStep(step.id, { selectedIndices: updated });
-                                }}
-                                style={{
-                                  width: '64px',
-                                  height: '64px',
-                                  borderRadius: '8px',
-                                  border: isSelected
-                                    ? (isDark ? '2px solid rgba(5, 150, 105, 0.95)' : '2px solid #059669')
-                                    : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
-                                  opacity: isSelected ? 1 : 0.45,
-                                  overflow: 'hidden',
-                                  position: 'relative',
-                                  flexShrink: 0,
-                                  cursor: 'pointer',
-                                  backgroundColor: isSelected
-                                    ? (isDark ? 'rgba(5, 150, 105, 0.08)' : 'rgba(5, 150, 105, 0.04)')
-                                    : (isDark ? '#0D1117' : '#F1F5F9'),
-                                  boxShadow: isSelected
-                                    ? (isDark ? '0 0 0 1px rgba(5, 150, 105, 0.3), 0 2px 8px rgba(5, 150, 105, 0.25)' : '0 0 0 1px rgba(5, 150, 105, 0.2), 0 2px 8px rgba(5, 150, 105, 0.2)')
-                                    : 'none',
-                                  transition: 'all 0.15s ease',
-                                }}
-                              >
-                                {img.data_url ? (
-                                  <img src={img.data_url} alt={`#${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                ) : (
-                                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <FiImage size={16} color={isDark ? '#8B949E' : '#64748B'} />
-                                  </div>
-                                )}
-                                {isSelected && (
-                                  <div
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                              <span style={{ fontSize: '0.625rem', color: reloadingStepId === step.id ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {reloadingStepId === step.id
+                                  ? `Reloading photos in ${condoName || step.folderName || 'folder'}...`
+                                  : `Found ${effectiveFolderImages.length} photos in ${condoName || step.folderName || 'folder'}`}
+                              </span>
+                              {effectiveFolderImages.length > 0 && (() => {
+                                const isManuallyChosen = Boolean(step.selectedIndices && step.selectedIndices.length > 0);
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => setManualChooseModalStepId(step.id)}
                                     style={{
-                                      position: 'absolute',
-                                      top: 3,
-                                      right: 3,
-                                      width: '18px',
-                                      height: '18px',
-                                      borderRadius: '50%',
-                                      backgroundColor: '#059669',
-                                      display: 'flex',
+                                      height: '24px',
+                                      padding: '0 9px',
+                                      borderRadius: '5px',
+                                      fontSize: '0.625rem',
+                                      fontWeight: 600,
+                                      border: isManuallyChosen
+                                        ? '1px solid #1D4ED8'
+                                        : (isDark ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid #BFDBFE'),
+                                      backgroundColor: isManuallyChosen
+                                        ? '#2563EB'
+                                        : (isDark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF'),
+                                      color: isManuallyChosen
+                                        ? '#FFFFFF'
+                                        : (isDark ? '#60A5FA' : '#2563EB'),
+                                      boxShadow: isManuallyChosen
+                                        ? '0 1px 3px rgba(37, 99, 235, 0.4), 0 1px 2px rgba(0, 0, 0, 0.1)'
+                                        : (isDark ? '0 1px 2px rgba(0, 0, 0, 0.2)' : '0 1px 2px rgba(0, 0, 0, 0.05)'),
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
                                       alignItems: 'center',
-                                      justifyContent: 'center',
-                                      color: '#FFFFFF',
-                                      fontSize: '10px',
-                                      fontWeight: 700,
-                                      boxShadow: '0 2px 4px rgba(0,0,0,0.35)',
+                                      gap: '5px',
+                                      flexShrink: 0,
+                                      transition: 'all 0.15s ease',
                                     }}
                                   >
-                                    ✓
-                                  </div>
-                                )}
-                                <span
-                                  style={{
-                                    position: 'absolute',
-                                    bottom: 3,
-                                    right: 3,
-                                    backgroundColor: isSelected ? 'rgba(5, 150, 105, 0.95)' : 'rgba(0,0,0,0.65)',
-                                    color: '#fff',
-                                    fontSize: '8px',
-                                    fontWeight: 600,
-                                    padding: '1px 5px',
-                                    borderRadius: '9999px',
-                                    backdropFilter: 'blur(3px)',
-                                    boxShadow: isSelected ? '0 1px 3px rgba(0,0,0,0.3)' : 'none',
-                                  }}
-                                >
-                                  {isSelected ? `#${selectionOrder}` : `#${idx + 1}`}
-                                </span>
+                                    <FiCheckSquare size={12} color={isManuallyChosen ? '#FFFFFF' : (isDark ? '#60A5FA' : '#2563EB')} />
+                                    <span>
+                                      {isManuallyChosen
+                                        ? `Manual: ${step.selectedIndices!.length} Chosen`
+                                        : 'Manual Choose'}
+                                    </span>
+                                  </button>
+                                );
+                              })()}
+                            </div>
+                            {renderCountStepper(step)}
+                          </div>
+
+                          {effectiveFolderImages.length > 0 && (() => {
+                            const targetCount = Math.max(1, step.count || 1);
+                            const currentSelected = (step.selectedIndices && step.selectedIndices.length > 0)
+                              ? step.selectedIndices
+                              : Array.from({ length: Math.min(targetCount, effectiveFolderImages.length) }, (_, i) => i);
+
+                            return (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflowX: 'auto', padding: '3px 0' }}>
+                                {effectiveFolderImages.map((img, idx) => {
+                                  const isSelected = currentSelected.includes(idx);
+                                  const selectionOrder = currentSelected.indexOf(idx) + 1;
+
+                                  return (
+                                    <div
+                                      key={idx}
+                                      onClick={() => {
+                                        let updated = [...currentSelected];
+                                        if (updated.includes(idx)) {
+                                          if (targetCount === 1) {
+                                            // only 1 allowed, keep selected
+                                          } else if (updated.length > 1) {
+                                            updated = updated.filter((i) => i !== idx);
+                                          }
+                                        } else {
+                                          if (targetCount === 1) {
+                                            updated = [idx];
+                                          } else if (updated.length < targetCount) {
+                                            updated.push(idx);
+                                          } else {
+                                            // At setup count: replace first pick with new pick
+                                            updated = [...updated.slice(1), idx];
+                                          }
+                                        }
+                                        handleUpdateStep(step.id, { selectedIndices: updated });
+                                      }}
+                                      style={{
+                                        width: '64px',
+                                        height: '64px',
+                                        borderRadius: '8px',
+                                        border: isSelected
+                                          ? (isDark ? '2px solid rgba(5, 150, 105, 0.95)' : '2px solid #059669')
+                                          : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
+                                        opacity: isSelected ? 1 : 0.45,
+                                        overflow: 'hidden',
+                                        position: 'relative',
+                                        flexShrink: 0,
+                                        cursor: 'pointer',
+                                        backgroundColor: isSelected
+                                          ? (isDark ? 'rgba(5, 150, 105, 0.08)' : 'rgba(5, 150, 105, 0.04)')
+                                          : (isDark ? '#0D1117' : '#F1F5F9'),
+                                        boxShadow: isSelected
+                                          ? (isDark ? '0 0 0 1px rgba(5, 150, 105, 0.3), 0 2px 8px rgba(5, 150, 105, 0.25)' : '0 0 0 1px rgba(5, 150, 105, 0.2), 0 2px 8px rgba(5, 150, 105, 0.2)')
+                                          : 'none',
+                                        transition: 'all 0.15s ease',
+                                      }}
+                                    >
+                                      {img.data_url ? (
+                                        <img src={img.data_url} alt={`#${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                      ) : (
+                                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                          <FiImage size={16} color={isDark ? '#8B949E' : '#64748B'} />
+                                        </div>
+                                      )}
+                                      {isSelected && (
+                                        <div
+                                          style={{
+                                            position: 'absolute',
+                                            top: 3,
+                                            right: 3,
+                                            width: '18px',
+                                            height: '18px',
+                                            borderRadius: '50%',
+                                            backgroundColor: '#059669',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            color: '#FFFFFF',
+                                            fontSize: '10px',
+                                            fontWeight: 700,
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.35)',
+                                          }}
+                                        >
+                                          ✓
+                                        </div>
+                                      )}
+                                      <span
+                                        style={{
+                                          position: 'absolute',
+                                          bottom: 3,
+                                          right: 3,
+                                          backgroundColor: isSelected ? 'rgba(5, 150, 105, 0.95)' : 'rgba(0,0,0,0.65)',
+                                          color: '#fff',
+                                          fontSize: '8px',
+                                          fontWeight: 600,
+                                          padding: '1px 5px',
+                                          borderRadius: '9999px',
+                                          backdropFilter: 'blur(3px)',
+                                          boxShadow: isSelected ? '0 1px 3px rgba(0,0,0,0.3)' : 'none',
+                                        }}
+                                      >
+                                        {isSelected ? `#${selectionOrder}` : `#${idx + 1}`}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             );
-                          })}
-                        </div>
+                          })()}
+                        </>
                       );
                     })()}
                   </div>
