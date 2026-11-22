@@ -30,6 +30,7 @@ import type { BrowserGroupItem } from './types';
 export interface WorkflowImageSource {
   id: string;
   title: string;
+  groupTitle?: string;
   nodeType?: string;
   images?: Array<{ url: string; index?: number; filename?: string }>;
   count?: number;
@@ -91,11 +92,21 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
     }
     defs.push({
       id: 'enhanced-images',
-      title: 'Enhance IMG (AI Processor)',
+      title: 'Enhance IMG',
+      groupTitle: 'External Browser #1',
       nodeType: 'enhance',
       images: enhancedImages,
       count: enhancedImages.length,
-      description: `${enhancedImages.length} enhanced room photos`,
+      description: `${enhancedImages.length} enhanced photos`,
+    });
+    defs.push({
+      id: 'hero-images',
+      title: 'FB Hero',
+      groupTitle: 'External Browser #1',
+      nodeType: 'hero',
+      images: [],
+      count: 0,
+      description: '0 hero photos',
     });
     return defs;
   }, [workflowImageNodes, propertyImages, enhancedImages]);
@@ -2096,10 +2107,12 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                             )}
 
                             {(step.sourceType === 'workflow' || step.sourceType === 'enhanced') && (() => {
-                              const selectedSource = activeWorkflowSources.find((s) => s.id === (step.workflowSourceId || activeWorkflowSources[0]?.id)) || activeWorkflowSources[0];
+                              const selectedSource = activeWorkflowSources.find((s) => s.id === step.workflowSourceId) ||
+                                activeWorkflowSources.find((s) => s.id === (activeWorkflowSources[0]?.id)) ||
+                                activeWorkflowSources[0];
                               const sourceImages = selectedSource?.images && selectedSource.images.length > 0
                                 ? selectedSource.images
-                                : (selectedSource?.nodeType === 'enhance' ? enhancedImages : propertyImages);
+                                : (selectedSource?.nodeType === 'enhance' ? enhancedImages : (selectedSource?.nodeType === 'hero' ? (selectedSource?.images || []) : propertyImages));
                               const isDropdownOpen = activeWorkflowDropdownStepId === step.id;
 
                               return (
@@ -2173,81 +2186,155 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                             left: 0,
                                             right: 0,
                                             zIndex: 50,
-                                            maxHeight: '140px',
+                                            maxHeight: '170px',
                                             overflowY: 'auto',
                                             borderRadius: '5px',
                                             border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                                             backgroundColor: isDark ? '#161B22' : '#FFFFFF',
                                             boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-                                            padding: '3px',
+                                            padding: '4px',
                                             display: 'flex',
                                             flexDirection: 'column',
-                                            gap: '1px',
+                                            gap: '2px',
                                           }}
                                         >
-                                          {activeWorkflowSources.map((src) => {
-                                            const isCurrent = src.id === selectedSource?.id;
-                                            const count = src.images?.length ?? src.count ?? 0;
-                                            return (
-                                              <button
-                                                key={src.id}
-                                                type="button"
-                                                onClick={() => {
-                                                  handleUpdateStep(step.id, { workflowSourceId: src.id });
-                                                  setActiveWorkflowDropdownStepId(null);
-                                                }}
-                                                style={{
-                                                  width: '100%',
-                                                  height: '25px',
-                                                  padding: '0 8px',
-                                                  borderRadius: '3px',
-                                                  border: 'none',
-                                                  backgroundColor: isCurrent
-                                                    ? (isDark ? '#21262D' : '#E2E8F0')
-                                                    : 'transparent',
-                                                  color: isCurrent
-                                                    ? (isDark ? '#F0F6FC' : '#0F172A')
-                                                    : (isDark ? '#C9D1D9' : '#334155'),
-                                                  fontSize: '0.65625rem',
-                                                  fontWeight: isCurrent ? 600 : 400,
-                                                  display: 'flex',
-                                                  alignItems: 'center',
-                                                  justifyContent: 'space-between',
-                                                  cursor: 'pointer',
-                                                  transition: 'all 0.1s ease',
-                                                }}
-                                                onMouseEnter={(e) => {
-                                                  if (!isCurrent) {
-                                                    e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
-                                                  }
-                                                }}
-                                                onMouseLeave={(e) => {
-                                                  if (!isCurrent) {
-                                                    e.currentTarget.style.backgroundColor = 'transparent';
-                                                  }
-                                                }}
-                                              >
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                  <FiLayers size={12} style={{ color: isCurrent ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B') }} />
-                                                  <span>{src.title}</span>
-                                                </div>
+                                          {(() => {
+                                            const rootSources = activeWorkflowSources.filter((s) => !s.groupTitle);
+                                            const groupedMap: Record<string, WorkflowImageSource[]> = {};
+                                            activeWorkflowSources
+                                              .filter((s) => s.groupTitle)
+                                              .forEach((s) => {
+                                                const g = s.groupTitle!;
+                                                if (!groupedMap[g]) groupedMap[g] = [];
+                                                groupedMap[g].push(s);
+                                              });
 
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                  <span
-                                                    style={{
-                                                      fontSize: '0.59375rem',
-                                                      color: isDark ? '#8B949E' : '#64748B',
-                                                    }}
-                                                  >
-                                                    {count} photo{count !== 1 ? 's' : ''}
-                                                  </span>
-                                                  {isCurrent && (
-                                                    <FiCheck size={12} style={{ color: '#58A6FF' }} />
-                                                  )}
-                                                </div>
-                                              </button>
+                                            const renderSourceButton = (src: WorkflowImageSource, isIndented = false) => {
+                                              const isCurrent = src.id === selectedSource?.id;
+                                              const count = src.images?.length ?? src.count ?? 0;
+                                              return (
+                                                <button
+                                                  key={src.id}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    handleUpdateStep(step.id, { workflowSourceId: src.id });
+                                                    setActiveWorkflowDropdownStepId(null);
+                                                  }}
+                                                  style={{
+                                                    width: '100%',
+                                                    height: '25px',
+                                                    padding: isIndented ? '0 8px 0 18px' : '0 8px',
+                                                    borderRadius: '3px',
+                                                    border: 'none',
+                                                    backgroundColor: isCurrent
+                                                      ? (isDark ? '#21262D' : '#E2E8F0')
+                                                      : 'transparent',
+                                                    color: isCurrent
+                                                      ? (isDark ? '#F0F6FC' : '#0F172A')
+                                                      : (isDark ? '#C9D1D9' : '#334155'),
+                                                    fontSize: '0.65625rem',
+                                                    fontWeight: isCurrent ? 600 : 400,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.1s ease',
+                                                  }}
+                                                  onMouseEnter={(e) => {
+                                                    if (!isCurrent) {
+                                                      e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                                                    }
+                                                  }}
+                                                  onMouseLeave={(e) => {
+                                                    if (!isCurrent) {
+                                                      e.currentTarget.style.backgroundColor = 'transparent';
+                                                    }
+                                                  }}
+                                                >
+                                                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                                    <FiLayers
+                                                      size={11}
+                                                      style={{
+                                                        color: isCurrent ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B'),
+                                                        flexShrink: 0,
+                                                      }}
+                                                    />
+                                                    <span>{src.title}</span>
+                                                  </div>
+
+                                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <span
+                                                      style={{
+                                                        fontSize: '0.59375rem',
+                                                        color: isDark ? '#8B949E' : '#64748B',
+                                                      }}
+                                                    >
+                                                      {count} photo{count !== 1 ? 's' : ''}
+                                                    </span>
+                                                    {isCurrent && (
+                                                      <FiCheck size={11} style={{ color: '#58A6FF' }} />
+                                                    )}
+                                                  </div>
+                                                </button>
+                                              );
+                                            };
+
+                                            return (
+                                              <>
+                                                {/* Top Level / Root Sources (e.g. Get Images) */}
+                                                {rootSources.map((src) => renderSourceButton(src, false))}
+
+                                                {/* Grouped Sources (e.g. Under Main Box: External Browser #1) */}
+                                                {Object.entries(groupedMap).map(([groupTitle, items]) => (
+                                                  <div key={`group-${groupTitle}`} style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                                    {/* Main Box Header */}
+                                                    <div
+                                                      style={{
+                                                        padding: '5px 8px 3px 8px',
+                                                        marginTop: '3px',
+                                                        marginBottom: '1px',
+                                                        borderTop: isDark ? '1px solid #21262D' : '1px solid #F1F5F9',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        userSelect: 'none',
+                                                      }}
+                                                    >
+                                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        <FiMonitor size={11} style={{ color: '#06B6D4' }} />
+                                                        <span
+                                                          style={{
+                                                            fontSize: '0.625rem',
+                                                            fontWeight: 600,
+                                                            color: isDark ? '#E6EDF3' : '#1E293B',
+                                                          }}
+                                                        >
+                                                          {groupTitle}
+                                                        </span>
+                                                      </div>
+                                                      <span
+                                                        style={{
+                                                          fontSize: '0.5rem',
+                                                          fontWeight: 600,
+                                                          padding: '1px 4px',
+                                                          borderRadius: '3px',
+                                                          backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                                                          color: isDark ? '#8B949E' : '#64748B',
+                                                          textTransform: 'uppercase',
+                                                          letterSpacing: '0.04em',
+                                                        }}
+                                                      >
+                                                        Main Box
+                                                      </span>
+                                                    </div>
+
+                                                    {/* Child Boxes with Images (e.g. Enhance IMG, FB Hero) */}
+                                                    {items.map((src) => renderSourceButton(src, true))}
+                                                  </div>
+                                                ))}
+                                              </>
                                             );
-                                          })}
+                                          })()}
                                         </div>
                                       </>
                                     )}
@@ -2764,7 +2851,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                         const selectedSrc = activeWorkflowSources.find((w) => w.id === step.workflowSourceId) || activeWorkflowSources[0];
                         const sourceImages = selectedSrc?.images && selectedSrc.images.length > 0
                           ? selectedSrc.images
-                          : (selectedSrc?.nodeType === 'enhance' ? enhancedImages : propertyImages);
+                          : (selectedSrc?.nodeType === 'enhance' ? enhancedImages : (selectedSrc?.nodeType === 'hero' ? (selectedSrc?.images || []) : propertyImages));
 
                         return Array.from({ length: Math.min(10, Math.max(1, step.count)) }).map((_, i) => {
                           const img = step.uploadedUrls?.[i] ||

@@ -20640,9 +20640,9 @@ export const FacebookWorkflowCanvas = forwardRef<
               ? _projectName
               : 'Regent Home Bangna';
 
-          const formattedPropertyImages = (images || []).map((img: any, i: number) => ({
-            url: typeof img === 'string' ? img : (img?.url || img?.src || ''),
-            index: i + 1,
+          const formattedPropertyImages = (effectiveImages && effectiveImages.length > 0 ? effectiveImages : images || []).map((img: any, i: number) => ({
+            url: typeof img === 'string' ? img : (img?.url || img?.source_url || img?.stored_url || img?.src || ''),
+            index: typeof img?.index === 'number' ? img.index + 1 : i + 1,
             filename: img?.filename || `Photo #${i + 1}`,
           }));
 
@@ -20652,10 +20652,34 @@ export const FacebookWorkflowCanvas = forwardRef<
             filename: `Enhanced Photo #${i + 1}`,
           }));
 
+          let currentHero = heroImage;
+          if (!currentHero && typeof localStorage !== 'undefined') {
+            try {
+              const saved = localStorage.getItem('bolthaven_last_hero_image');
+              if (saved) currentHero = JSON.parse(saved);
+            } catch (_) {}
+          }
+          const formattedHeroImages = currentHero?.url ? [{
+            url: currentHero.url,
+            index: 1,
+            filename: currentHero.fileName || 'FB Hero Photo',
+          }] : [];
+
+          // Find the External Browser parent node of fromNodeId (or the active external browser)
+          const extBrowserBox = config.aiBoxes.find((b) =>
+            isExternalBrowserAIBox(b) && (config.connections || []).some(
+              (c) => (c.fromNodeId === b.id && c.toNodeId === fromNodeId) ||
+                     (c.toNodeId === b.id && c.fromNodeId === fromNodeId)
+            )
+          ) || config.aiBoxes.find((b) => isExternalBrowserAIBox(b));
+
+          const externalBrowserTitle = extBrowserBox?.title || 'External Browser #1';
+
           // Connected workflow image sources
           const workflowImageNodes: Array<{
             id: string;
             title: string;
+            groupTitle?: string;
             nodeType?: string;
             images?: Array<{ url: string; index?: number; filename?: string }>;
             count?: number;
@@ -20677,46 +20701,62 @@ export const FacebookWorkflowCanvas = forwardRef<
             });
           }
 
-          const connectedImageBoxes = config.aiBoxes.filter((b) => {
-            if (b.id === fromNodeId) return false;
-            // Exclude text formats or text prompt boxes
-            if (isTextFormatAIBox(b) || isTextAIBox(b, config.connections) || isChromeProfileAIBox(b)) return false;
-            if (b.title?.toLowerCase().includes('format') || b.title?.toLowerCase().includes('watermark') || b.title?.toLowerCase().includes('crop')) return false;
-            const isConn = (config.connections || []).some(
-              (c) => c.fromNodeId === b.id || c.toNodeId === b.id
-            );
-            return (
-              isConn &&
-              (isEnhanceAIBox(b, config.connections) ||
-               b.processType === 'image_enhance' ||
-               b.processType === 'image_edit' ||
-               (b.title?.toLowerCase().includes('enhance') && !b.title?.toLowerCase().includes('prompt')))
-            );
+          // Identify child tab group boxes under this External Browser / Chrome Profile
+          const enhanceTabBox = config.aiBoxes.find((b) =>
+            (isChromeTabGroupAIBox(b) || isEnhanceAIBox(b, config.connections) || b.processType === 'image_enhance') &&
+            (b.title?.toLowerCase().includes('enhance') || b.id.includes('enhance') || b.browserGroupName?.toLowerCase().includes('enhance'))
+          );
+
+          const heroTabBox = config.aiBoxes.find((b) =>
+            (isChromeTabGroupAIBox(b) || b.processType === 'ai_processor') &&
+            (b.title?.toLowerCase().includes('hero') || b.id.includes('hero') || b.browserGroupName?.toLowerCase().includes('hero'))
+          );
+
+          // 1. Child: Enhance IMG
+          workflowImageNodes.push({
+            id: enhanceTabBox?.id || 'tabgroup-enhance-img',
+            title: enhanceTabBox?.title || 'Enhance IMG',
+            groupTitle: externalBrowserTitle,
+            nodeType: 'enhance',
+            images: formattedEnhancedImages,
+            count: formattedEnhancedImages.length,
+            description: `${formattedEnhancedImages.length} enhanced photos`,
           });
 
-          connectedImageBoxes.forEach((b) => {
-            const isEnhance = isEnhanceAIBox(b, config.connections) || b.processType === 'image_enhance' || b.title?.toLowerCase().includes('enhance') || isExternalBrowserAIBox(b);
-            const imgs = isEnhance && formattedEnhancedImages.length > 0 ? formattedEnhancedImages : formattedPropertyImages;
+          // 2. Child: FB Hero
+          workflowImageNodes.push({
+            id: heroTabBox?.id || 'tabgroup-fb-hero',
+            title: heroTabBox?.title || 'FB Hero',
+            groupTitle: externalBrowserTitle,
+            nodeType: 'hero',
+            images: formattedHeroImages,
+            count: formattedHeroImages.length,
+            description: `${formattedHeroImages.length} hero photo${formattedHeroImages.length !== 1 ? 's' : ''}`,
+          });
+
+          // 3. Any additional connected image tab groups
+          const additionalTabBoxes = config.aiBoxes.filter((b) => {
+            if (b.id === fromNodeId) return false;
+            if (enhanceTabBox && b.id === enhanceTabBox.id) return false;
+            if (heroTabBox && b.id === heroTabBox.id) return false;
+            if (isExternalBrowserAIBox(b)) return false;
+            if (isTextFormatAIBox(b) || isTextAIBox(b, config.connections) || isChromeProfileAIBox(b)) return false;
+            if (b.title?.toLowerCase().includes('prompt') || b.title?.toLowerCase().includes('format') || b.title?.toLowerCase().includes('watermark') || b.title?.toLowerCase().includes('crop')) return false;
+            const isConn = (config.connections || []).some((c) => c.fromNodeId === b.id || c.toNodeId === b.id);
+            return isConn && (isChromeTabGroupAIBox(b) || b.processType === 'image_enhance' || b.processType === 'image_edit');
+          });
+
+          additionalTabBoxes.forEach((b) => {
             workflowImageNodes.push({
               id: b.id,
-              title: b.title || 'Enhance IMG',
-              nodeType: isCropStudioBox(b) ? 'crop' : isWatermarkAIBox(b) ? 'watermark' : 'enhance',
-              images: imgs,
-              count: imgs.length,
-              description: isEnhance ? `${imgs.length} enhanced photos` : `${imgs.length} photos`,
+              title: b.title || 'Tab Group',
+              groupTitle: externalBrowserTitle,
+              nodeType: 'tab-group',
+              images: formattedPropertyImages,
+              count: formattedPropertyImages.length,
+              description: `${formattedPropertyImages.length} photos`,
             });
           });
-
-          if (!workflowImageNodes.some((n) => n.nodeType === 'enhance' || n.id.includes('enhance'))) {
-            workflowImageNodes.push({
-              id: 'enhanced-images',
-              title: 'Enhance IMG (AI Processor)',
-              nodeType: 'enhance',
-              images: formattedEnhancedImages,
-              count: formattedEnhancedImages.length,
-              description: `${formattedEnhancedImages.length} enhanced photos`,
-            });
-          }
 
           return (
             <ChromeTabGroupConnectDrawer
