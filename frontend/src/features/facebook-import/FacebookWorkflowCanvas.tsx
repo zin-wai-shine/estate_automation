@@ -72,7 +72,7 @@ import { HiSparkles } from 'react-icons/hi2';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
-import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox, AI_ENGINE_MODEL_GROUPS, CONTENT_AI_MODEL_OPTIONS } from './aiModelUtils';
+import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isCropStudioBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox, AI_ENGINE_MODEL_GROUPS, CONTENT_AI_MODEL_OPTIONS } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
 import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
 import { getPersistedReferenceImage } from '../browser-processing/referenceImageStorage';
@@ -87,7 +87,7 @@ import { loadWatermarkPresets, DEFAULT_WATERMARK_CONFIG, DEFAULT_PRESETS, type W
 import { getSavedCropFormats, type CropStudioFormat, formatImageWithCropFormatSlices, type FormattedCropSlice, clearCropSlicesCache } from '../watermark/cropFormats';
 import { getStoredManagedPages, saveStoredManagedPage, DEFAULT_MANAGED_FB_PAGES, type ManagedPageMeta } from '../autopost/autoPostStorage';
 
-export { getAIModelDisplayName, isWatermarkAIBox, isEnhanceAIBox, isTextFormatAIBox, isTextAIBox };
+export { getAIModelDisplayName, isWatermarkAIBox, isCropStudioBox, isEnhanceAIBox, isTextFormatAIBox, isTextAIBox };
 
 export interface CanvasPromptOption {
   id: string;
@@ -771,16 +771,18 @@ export const autoConnectWorkflow = (
   const chromeTabGroupBoxes = boxes.filter((b) => isChromeTabGroupAIBox(b));
   const chromeProfileBoxes = boxes.filter((b) => isChromeProfileAIBox(b));
   const externalBrowserBoxes = boxes.filter((b) => isExternalBrowserAIBox(b));
+  const cropStudioBoxes = boxes.filter((b) => isCropStudioBox(b));
+  const watermarkBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && !isCropStudioBox(b) && isWatermarkAIBox(b));
   const enhanceBoxes = boxes.filter(
-    (b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && !isWatermarkAIBox(b) && !isExternalBrowserAIBox(b) && isEnhanceAIBox(b, conns)
+    (b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && !isWatermarkAIBox(b) && !isCropStudioBox(b) && !isExternalBrowserAIBox(b) && isEnhanceAIBox(b, conns)
   );
-  const watermarkBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && isWatermarkAIBox(b));
   const textFormatBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && isTextFormatAIBox(b));
   const textAIBoxes = boxes.filter(
     (b) =>
       !isChromeProfileAIBox(b) &&
       !isChromeTabGroupAIBox(b) &&
       !isWatermarkAIBox(b) &&
+      !isCropStudioBox(b) &&
       !isExternalBrowserAIBox(b) &&
       !enhanceBoxes.includes(b) &&
       !isTextFormatAIBox(b) &&
@@ -905,9 +907,65 @@ export const autoConnectWorkflow = (
     }
   }
 
-  // 2. Image Pipeline: get-images -> enhancers -> watermarks
+  // 2. Image Pipeline: get-images -> enhancers / external browsers -> cropStudioBoxes -> watermarks
   if (getImagesEnabled) {
-    if (enhanceBoxes.length > 0 && watermarkBoxes.length > 0) {
+    if (cropStudioBoxes.length > 0) {
+      const primaryCrop = cropStudioBoxes[0];
+
+      // Remove direct shortcuts from get-images, enhancers, or external browsers to child watermarkBoxes when cropStudio exists
+      conns = conns.filter(
+        (c) =>
+          !(c.fromNodeId === 'get-images' && watermarkBoxes.some((w) => w.id === c.toNodeId)) &&
+          !(enhanceBoxes.some((e) => e.id === c.fromNodeId) && watermarkBoxes.some((w) => w.id === c.toNodeId)) &&
+          !(externalBrowserBoxes.some((eb) => eb.id === c.fromNodeId) && watermarkBoxes.some((w) => w.id === c.toNodeId))
+      );
+
+      // Connect image source to cropStudioBox
+      if (externalBrowserBoxes.length > 0) {
+        externalBrowserBoxes.forEach((eb) => {
+          const exists = conns.some((c) => c.fromNodeId === eb.id && c.toNodeId === primaryCrop.id);
+          if (!exists) {
+            conns.push({
+              id: `conn-${eb.id}-${primaryCrop.id}`,
+              fromNodeId: eb.id,
+              toNodeId: primaryCrop.id,
+            });
+          }
+        });
+      } else if (enhanceBoxes.length > 0) {
+        enhanceBoxes.forEach((enh) => {
+          const exists = conns.some((c) => c.fromNodeId === enh.id && c.toNodeId === primaryCrop.id);
+          if (!exists) {
+            conns.push({
+              id: `conn-${enh.id}-${primaryCrop.id}`,
+              fromNodeId: enh.id,
+              toNodeId: primaryCrop.id,
+            });
+          }
+        });
+      } else {
+        const exists = conns.some((c) => c.fromNodeId === 'get-images' && c.toNodeId === primaryCrop.id);
+        if (!exists) {
+          conns.push({
+            id: `conn-images-${primaryCrop.id}`,
+            fromNodeId: 'get-images',
+            toNodeId: primaryCrop.id,
+          });
+        }
+      }
+
+      // Connect cropStudio -> child watermark boxes
+      watermarkBoxes.forEach((wm) => {
+        const exists = conns.some((c) => c.fromNodeId === primaryCrop.id && c.toNodeId === wm.id);
+        if (!exists) {
+          conns.push({
+            id: `conn-${primaryCrop.id}-${wm.id}`,
+            fromNodeId: primaryCrop.id,
+            toNodeId: wm.id,
+          });
+        }
+      });
+    } else if (enhanceBoxes.length > 0 && watermarkBoxes.length > 0) {
       // Remove direct shortcuts from get-images to watermark when enhancers exist
       conns = conns.filter(
         (c) => !(c.fromNodeId === 'get-images' && watermarkBoxes.some((w) => w.id === c.toNodeId))
@@ -1033,44 +1091,75 @@ export const autoConnectWorkflow = (
     }
 
     // Image endpoints -> Combine Box
-    const imgEndpoints = watermarkBoxes.length > 0 ? watermarkBoxes : enhanceBoxes.length > 0 ? enhanceBoxes : [];
-    if (imgEndpoints.length > 0) {
-      // Remove shortcut from enhanceBoxes to combine box when watermarkBoxes exist
-      if (watermarkBoxes.length > 0) {
-        conns = conns.filter(
-          (c) => !(enhanceBoxes.some((a) => a.id === c.fromNodeId) && activeCombineBoxes.some((b) => b.id === c.toNodeId))
-        );
-      }
-      imgEndpoints.forEach((imgNode) => {
-        const alreadyConnected = conns.some(
-          (c) =>
-            c.fromNodeId === imgNode.id &&
+    if (cropStudioBoxes.length > 0) {
+      const primaryCrop = cropStudioBoxes[0];
+      // Strip any direct wires from child watermark boxes to combine boxes/output/destinations
+      const wmIds = new Set(watermarkBoxes.map((w) => w.id));
+      conns = conns.filter(
+        (c) =>
+          !(
+            wmIds.has(c.fromNodeId) &&
             (activeCombineBoxes.some((b) => b.id === c.toNodeId) ||
-              c.toNodeId.startsWith('dest-') ||
-              c.toNodeId === 'destination')
-        );
-        if (!alreadyConnected) {
-          conns.push({
-            id: `conn-${imgNode.id}-${primaryCombineId}`,
-            fromNodeId: imgNode.id,
-            toNodeId: primaryCombineId,
-          });
-        }
-      });
-    } else if (getImagesEnabled) {
+              c.toNodeId === 'output' ||
+              c.toNodeId === 'destination' ||
+              c.toNodeId.startsWith('dest-'))
+          )
+      );
+
       const alreadyConnected = conns.some(
         (c) =>
-          c.fromNodeId === 'get-images' &&
+          c.fromNodeId === primaryCrop.id &&
           (activeCombineBoxes.some((b) => b.id === c.toNodeId) ||
             c.toNodeId.startsWith('dest-') ||
             c.toNodeId === 'destination')
       );
       if (!alreadyConnected) {
         conns.push({
-          id: `conn-get-images-${primaryCombineId}`,
-          fromNodeId: 'get-images',
+          id: `conn-${primaryCrop.id}-${primaryCombineId}`,
+          fromNodeId: primaryCrop.id,
           toNodeId: primaryCombineId,
         });
+      }
+    } else {
+      const imgEndpoints = watermarkBoxes.length > 0 ? watermarkBoxes : enhanceBoxes.length > 0 ? enhanceBoxes : [];
+      if (imgEndpoints.length > 0) {
+        // Remove shortcut from enhanceBoxes to combine box when watermarkBoxes exist
+        if (watermarkBoxes.length > 0) {
+          conns = conns.filter(
+            (c) => !(enhanceBoxes.some((a) => a.id === c.fromNodeId) && activeCombineBoxes.some((b) => b.id === c.toNodeId))
+          );
+        }
+        imgEndpoints.forEach((imgNode) => {
+          const alreadyConnected = conns.some(
+            (c) =>
+              c.fromNodeId === imgNode.id &&
+              (activeCombineBoxes.some((b) => b.id === c.toNodeId) ||
+                c.toNodeId.startsWith('dest-') ||
+                c.toNodeId === 'destination')
+          );
+          if (!alreadyConnected) {
+            conns.push({
+              id: `conn-${imgNode.id}-${primaryCombineId}`,
+              fromNodeId: imgNode.id,
+              toNodeId: primaryCombineId,
+            });
+          }
+        });
+      } else if (getImagesEnabled) {
+        const alreadyConnected = conns.some(
+          (c) =>
+            c.fromNodeId === 'get-images' &&
+            (activeCombineBoxes.some((b) => b.id === c.toNodeId) ||
+              c.toNodeId.startsWith('dest-') ||
+              c.toNodeId === 'destination')
+        );
+        if (!alreadyConnected) {
+          conns.push({
+            id: `conn-get-images-${primaryCombineId}`,
+            fromNodeId: 'get-images',
+            toNodeId: primaryCombineId,
+          });
+        }
       }
     }
 
@@ -1225,16 +1314,17 @@ export const buildAlignedLayout = (
   const chromeProfileBoxes = boxes.filter((b) => isChromeProfileAIBox(b));
   const chromeTabGroupBoxes = boxes.filter((b) => isChromeTabGroupAIBox(b));
   const externalBrowserBoxes = boxes.filter((b) => isExternalBrowserAIBox(b));
-  const watermarkBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && isWatermarkAIBox(b));
+  const cropStudioBoxes = boxes.filter((b) => isCropStudioBox(b));
+  const watermarkBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && !isCropStudioBox(b) && isWatermarkAIBox(b));
   const enhanceBoxes = boxes.filter(
-    (b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && !isWatermarkAIBox(b) && !isExternalBrowserAIBox(b) && (isEnhanceAIBox(b, conns) || fromImages(b.id))
+    (b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && !isWatermarkAIBox(b) && !isCropStudioBox(b) && !isExternalBrowserAIBox(b) && (isEnhanceAIBox(b, conns) || fromImages(b.id))
   );
   const textFormatBoxes = boxes.filter((b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && isTextFormatAIBox(b));
   const textAIBoxes = boxes.filter(
-    (b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && !isWatermarkAIBox(b) && !isExternalBrowserAIBox(b) && !enhanceBoxes.includes(b) && !isTextFormatAIBox(b) && (fromContent(b.id) || !fromImages(b.id))
+    (b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && !isWatermarkAIBox(b) && !isCropStudioBox(b) && !isExternalBrowserAIBox(b) && !enhanceBoxes.includes(b) && !isTextFormatAIBox(b) && (fromContent(b.id) || !fromImages(b.id))
   );
   const otherBoxes = boxes.filter(
-    (b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && !isExternalBrowserAIBox(b) && !textAIBoxes.includes(b) && !textFormatBoxes.includes(b) && !enhanceBoxes.includes(b) && !watermarkBoxes.includes(b)
+    (b) => !isChromeProfileAIBox(b) && !isChromeTabGroupAIBox(b) && !isExternalBrowserAIBox(b) && !isCropStudioBox(b) && !textAIBoxes.includes(b) && !textFormatBoxes.includes(b) && !enhanceBoxes.includes(b) && !watermarkBoxes.includes(b)
   );
 
   // Equal Spacing Tree Metrics
@@ -2031,6 +2121,83 @@ export const sanitizeAndResolveCollisions = (
     );
   }
 
+  // Check if we have crop format presets but no central wide Crop Studio Box ("Photo Format & Crop")
+  const existingWatermarkBoxes = finalAiBoxes.filter((b) => isWatermarkAIBox(b));
+  const existingCropStudioBoxes = finalAiBoxes.filter((b) => isCropStudioBox(b));
+
+  if (existingWatermarkBoxes.length > 0 && existingCropStudioBoxes.length === 0) {
+    // Automatically synthesize the central wide Crop Studio Box ("Photo Format & Crop" container)
+    const centralCropBox: DynamicAIBoxConfig = {
+      id: 'ai-box-crop-studio-main',
+      title: 'Photo Format & Crop',
+      subtitle: 'Crop & Cut Studio',
+      processType: 'crop_studio',
+      provider: 'watermark',
+      model: 'crop_studio',
+      templateId: '',
+      templateText: '',
+      customPrompt: '',
+      enabled: true,
+      x: 740,
+      y: 350,
+    };
+    finalAiBoxes.push(centralCropBox);
+
+    // Rewire: source (external browser or get-images) -> centralCropBox
+    // centralCropBox -> each child crop format box
+    // centralCropBox -> combine box
+    const wmIds = new Set(existingWatermarkBoxes.map((w) => w.id));
+    finalConnections = finalConnections.filter(
+      (c) =>
+        !(c.fromNodeId === 'get-images' && wmIds.has(c.toNodeId)) &&
+        !(wmIds.has(c.toNodeId) && finalAiBoxes.some((b) => (isExternalBrowserAIBox(b) || isEnhanceAIBox(b, finalConnections)) && b.id === c.fromNodeId)) &&
+        !(wmIds.has(c.fromNodeId) && (c.toNodeId === 'output' || activeCombineBoxIds.includes(c.toNodeId) || c.toNodeId === 'destination' || c.toNodeId.startsWith('dest-')))
+    );
+
+    const sourceBox = finalAiBoxes.find((b) => isExternalBrowserAIBox(b) || isEnhanceAIBox(b, finalConnections));
+    const sourceId = sourceBox ? sourceBox.id : 'get-images';
+    if (!finalConnections.some((c) => c.fromNodeId === sourceId && c.toNodeId === centralCropBox.id)) {
+      finalConnections.push({
+        id: `conn-${sourceId}-${centralCropBox.id}`,
+        fromNodeId: sourceId,
+        toNodeId: centralCropBox.id,
+      });
+    }
+
+    existingWatermarkBoxes.forEach((w) => {
+      if (!finalConnections.some((c) => c.fromNodeId === centralCropBox.id && c.toNodeId === w.id)) {
+        finalConnections.push({
+          id: `conn-${centralCropBox.id}-${w.id}`,
+          fromNodeId: centralCropBox.id,
+          toNodeId: w.id,
+        });
+      }
+    });
+
+    if (activeCombineBoxIds.length > 0) {
+      const primaryCb = activeCombineBoxIds[0];
+      if (!finalConnections.some((c) => c.fromNodeId === centralCropBox.id && c.toNodeId === primaryCb)) {
+        finalConnections.push({
+          id: `conn-${centralCropBox.id}-${primaryCb}`,
+          fromNodeId: centralCropBox.id,
+          toNodeId: primaryCb,
+        });
+      }
+    }
+  }
+
+  // Crop format presets sit vertically attached above Crop Studio Box only; they must never have outgoing wires to combine boxes, output, or destinations
+  const allWatermarkIds = new Set(finalAiBoxes.filter((b) => isWatermarkAIBox(b)).map((b) => b.id));
+  const hasCentralCrop = finalAiBoxes.some((b) => isCropStudioBox(b));
+  if (hasCentralCrop && allWatermarkIds.size > 0) {
+    finalConnections = finalConnections.filter(
+      (c) =>
+        !(c.fromNodeId === 'get-images' && allWatermarkIds.has(c.toNodeId)) &&
+        !(allWatermarkIds.has(c.toNodeId) && finalAiBoxes.some((b) => (isExternalBrowserAIBox(b) || isEnhanceAIBox(b, finalConnections)) && b.id === c.fromNodeId)) &&
+        !(allWatermarkIds.has(c.fromNodeId) && (c.toNodeId === 'output' || allCombineBoxIds.includes(c.toNodeId) || c.toNodeId === 'destination' || c.toNodeId.startsWith('dest-')))
+    );
+  }
+
   // 2. Remove dangling/ghost wires to destination if no destination is active on canvas
   if (!isDestEnabled) {
     finalConnections = finalConnections.filter(
@@ -2150,6 +2317,30 @@ export const sanitizeAndResolveCollisions = (
       const apexY = (primaryAi.y ?? 245) - 148;
 
       sortedFormats.forEach((b, idx) => {
+        const distFromCenter = Math.abs(idx - centerIdx);
+        const normalizedDist = centerIdx > 0 ? distFromCenter / centerIdx : 0;
+        const archDrop = Math.round(Math.pow(normalizedDist, 1.8) * 34);
+        alignedCoordsById.set(b.id, {
+          x: Math.round(startLeft + idx * FORMAT_COL_WIDTH - 36),
+          y: apexY + archDrop,
+        });
+      });
+    }
+
+    // 1B. Auto-heal Crop Format Presets attached to central Crop Studio Box into a clean crown arch
+    const primaryCrop = finalAiBoxes.find((b) => isCropStudioBox(b));
+    const cropFormatBoxes = finalAiBoxes.filter((b) => isWatermarkAIBox(b));
+
+    if (primaryCrop && cropFormatBoxes.length > 0) {
+      const sortedCropFormats = [...cropFormatBoxes].sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
+      const cropCenterX = (primaryCrop.x ?? 740) + 108;
+      const FORMAT_COL_WIDTH = 155;
+      const totalWidth = (sortedCropFormats.length - 1) * FORMAT_COL_WIDTH;
+      const startLeft = cropCenterX - totalWidth / 2;
+      const centerIdx = (sortedCropFormats.length - 1) / 2;
+      const apexY = (primaryCrop.y ?? 350) - 148;
+
+      sortedCropFormats.forEach((b, idx) => {
         const distFromCenter = Math.abs(idx - centerIdx);
         const normalizedDist = centerIdx > 0 ? distFromCenter / centerIdx : 0;
         const archDrop = Math.round(Math.pow(normalizedDist, 1.8) * 34);
@@ -4361,7 +4552,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     nodeId: string;
     nodeType: string;
     title: string;
-    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group' | 'ai-format';
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group' | 'ai-format' | 'crop-format';
   } | null>(null);
 
   const [browserProfilesList, setBrowserProfilesList] = useState<BrowserProfile[]>([]);
@@ -5224,7 +5415,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     nodeId: string,
     nodeType: string,
     title: string,
-    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group' | 'ai-format',
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group' | 'ai-format' | 'crop-format',
   ) => {
     setActiveModalNode(null);
     setSelectedBoxId(null);
@@ -5242,6 +5433,8 @@ export const FacebookWorkflowCanvas = forwardRef<
       });
     } else if (platform === 'ai-format') {
       setAvailablePrompts(loadAvailablePromptTemplates());
+    } else if (platform === 'crop-format') {
+      setSavedCropFormatsList(getSavedCropFormats());
     }
     setConnectDrawerNode({ nodeId, nodeType, title, platform });
   };
@@ -5250,7 +5443,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     nodeId: string,
     nodeType: string,
     nodeTitle?: string,
-    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group' | 'ai-format',
+    platform?: 'facebook' | 'instagram' | 'tiktok' | 'database' | 'chrome-profile' | 'chrome-tab-group' | 'ai-format' | 'crop-format',
     customStyle?: React.CSSProperties,
     buttonText?: string,
   ) => (
@@ -5971,15 +6164,19 @@ export const FacebookWorkflowCanvas = forwardRef<
       const isProf = isChromeProfileAIBox(box);
       const isTabGroup = isChromeTabGroupAIBox(box);
       const isExt = isExternalBrowserAIBox(box) && !isProf && !isTabGroup;
-      const isTxt = isTextAIBox(box, config.connections);
+      const isCropStudio = isCropStudioBox(box);
+      const isTxt = isTextAIBox(box, config.connections) && !isTextFormatAIBox(box);
       const isFormat = isTextFormatAIBox(box);
-      const boxW = (isExt || isTxt) ? 216 : CIRCLE_SIZE;
-      const hasAddBtn = isNodeEffectivelyEnabled(box.id) && !isProf && !isTabGroup && !isFormat;
+      const isWatermark = isWatermarkAIBox(box);
+      const hasCropStudio = config.aiBoxes.some((b) => isCropStudioBox(b));
+      const isAttachedCropFormat = hasCropStudio && isWatermark;
+      const boxW = (isExt || isTxt || isCropStudio) ? 216 : CIRCLE_SIZE;
+      const hasAddBtn = isNodeEffectivelyEnabled(box.id) && !isProf && !isTabGroup && !isFormat && !isAttachedCropFormat;
       return socketType === 'output'
         ? { x: box.x + (hasAddBtn ? boxW + 37 : boxW - 1), y: box.y + HALF_CIRCLE }
         : (isProf || isTabGroup)
           ? { x: box.x + HALF_CIRCLE, y: box.y + 1 }
-          : isFormat
+          : (isFormat || isAttachedCropFormat)
             ? { x: box.x + HALF_CIRCLE, y: box.y + 71 }
             : { x: box.x + 1, y: box.y + HALF_CIRCLE };
     }
@@ -8827,7 +9024,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
       // Check aiBoxes
       (config.aiBoxes || []).forEach((b) => {
-        const isWide = isExternalBrowserAIBox(b) || (isTextAIBox(b, config.connections) && !isTextFormatAIBox(b));
+        const isWide = isExternalBrowserAIBox(b) || (isTextAIBox(b, config.connections) && !isTextFormatAIBox(b)) || isCropStudioBox(b);
         const w = isWide ? 216 : 72;
         const h = 72;
         if (isNodeIntersecting(b.x, b.y, w, h)) {
@@ -9975,6 +10172,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                 if (!isVerticalToAi) return null;
               }
 
+              const hasCentralCropStudio = config.aiBoxes.some((b) => isCropStudioBox(b));
+              if (fromBox && isWatermarkAIBox(fromBox) && hasCentralCropStudio) {
+                const isVerticalToCrop = Boolean(toBox && isCropStudioBox(toBox));
+                if (!isVerticalToCrop) return null;
+              }
+
               // 2. Do not render dangling wires to destinations if no destination is active on canvas
               if ((conn.toNodeId === 'destination' || conn.toNodeId.startsWith('dest-')) && activeDests.length === 0) {
                 return null;
@@ -9990,7 +10193,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                 (fromBox && isTextAIBox(fromBox, config.connections) && toBox && isTextFormatAIBox(toBox)) ||
                 (toBox && isTextAIBox(toBox, config.connections) && fromBox && isTextFormatAIBox(fromBox))
               );
-              const isBaseVerticalWire = isExternalToProfileWire || isProfileToTabGroupWire || isAIToFormatWire;
+              const isCropToFormatWire = Boolean(
+                (fromBox && isCropStudioBox(fromBox) && toBox && isWatermarkAIBox(toBox)) ||
+                (toBox && isCropStudioBox(toBox) && fromBox && isWatermarkAIBox(fromBox))
+              );
+              const isBaseVerticalWire = isExternalToProfileWire || isProfileToTabGroupWire || isAIToFormatWire || isCropToFormatWire;
 
               let fromPos = getNodeSocketPos(conn.fromNodeId, 'output');
               let toPos = getNodeSocketPos(conn.toNodeId, 'input');
@@ -10005,6 +10212,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                 const aiBox = isTextAIBox(fromBox, config.connections) ? fromBox : toBox;
                 const formatBox = isTextFormatAIBox(toBox) ? toBox : fromBox;
                 fromPos = { x: aiBox.x + 108, y: aiBox.y - 38 };
+                toPos = { x: formatBox.x + 36, y: formatBox.y + 71 };
+              } else if (isCropToFormatWire && fromBox && toBox) {
+                const cropBox = isCropStudioBox(fromBox) ? fromBox : toBox;
+                const formatBox = isWatermarkAIBox(toBox) ? toBox : fromBox;
+                fromPos = { x: cropBox.x + 108, y: cropBox.y - 38 };
                 toPos = { x: formatBox.x + 36, y: formatBox.y + 71 };
               }
 
@@ -10021,7 +10233,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 ? Math.abs(fromPos.x - toPos.x) < 5
                   ? `M ${fromPos.x} ${fromPos.y} L ${toPos.x} ${toPos.y}`
                   : `M ${fromPos.x} ${fromPos.y} C ${fromPos.x} ${fromPos.y + Math.max((toPos.y - fromPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y - Math.max((toPos.y - fromPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y}`
-                : isAIToFormatWire
+                : (isAIToFormatWire || isCropToFormatWire)
                   ? Math.abs(fromPos.x - toPos.x) < 5
                     ? `M ${fromPos.x} ${fromPos.y} L ${toPos.x} ${toPos.y}`
                     : `M ${fromPos.x} ${fromPos.y} C ${fromPos.x} ${fromPos.y - Math.max((fromPos.y - toPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y + Math.max((fromPos.y - toPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y}`
@@ -10851,11 +11063,14 @@ export const FacebookWorkflowCanvas = forwardRef<
             const isChromeProfile = isChromeProfileAIBox(box);
             const isChromeTabGroup = isChromeTabGroupAIBox(box);
             const isExternalBrowser = isExternalBrowserAIBox(box) && !isChromeProfile && !isChromeTabGroup;
+            const isCropStudio = isCropStudioBox(box);
             const isTextFormat = isTextFormatAIBox(box);
+            const hasCentralCropStudio = config.aiBoxes.some((b) => isCropStudioBox(b));
+            const isAttachedCropFormat = hasCentralCropStudio && isWatermark;
             const textAIBoxes = config.aiBoxes.filter((b) => isTextAIBox(b, config.connections));
             const textAIIndex = textAIBoxes.findIndex((b) => b.id === box.id);
-            const isTextAI = textAIIndex !== -1 && !isTextFormat;
-            const isWideNode = isExternalBrowser || isTextAI;
+            const isTextAI = textAIIndex !== -1 && !isTextFormat && !isCropStudio;
+            const isWideNode = isExternalBrowser || isTextAI || isCropStudio;
             const nodeWidth = isWideNode ? 216 : CIRCLE_SIZE;
 
             return (
@@ -10893,9 +11108,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
               >
                 <MergedNodeShape
-                  sockets={isChromeProfile || isChromeTabGroup || isTextFormat ? 'none' : 'both'}
+                  sockets={isChromeProfile || isChromeTabGroup || isTextFormat || isAttachedCropFormat ? 'none' : 'both'}
                   hasTopSocket={isChromeProfile || isChromeTabGroup}
-                  hasBottomSocket={isTextFormat}
+                  hasBottomSocket={isTextFormat || isAttachedCropFormat}
                   width={nodeWidth}
                   height={CIRCLE_SIZE}
                   strokeColor={strokeColor}
@@ -10908,8 +11123,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   highlightOutput={dragWire?.fromType === 'input' && isValidConnection(box.id, dragWire.fromNodeId)}
                   hasReceiver={boxHasReceiver}
                   hasSource={boxHasSource}
-                  showAddButton={!isChromeProfile && !isChromeTabGroup && !isTextFormat}
-                  showTopAddButton={isTextAI}
+                  showAddButton={!isChromeProfile && !isChromeTabGroup && !isTextFormat && !isAttachedCropFormat}
+                  showTopAddButton={isTextAI || isCropStudio}
                   showBottomAddButton={isExternalBrowser}
                   onAddClick={(e) => {
                     e.stopPropagation();
@@ -10923,6 +11138,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                   onTopAddClick={isTextAI ? (e) => {
                     e.stopPropagation();
                     handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'AI Model', 'ai-format');
+                  } : isCropStudio ? (e) => {
+                    e.stopPropagation();
+                    handleOpenConnectDrawer(box.id, 'ai-box', box.title || 'Photo Format & Crop', 'crop-format');
                   } : undefined}
                   onSocketMouseDown={(type, e) => handleSocketMouseDown(box.id, type, e)}
                   onSocketMouseUp={(type, e) => handleSocketMouseUp(box.id, type, e)}
@@ -10959,7 +11177,95 @@ export const FacebookWorkflowCanvas = forwardRef<
                     height: '100%',
                   }}
                 >
-                  {isWatermark ? (
+                  {isCropStudio ? (
+                    <>
+                      <div
+                        style={{
+                          width: '36px',
+                          height: '36px',
+                          borderRadius: '10px',
+                          backgroundColor: isDark ? 'rgba(168, 85, 247, 0.16)' : 'rgba(168, 85, 247, 0.12)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <FiScissors style={{ fontSize: '20px', color: isEffectiveEnabled ? (isDark ? '#C084FC' : '#9333EA') : '#8B949E', transition: 'color 0.2s ease' }} />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.25, minWidth: 0, flex: 1, pointerEvents: 'auto' }}>
+                        {editingCanvasBoxId === box.id ? (
+                          <input
+                            autoFocus
+                            type="text"
+                            value={editingCanvasBoxTitle}
+                            onChange={(e) => setEditingCanvasBoxTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                if (editingCanvasBoxTitle.trim()) {
+                                  handleUpdateAIBox(box.id, { title: editingCanvasBoxTitle.trim() });
+                                }
+                                setEditingCanvasBoxId(null);
+                              } else if (e.key === 'Escape') {
+                                setEditingCanvasBoxId(null);
+                              }
+                            }}
+                            onBlur={() => {
+                              if (editingCanvasBoxTitle.trim()) {
+                                handleUpdateAIBox(box.id, { title: editingCanvasBoxTitle.trim() });
+                              }
+                              setEditingCanvasBoxId(null);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            style={{
+                              fontSize: '0.8125rem',
+                              fontWeight: 700,
+                              color: isDark ? '#F1F5F9' : '#0F172A',
+                              backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+                              border: '1px solid #A855F7',
+                              borderRadius: '4px',
+                              padding: '1px 6px',
+                              outline: 'none',
+                              width: '125px',
+                              maxWidth: '125px',
+                              boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+                            }}
+                          />
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: '0.875rem',
+                              fontWeight: 700,
+                              color: isEffectiveEnabled ? (isDark ? '#F1F5F9' : '#0F172A') : '#8B949E',
+                              letterSpacing: '-0.01em',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              maxWidth: '125px',
+                              cursor: 'pointer',
+                            }}
+                            title={box.title || 'Photo Format & Crop'}
+                          >
+                            {box.title || 'Photo Format & Crop'}
+                          </span>
+                        )}
+                        <span
+                          style={{
+                            fontSize: '0.6875rem',
+                            color: isDark ? '#C084FC' : '#7C3AED',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            maxWidth: '125px',
+                          }}
+                        >
+                          {box.subtitle || 'Crop & Cut Studio'}
+                        </span>
+                      </div>
+                    </>
+                  ) : isWatermark ? (
                     <FiScissors style={{ fontSize: '28px', color: isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isExternalBrowser ? (
                     <>
@@ -11080,20 +11386,20 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <NodeExecutionBadge status={boxStatus} errorMessage={getNodeErrorMessage(box.id) || undefined} />
 
                 {/* Label positioning:
-                    - Format nodes (in branch ABOVE AI Box) place label ABOVE (bottom: CIRCLE_SIZE + 8px)
+                    - Format nodes (in branch ABOVE AI Box or Crop Studio Box) place label ABOVE (bottom: CIRCLE_SIZE + 8px)
                       so upward connector wires never cross through the text!
                     - Other nodes place label below (top: CIRCLE_SIZE + 8px)
                 */}
-                {!isTextAI && (
+                {!isTextAI && !isCropStudio && (
                   <div
                     style={{
                       position: 'absolute',
-                      top: isTextFormat ? 'auto' : isExternalBrowser ? `${CIRCLE_SIZE + 24}px` : `${CIRCLE_SIZE + 8}px`,
-                      bottom: isTextFormat ? `${CIRCLE_SIZE + 8}px` : 'auto',
+                      top: (isTextFormat || isAttachedCropFormat) ? 'auto' : isExternalBrowser ? `${CIRCLE_SIZE + 24}px` : `${CIRCLE_SIZE + 8}px`,
+                      bottom: (isTextFormat || isAttachedCropFormat) ? `${CIRCLE_SIZE + 8}px` : 'auto',
                       left: '50%',
                       transform: 'translateX(-50%)',
                       width: 'max-content',
-                      maxWidth: isExternalBrowser ? '240px' : isTextFormat ? '135px' : '160px',
+                      maxWidth: isExternalBrowser ? '240px' : (isTextFormat || isAttachedCropFormat) ? '135px' : '160px',
                       textAlign: 'center',
                       whiteSpace: 'normal',
                       lineHeight: '1.25',
@@ -12307,7 +12613,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       {/* ======================================================== */}
       {activeModalNode &&
         activeModalNode.type !== 'destination' &&
-        !(activeModalNode.type === 'ai-box' && currentModalAIBox && isWatermarkAIBox(currentModalAIBox)) &&
+        !(activeModalNode.type === 'ai-box' && currentModalAIBox && (isWatermarkAIBox(currentModalAIBox) || isCropStudioBox(currentModalAIBox))) &&
         !connectDrawerNode && (() => {
           const isTrigger = activeModalNode.type === 'trigger' || activeModalNode.type === 'add-trigger';
           const isContent = activeModalNode.type === 'get-content';
@@ -14323,6 +14629,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
                             const isContent = c.fromNodeId === 'get-content';
                             const isImages = c.fromNodeId === 'get-images';
+                            const isCropStudio = fromBox ? isCropStudioBox(fromBox) : false;
                             const isCrop = fromBox ? isTextFormatAIBox(fromBox) && (fromBox.processType === 'image_crop' || fromBox.title?.toLowerCase().includes('cut') || fromBox.title?.toLowerCase().includes('crop')) : false;
                             const isWatermark = fromBox ? isWatermarkAIBox(fromBox) : false;
                             const isBrowser = fromBox ? isExternalBrowserAIBox(fromBox) : false;
@@ -14337,7 +14644,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             const fromTitle = isContent ? 'Get Content' : isImages ? 'Get Images' : fromBox?.title || c.fromNodeId;
 
                             // ── A) IMAGE FORMAT / WATERMARK / CROP CARD ──
-                            if (isWatermark || isCrop || isImages) {
+                            if (isWatermark || isCrop || isImages || isCropStudio) {
                               const rawImageAssets: CombineMediaAssetItem[] = isImages
                                 ? (effectiveImages || []).map((img, idx) => {
                                     const rawUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url) || '';
@@ -14355,8 +14662,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   }).filter((a) => a.url)
                                 : [];
 
+                              const childCropIds = new Set((config.aiBoxes || []).filter((b) => isWatermarkAIBox(b)).map((b) => b.id));
                               const matchedAssets = fromBox
-                                ? combineMediaAssets.filter((a) => a.formatId === fromBox.id)
+                                ? combineMediaAssets.filter((a) => a.formatId === fromBox.id || (isCropStudio && childCropIds.has(a.formatId)))
                                 : (isImages ? combineMediaAssets.filter((a) => a.formatId === 'get-images') : []);
 
                               const boxAssets: CombineMediaAssetItem[] = matchedAssets.length > 0
@@ -18152,8 +18460,11 @@ export const FacebookWorkflowCanvas = forwardRef<
       {activeModalNode &&
         activeModalNode.type === 'ai-box' &&
         currentModalAIBox &&
-        isWatermarkAIBox(currentModalAIBox) &&
+        (isWatermarkAIBox(currentModalAIBox) || isCropStudioBox(currentModalAIBox)) &&
         !connectDrawerNode && (() => {
+          const effectiveTargetFormatBox = isCropStudioBox(currentModalAIBox)
+            ? ((config.aiBoxes || []).find((b) => isWatermarkAIBox(b) && (config.connections || []).some((c) => (c.fromNodeId === currentModalAIBox.id && c.toNodeId === b.id) || (c.fromNodeId === b.id && c.toNodeId === currentModalAIBox.id))) || currentModalAIBox)
+            : currentModalAIBox;
           return (
             <>
               <aside
@@ -18377,10 +18688,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                   )}
 
                   <WatermarkNodeModal
-                    key={currentModalAIBox.id}
-                    box={currentModalAIBox}
+                    key={effectiveTargetFormatBox.id}
+                    box={effectiveTargetFormatBox}
                     isDark={isDark}
-                    onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
+                    onUpdateBox={(_id, updates) => handleUpdateAIBox(effectiveTargetFormatBox.id, updates)}
                     onDeleteBox={(id) => {
                       handleDeleteAIBox(id);
                       handleCloseModal();
@@ -19961,6 +20272,317 @@ export const FacebookWorkflowCanvas = forwardRef<
                         No saved prompt templates found. Use "+ Custom AI Format" above.
                       </div>
                     )}
+                  </div>
+                </div>
+              </div>
+            </aside>
+          );
+        }
+
+        // If clicking [+] above Photo Format & Crop (Crop Studio):
+        // Show dedicated Crop & Cut Studio formats to attach vertically above Crop Box!
+        if (connectDrawerNode.platform === 'crop-format') {
+          const connectedFormats = config.aiBoxes.filter(
+            (b) =>
+              isWatermarkAIBox(b) &&
+              (config.connections || []).some(
+                (c) =>
+                  (c.fromNodeId === fromNodeId && c.toNodeId === b.id) ||
+                  (c.fromNodeId === b.id && c.toNodeId === fromNodeId)
+              )
+          );
+
+          return (
+            <aside
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: '380px',
+                maxWidth: '100%',
+                backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                borderLeft: '1px solid var(--border-color)',
+                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox)
+                  ? 'none'
+                  : isDark
+                    ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                    : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
+                zIndex: 170,
+                display: 'flex',
+                flexDirection: 'column',
+                animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  padding: '0.875rem 1rem',
+                  borderBottom: '1px solid var(--border-color)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: isDark
+                    ? 'linear-gradient(180deg, #161B22 0%, #0D1117 100%)'
+                    : '#FFFFFF',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                  <div
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      background: 'linear-gradient(135deg, #8B5CF6, #7C3AED)',
+                      color: '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 2px 6px rgba(139, 92, 246, 0.35)',
+                    }}
+                  >
+                    <FiScissors size={18} />
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: '0.8125rem',
+                        fontWeight: 700,
+                        color: isDark ? '#F0F6FC' : '#0F172A',
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      Connect Crop Format
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '0.625rem',
+                        color: '#A855F7',
+                        fontWeight: 600,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Photo Format & Crop Studio
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setConnectDrawerNode(null)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <FiX size={16} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  padding: '1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1rem',
+                }}
+              >
+                {/* Active Connected Crop Formats */}
+                {connectedFormats.length > 0 && (
+                  <div>
+                    <div
+                      style={{
+                        fontSize: '0.6875rem',
+                        fontWeight: 600,
+                        color: isDark ? '#8B949E' : '#64748B',
+                        marginBottom: '0.35rem',
+                      }}
+                    >
+                      Connected Formats ({connectedFormats.length})
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      {connectedFormats.map((fmt) => (
+                        <div
+                          key={fmt.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0.5rem 0.65rem',
+                            borderRadius: '6px',
+                            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : '#ECFDF5',
+                            border: '1px solid rgba(16, 185, 129, 0.25)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
+                            <FiCheck size={12} style={{ color: '#10B981', flexShrink: 0 }} />
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div
+                                style={{
+                                  fontSize: '0.71875rem',
+                                  fontWeight: 600,
+                                  color: isDark ? '#E6EDF3' : '#0F172A',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {fmt.title || 'Format Preset'}
+                              </div>
+                              <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                Positioned above {fromTitle}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteAIBox(fmt.id);
+                            }}
+                            title="Disconnect Format"
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: isDark ? '#F87171' : '#EF4444',
+                              cursor: 'pointer',
+                              padding: '2px 4px',
+                              borderRadius: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <FiTrash2 size={13} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Choose From Saved Crop Formats */}
+                <div>
+                  <div
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      color: isDark ? '#8B949E' : '#64748B',
+                      marginBottom: '0.35rem',
+                    }}
+                  >
+                    Choose Studio Crop Format
+                  </div>
+                  <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginBottom: '0.65rem' }}>
+                    Click a crop format below to connect it directly above {fromTitle}:
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                    {savedCropFormatsList.map((fmt) => {
+                      const isAlreadyAttached = connectedFormats.some((c) => c.cropFormatId === fmt.id || c.title?.includes(fmt.name));
+                      return (
+                        <div
+                          key={fmt.id}
+                          onClick={() => {
+                            if (isAlreadyAttached) return;
+                            handleAddWatermarkNodeConnectedFromImages(fromNodeId, fmt);
+                            setConnectDrawerNode(null);
+                          }}
+                          style={{
+                            padding: '0.65rem 0.75rem',
+                            borderRadius: '8px',
+                            border: isAlreadyAttached ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid var(--border-color)',
+                            backgroundColor: isAlreadyAttached
+                              ? (isDark ? 'rgba(16, 185, 129, 0.08)' : '#F0FDF4')
+                              : (isDark ? 'var(--bg-surface)' : '#F8FAFC'),
+                            cursor: isAlreadyAttached ? 'default' : 'pointer',
+                            transition: 'all 0.15s ease',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '8px',
+                          }}
+                        >
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span
+                                style={{
+                                  fontSize: '0.59375rem',
+                                  fontWeight: 700,
+                                  padding: '1px 5px',
+                                  borderRadius: '3px',
+                                  backgroundColor: isDark ? '#30363D' : '#E2E8F0',
+                                  color: isDark ? '#A855F7' : '#7C3AED',
+                                }}
+                              >
+                                {fmt.aspect || 'Crop'}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  color: 'var(--text-primary)',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {fmt.name}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                              {fmt.targetWidth}×{fmt.targetHeight} px {fmt.watermarkConfig?.enabled ? '· Watermark ON' : ''}
+                            </div>
+                          </div>
+
+                          {isAlreadyAttached ? (
+                            <span
+                              style={{
+                                fontSize: '0.625rem',
+                                fontWeight: 600,
+                                color: '#10B981',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                              }}
+                            >
+                              <FiCheck size={12} /> Connected
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                fontSize: '0.625rem',
+                                fontWeight: 600,
+                                padding: '3px 8px',
+                                borderRadius: '4px',
+                                backgroundColor: isDark ? 'rgba(139, 92, 246, 0.2)' : '#EDE9FE',
+                                color: isDark ? '#C4B5FD' : '#6D28D9',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <FiPlus size={11} /> Connect
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

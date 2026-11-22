@@ -31,7 +31,7 @@ import {
   ensureFormatsAreIsolated,
   type WorkflowFormat,
 } from './workflowFormats';
-import { isWatermarkAIBox, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox } from '../facebook-import/aiModelUtils';
+import { isWatermarkAIBox, isCropStudioBox, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox } from '../facebook-import/aiModelUtils';
 import { runN8NWorkflow } from '../../services/n8nService';
 import { createBatchImageQueue, startImageQueue, focusBrowserTabGroup, openBrowserProfile, fetchTabGroups, waitForBrowserTabsReady, startAutomation, stopAutomation, getAutomationStatus, fetchImageQueue } from '../browser-processing/browserAutomationService';
 import { resolvePromptForBrowserNode, getPersistedPromptKey } from '../browser-processing/browserPromptUtils';
@@ -2232,6 +2232,7 @@ export const CreateWorkflowView: React.FC = () => {
       const isImageBranchBox = (box: any): boolean => {
         if (
           isWatermarkAIBox(box) ||
+          isCropStudioBox(box) ||
           isExternalBrowserAIBox(box) ||
           box.processType === 'image_enhance' ||
           box.processType === 'image_upscale' ||
@@ -2335,6 +2336,7 @@ export const CreateWorkflowView: React.FC = () => {
         if (isRunStopped(myRunId) || branchFatalError) return false;
 
         const isWatermark = isWatermarkAIBox(box);
+        const isCropStudio = isCropStudioBox(box);
         const isTextFormat = isTextFormatAIBox(box);
         const isN8N = isN8NAIBox(box);
         const isGoogleSheet = isGoogleSheetBox(box);
@@ -2384,7 +2386,9 @@ export const CreateWorkflowView: React.FC = () => {
           [],
           [box.id],
           [],
-          isWatermark
+          isCropStudio
+            ? `✂️ Processing Studio crop formats [${box.title || 'Photo Format & Crop'}]...`
+            : isWatermark
             ? `✂️ Applying photo crop & frame preset [${box.title || 'Format'}]...`
             : isExternalBrowser
             ? `🌐 Coordinating External Browser & Image Queue [${box.title || 'External Browser'}]...`
@@ -2398,112 +2402,123 @@ export const CreateWorkflowView: React.FC = () => {
           { stepIndex: 4 }
         );
 
-        if (isWatermark) {
+        if (isWatermark || isCropStudio) {
           if (!imageList || imageList.length === 0) {
             console.warn(`Skipping watermark box [${box.title}] because imageList is empty`);
             return true;
           }
           const savedFormats = getSavedCropFormats();
-          const baseFormat =
-            savedFormats.find((f) => f.id === box.cropFormatId || f.id === box.templateId || f.id === box.watermarkPresetId) ||
-            savedFormats.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
-            savedFormats.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
-            ((box.title?.toLowerCase().includes('fb') || box.templateText?.toLowerCase().includes('fb'))
-              ? savedFormats.find((f) => f.name.toLowerCase().includes('fb'))
-              : null) ||
-            savedFormats[0];
+          const targetBoxes = isCropStudio
+            ? (() => {
+                const children = (cfg.aiBoxes || []).filter(
+                  (b: any) =>
+                    isWatermarkAIBox(b) &&
+                    (cfg.connections || []).some(
+                      (c: any) => (c.fromNodeId === box.id && c.toNodeId === b.id) || (c.toNodeId === box.id && c.fromNodeId === b.id)
+                    )
+                );
+                return children.length > 0 ? children : [box];
+              })()
+            : [box];
 
-          const activeWk = typeof window !== 'undefined' ? loadActiveWatermarkConfig() : null;
-          const targetFormat: CropStudioFormat = {
-            ...baseFormat,
-            targetWidth: box.targetWidth || baseFormat?.targetWidth || 1080,
-            targetHeight: box.targetHeight || baseFormat?.targetHeight || 1350,
-            aspect: box.aspect || baseFormat?.aspect || '4:5',
-            fitMode: (box.fitMode || baseFormat?.fitMode || 'cover') as any,
-            focusPosition: (box.focusPosition || baseFormat?.focusPosition || 'center') as any,
-            cropZoom: box.cropZoom || baseFormat?.cropZoom || 1,
-            watermarkConfig:
-              box.watermarkConfig ||
-              baseFormat?.watermarkConfig ||
-              (activeWk?.config?.enabled ? activeWk.config : undefined),
-          };
+          for (const currentTargetBox of targetBoxes) {
+            if (isRunStopped(myRunId) || branchFatalError) return false;
+            const baseFormat =
+              savedFormats.find((f) => f.id === currentTargetBox.cropFormatId || f.id === currentTargetBox.templateId || f.id === currentTargetBox.watermarkPresetId) ||
+              savedFormats.find((f) => currentTargetBox.templateText && f.name.toLowerCase() === currentTargetBox.templateText.toLowerCase()) ||
+              savedFormats.find((f) => currentTargetBox.title && f.name && currentTargetBox.title.toLowerCase().includes(f.name.toLowerCase())) ||
+              ((currentTargetBox.title?.toLowerCase().includes('fb') || currentTargetBox.templateText?.toLowerCase().includes('fb'))
+                ? savedFormats.find((f) => f.name.toLowerCase().includes('fb'))
+                : null) ||
+              savedFormats[0];
 
-          const isUpstreamEnhance = (cfg.connections || []).some((c: any) => {
-            if (c.toNodeId === box.id) {
-              const upBox = (cfg.aiBoxes || []).find((b) => b.id === c.fromNodeId);
-              return upBox && (isExternalBrowserAIBox(upBox) || upBox.processType === 'image_enhance' || upBox.title?.toLowerCase().includes('enhance') || upBox.browserGroupName?.toLowerCase().includes('enhance'));
-            }
-            return false;
-          }) || box.imageSource === 'enhance';
+            const activeWk = typeof window !== 'undefined' ? loadActiveWatermarkConfig() : null;
+            const targetFormat: CropStudioFormat = {
+              ...baseFormat,
+              targetWidth: currentTargetBox.targetWidth || baseFormat?.targetWidth || 1080,
+              targetHeight: currentTargetBox.targetHeight || baseFormat?.targetHeight || 1350,
+              aspect: currentTargetBox.aspect || baseFormat?.aspect || '4:5',
+              fitMode: (currentTargetBox.fitMode || baseFormat?.fitMode || 'cover') as any,
+              focusPosition: (currentTargetBox.focusPosition || baseFormat?.focusPosition || 'center') as any,
+              cropZoom: currentTargetBox.cropZoom || baseFormat?.cropZoom || 1,
+              watermarkConfig:
+                currentTargetBox.watermarkConfig ||
+                baseFormat?.watermarkConfig ||
+                (activeWk?.config?.enabled ? activeWk.config : undefined),
+            };
 
-          const activeEnhanced = { ...(enhancedPhotos || {}), ...localWatermarkedMap };
-          const hasEnhanced = Object.keys(activeEnhanced).length > 0;
-          const imagesToFormat: Array<{ index: number; url: string }> = [];
+            const isUpstreamEnhance = (cfg.connections || []).some((c: any) => {
+              if (c.toNodeId === box.id || c.toNodeId === currentTargetBox.id) {
+                const upBox = (cfg.aiBoxes || []).find((b) => b.id === c.fromNodeId);
+                return upBox && (isExternalBrowserAIBox(upBox) || upBox.processType === 'image_enhance' || upBox.title?.toLowerCase().includes('enhance') || upBox.browserGroupName?.toLowerCase().includes('enhance'));
+              }
+              return false;
+            }) || currentTargetBox.imageSource === 'enhance' || box.imageSource === 'enhance';
 
-          if (isUpstreamEnhance || box.imageSource === 'enhance') {
-            if (hasEnhanced) {
-              // Strictly crop and format ONLY the actual enhanced result images
+            const activeEnhanced = { ...(enhancedPhotos || {}), ...localWatermarkedMap };
+            const hasEnhanced = Object.keys(activeEnhanced).length > 0;
+            const imagesToFormat: Array<{ index: number; url: string }> = [];
+
+            if (isUpstreamEnhance || currentTargetBox.imageSource === 'enhance' || box.imageSource === 'enhance') {
+              if (hasEnhanced) {
+                // Strictly crop and format ONLY the actual enhanced result images
+                for (let i = 0; i < imageList.length; i++) {
+                  const img = imageList[i];
+                  const enhUrl = activeEnhanced[img.index] || activeEnhanced[i] || activeEnhanced[i + 1] || activeEnhanced[img.index + 1];
+                  if (enhUrl) {
+                    imagesToFormat.push({ index: img.index ?? i, url: enhUrl });
+                  }
+                }
+              } else {
+                console.log(`[Workflow] Skipping watermark/format [${currentTargetBox.title || currentTargetBox.id}] because upstream Enhance IMG has not produced photos.`);
+              }
+            } else if (currentTargetBox.imageSource === 'generate') {
+              let heroUrl = '';
+              try {
+                const rawHero = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
+                if (rawHero) {
+                  const parsed = JSON.parse(rawHero);
+                  if (parsed?.url) heroUrl = parsed.url;
+                }
+              } catch (_) {}
+
+              if (heroUrl) {
+                imagesToFormat.push({ index: 0, url: heroUrl });
+              }
+            } else {
               for (let i = 0; i < imageList.length; i++) {
                 const img = imageList[i];
-                const enhUrl = activeEnhanced[img.index] || activeEnhanced[i] || activeEnhanced[i + 1] || activeEnhanced[img.index + 1];
-                if (enhUrl) {
-                  imagesToFormat.push({ index: img.index ?? i, url: enhUrl });
+                const rawUrl = img.stored_url
+                  ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+                  : img.source_url;
+                if (rawUrl) imagesToFormat.push({ index: img.index ?? i, url: rawUrl });
+              }
+            }
+
+            let finalImagesToFormat = imagesToFormat;
+            if (Array.isArray(currentTargetBox.selectedImageIndices) && currentTargetBox.selectedImageIndices.length > 0) {
+              const selectedSet = new Set(currentTargetBox.selectedImageIndices);
+              const matched = imagesToFormat.filter((item, idx) => selectedSet.has(item.index + 1) || selectedSet.has(item.index) || selectedSet.has(idx + 1));
+              if (matched.length > 0) {
+                finalImagesToFormat = matched;
+              }
+            }
+
+            if (finalImagesToFormat.length > 0) {
+              for (const item of finalImagesToFormat) {
+                if (isRunStopped(myRunId) || branchFatalError) return false;
+                try {
+                  const formattedDataUrl = await formatImageWithCropFormat(item.url, targetFormat);
+                  if (isRunStopped(myRunId) || branchFatalError) return false;
+                  localWatermarkedMap[item.index] = formattedDataUrl;
+                } catch (err) {
+                  console.warn('Failed to format image with crop format', err);
+                  localWatermarkedMap[item.index] = item.url;
                 }
               }
-            } else {
-              // Upstream enhance has not run or produced photos yet. Never fallback to raw un-enhanced photos!
-              console.log(`[Workflow] Skipping watermark/format [${box.title || box.id}] because upstream Enhance IMG has not produced photos.`);
-            }
-          } else if (box.imageSource === 'generate') {
-            let heroUrl = '';
-            try {
-              const rawHero = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
-              if (rawHero) {
-                const parsed = JSON.parse(rawHero);
-                if (parsed?.url) heroUrl = parsed.url;
-              }
-            } catch (_) {}
-
-            if (heroUrl) {
-              imagesToFormat.push({ index: 0, url: heroUrl });
-            } else {
-              console.log(`[Workflow] Skipping watermark/format [${box.title || box.id}] because upstream Hero generator has not produced photos.`);
-            }
-          } else {
-            for (let i = 0; i < imageList.length; i++) {
-              const img = imageList[i];
-              const rawUrl = img.stored_url
-                ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-                : img.source_url;
-              if (rawUrl) imagesToFormat.push({ index: img.index ?? i, url: rawUrl });
             }
           }
 
-          let finalImagesToFormat = imagesToFormat;
-          if (Array.isArray(box.selectedImageIndices) && box.selectedImageIndices.length > 0) {
-            const selectedSet = new Set(box.selectedImageIndices);
-            const matched = imagesToFormat.filter((item, idx) => selectedSet.has(item.index + 1) || selectedSet.has(item.index) || selectedSet.has(idx + 1));
-            if (matched.length > 0) {
-              finalImagesToFormat = matched;
-            }
-          }
-
-          if (finalImagesToFormat.length === 0) {
-            console.log(`[Workflow] Format box [${box.title || box.id}] has 0 images to format. Leaving node idle.`);
-            return true;
-          }
-
-          for (const item of finalImagesToFormat) {
-            if (isRunStopped(myRunId) || branchFatalError) return false;
-            try {
-              const formattedDataUrl = await formatImageWithCropFormat(item.url, targetFormat);
-              if (isRunStopped(myRunId) || branchFatalError) return false;
-              localWatermarkedMap[item.index] = formattedDataUrl;
-            } catch (err) {
-              console.warn('Failed to format image with crop format', err);
-              localWatermarkedMap[item.index] = item.url;
-            }
-          }
           if (isRunStopped(myRunId) || branchFatalError) return false;
           setWatermarkedPhotos((prev) => ({ ...prev, ...localWatermarkedMap }));
           workflowContextRef.current.localWatermarkedMap = { ...workflowContextRef.current.localWatermarkedMap, ...localWatermarkedMap };
@@ -4060,19 +4075,22 @@ export const CreateWorkflowView: React.FC = () => {
         if (isRunStopped(myRunId)) return;
         if (!nextBox.enabled || updatedCompleted.includes(nextBox.id)) continue;
         const isWatermark = isWatermarkAIBox(nextBox);
+        const isCropStudio = isCropStudioBox(nextBox);
         const isTextFormat = isTextFormatAIBox(nextBox);
 
         safeSetExecutionState(myRunId, (prev) => ({
           ...prev!,
           activeNodeIds: [nextBox.id],
-          currentStepMessage: isWatermark
+          currentStepMessage: isCropStudio
+            ? `✂️ Processing Studio crop formats [${nextBox.title || 'Photo Format & Crop'}]...`
+            : isWatermark
             ? `✂️ Applying photo crop & frame preset [${nextBox.title || 'Format'}]...`
             : isTextFormat
             ? `📝 Formatting AI copy with [${nextBox.title || 'Format Preset'}]...`
             : `⚡ Generating AI copy with [${nextBox.title || 'AI Model'}]...`,
         }));
 
-        if (isWatermark) {
+        if (isWatermark || isCropStudio) {
           if (!ctx.imageList || ctx.imageList.length === 0) {
             console.warn(`Skipping watermark box [${nextBox.title}] because imageList is empty`);
             return;
@@ -4398,7 +4416,7 @@ export const CreateWorkflowView: React.FC = () => {
       }));
 
       try {
-        if (!isWatermarkAIBox(targetBox) && !isExternalBrowserAIBox(targetBox)) {
+        if (!isWatermarkAIBox(targetBox) && !isCropStudioBox(targetBox) && !isExternalBrowserAIBox(targetBox)) {
           await handleRegenerateBoxOutput(nodeId);
         }
         await executeDownstreamWorkflow({

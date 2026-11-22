@@ -180,6 +180,23 @@ export const isExternalBrowserAIBox = (
   );
 };
 
+export const isCropStudioBox = (
+  box?: { id?: string; provider?: string; processType?: string; title?: string }
+): boolean => {
+  if (!box) return false;
+  if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
+  if (isN8NAIBox(box) || isExternalBrowserAIBox(box) || isGoogleSheetBox(box)) return false;
+  return (
+    box.processType === 'crop_studio' ||
+    box.processType === 'photo_crop' ||
+    Boolean(box.id?.includes('crop-studio')) ||
+    Boolean(box.id?.includes('photo-crop-main')) ||
+    (box.title?.toLowerCase().includes('photo format & crop') && box.processType !== 'watermark') ||
+    box.title === 'Photo Format & Crop' ||
+    box.title === 'Crop Studio'
+  );
+};
+
 export const isWatermarkAIBox = (
   box?: { id?: string; provider?: string; model?: string; processType?: string; title?: string; cropFormatId?: string; watermarkPresetId?: string; subtitle?: string }
 ): boolean => {
@@ -187,6 +204,7 @@ export const isWatermarkAIBox = (
   if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
   if (isN8NAIBox(box) || isExternalBrowserAIBox(box) || isGoogleSheetBox(box)) return false;
   if (box.processType === 'text_format' || box.processType === 'text_ai') return false;
+  if (isCropStudioBox(box)) return false;
   return (
     box.processType === 'watermark' ||
     box.provider === 'watermark' ||
