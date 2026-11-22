@@ -22,17 +22,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     .then((r) => r.json())
     .then((data) => {
       if (data && data.status === 'online') {
-        beaconText.textContent = 'Online (:9224)';
-        companionBeacon.style.background = 'rgba(16, 185, 129, 0.12)';
+        beaconText.textContent = 'Port :9224';
+        companionBeacon.style.background = 'rgba(16, 185, 129, 0.08)';
         companionBeacon.style.color = '#10B981';
-        companionBeacon.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+        companionBeacon.style.borderColor = 'rgba(16, 185, 129, 0.22)';
       }
     })
     .catch(() => {
       beaconText.textContent = 'Offline (:9224)';
-      companionBeacon.style.background = 'rgba(239, 68, 68, 0.12)';
+      companionBeacon.style.background = 'rgba(239, 68, 68, 0.08)';
       companionBeacon.style.color = '#EF4444';
-      companionBeacon.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+      companionBeacon.style.borderColor = 'rgba(239, 68, 68, 0.22)';
     });
 
   // Fetch available profiles from companion to populate options
@@ -111,14 +111,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           row.innerHTML = `
             <div class="tab-left">
-              <span class="tab-idx">#${idx + 1}</span>
+              <span class="tab-idx">${String(idx + 1).padStart(2, '0')}</span>
               <div class="tab-info">
                 <div class="tab-title" title="${t.title || ''}">${cleanTitle}</div>
                 <div class="tab-url" title="${t.url || ''}">${truncatedUrl}</div>
               </div>
             </div>
-            <button class="focus-btn" data-tab-id="${t.id}" title="Focus this tab in Chrome">
-              Focus ↗
+            <button class="focus-btn" data-tab-id="${t.id}" title="Focus tab in Chrome">
+              <span>Focus</span>
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <line x1="10" y1="14" x2="21" y2="3"></line>
+              </svg>
             </button>
           `;
 
@@ -153,18 +158,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Sync button handler
   if (syncBtn) {
+    const syncLabel = document.getElementById('sync-btn-label');
     syncBtn.addEventListener('click', () => {
-      syncBtn.textContent = 'Syncing memory...';
+      if (syncLabel) syncLabel.textContent = 'Syncing memory...';
+      else syncBtn.textContent = 'Syncing memory...';
+
       chrome.runtime.sendMessage({ action: 'SYNC_NOW' }, (res) => {
         if (res && res.success) {
-          syncBtn.textContent = '✓ Memory Synchronized';
+          if (syncLabel) syncLabel.textContent = 'Memory Synchronized';
           setTimeout(() => {
-            syncBtn.textContent = '⚡ Sync Memory to BoltHaven Site';
+            if (syncLabel) syncLabel.textContent = 'Sync Memory to BoltHaven Workflow';
           }, 2000);
         } else {
-          syncBtn.textContent = 'Sync Failed';
+          if (syncLabel) syncLabel.textContent = 'Sync Failed';
           setTimeout(() => {
-            syncBtn.textContent = '⚡ Sync Memory to BoltHaven Site';
+            if (syncLabel) syncLabel.textContent = 'Sync Memory to BoltHaven Workflow';
           }, 2000);
         }
       });
@@ -173,8 +181,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Open & Focus Worker Tabs button
   if (openWorkersBtn) {
+    const openLabel = document.getElementById('open-btn-label');
     openWorkersBtn.addEventListener('click', async () => {
-      openWorkersBtn.textContent = 'Opening & Focusing...';
+      if (openLabel) openLabel.textContent = 'Focusing Tabs...';
       chrome.runtime.sendMessage({
         action: 'FOCUS_GROUP',
         payload: {
@@ -184,7 +193,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         },
       });
       setTimeout(() => {
-        openWorkersBtn.textContent = '🚀 Open & Focus Worker Tabs';
+        if (openLabel) openLabel.textContent = 'Focus Active Worker Tabs';
         chrome.runtime.sendMessage({ action: 'GET_GROUPS' }, (response) => {
           if (response && Array.isArray(response.groups)) {
             renderGroups(response.groups);

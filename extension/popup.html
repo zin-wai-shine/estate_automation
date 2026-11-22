@@ -2,26 +2,52 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>BoltHaven Pro Companion</title>
+  <title>BoltHaven Pro</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      width: 350px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background: #090D16;
-      color: #F8FAFC;
-      padding: 14px;
-      font-size: 13px;
-      user-select: none;
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
     }
 
-    /* Header */
+    :root {
+      --bg-base: #0B0D11;
+      --bg-surface: #12151C;
+      --bg-surface-elevated: #181C26;
+      --bg-surface-hover: #1E2330;
+      --border-subtle: rgba(255, 255, 255, 0.07);
+      --border-strong: rgba(255, 255, 255, 0.14);
+      --border-focus: #3B82F6;
+      --text-primary: #F1F5F9;
+      --text-secondary: #94A3B8;
+      --text-muted: #64748B;
+      --accent-primary: #2563EB;
+      --accent-hover: #1D4ED8;
+      --accent-glow: rgba(37, 99, 235, 0.25);
+      --success: #10B981;
+      --success-glow: rgba(16, 185, 129, 0.2);
+    }
+
+    body {
+      width: 360px;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      padding: 14px;
+      font-size: 12px;
+      line-height: 1.45;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* ── Top Header ── */
     .header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding-bottom: 12px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      border-bottom: 1px solid var(--border-subtle);
       margin-bottom: 12px;
     }
     .header-left {
@@ -29,146 +55,184 @@
       align-items: center;
       gap: 10px;
     }
-    .logo-badge {
-      width: 30px;
-      height: 30px;
-      border-radius: 8px;
-      background: linear-gradient(135deg, #06B6D4 0%, #3B82F6 50%, #8B5CF6 100%);
+    .logo-mark {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      background: linear-gradient(180deg, #1E293B 0%, #0F172A 100%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 2px 5px rgba(0, 0, 0, 0.4);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: 800;
-      color: #FFFFFF;
-      font-size: 13px;
-      box-shadow: 0 2px 8px rgba(6, 182, 212, 0.35);
+      color: #60A5FA;
+      flex-shrink: 0;
     }
-    .title {
-      font-size: 14px;
-      font-weight: 700;
-      color: #F8FAFC;
+    .title-row {
       display: flex;
       align-items: center;
       gap: 6px;
     }
-    .version-pill {
+    .title-text {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+      color: var(--text-primary);
+    }
+    .version-chip {
       font-size: 10px;
-      font-weight: 700;
+      font-weight: 500;
       padding: 1px 5px;
       border-radius: 4px;
-      background: rgba(6, 182, 212, 0.18);
-      color: #06B6D4;
-      border: 1px solid rgba(6, 182, 212, 0.35);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-muted);
+      border: 1px solid var(--border-subtle);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
-    .subtitle { font-size: 11px; color: #94A3B8; }
+    .subtitle-text {
+      font-size: 11px;
+      color: var(--text-muted);
+      letter-spacing: -0.1px;
+    }
 
     .status-beacon {
       display: inline-flex;
       align-items: center;
-      gap: 5px;
+      gap: 6px;
       padding: 3px 8px;
-      border-radius: 12px;
+      border-radius: 100px;
       font-size: 10px;
-      font-weight: 600;
-      background: rgba(16, 185, 129, 0.12);
-      color: #10B981;
-      border: 1px solid rgba(16, 185, 129, 0.3);
+      font-weight: 500;
+      background: rgba(16, 185, 129, 0.08);
+      color: var(--success);
+      border: 1px solid rgba(16, 185, 129, 0.22);
+      transition: all 0.2s ease;
     }
     .status-dot {
-      width: 6px;
-      height: 6px;
+      width: 5px;
+      height: 5px;
       border-radius: 50%;
-      background: #10B981;
-      box-shadow: 0 0 6px #10B981;
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.4; transform: scale(0.9); }
-      100% { opacity: 1; transform: scale(1); }
+      background: var(--success);
+      box-shadow: 0 0 6px var(--success-glow);
     }
 
-    /* Cards */
-    .card {
-      background: #111827;
-      border-radius: 10px;
-      padding: 12px;
+    /* ── Sections ── */
+    .section-card {
+      background: var(--bg-surface);
+      border-radius: 8px;
+      padding: 11px 12px;
       margin-bottom: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--border-subtle);
     }
-    .card-header {
+    .section-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       margin-bottom: 8px;
     }
-    .card-label {
-      font-size: 10.5px;
+    .section-label {
+      font-size: 10px;
+      font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.6px;
-      color: #94A3B8;
-      font-weight: 700;
+      color: var(--text-muted);
+    }
+    .section-meta {
+      font-size: 10.5px;
+      font-weight: 500;
+      color: var(--text-secondary);
     }
 
-    /* Profile select */
+    /* ── Profile Select Dropdown ── */
+    .select-wrapper {
+      position: relative;
+      width: 100%;
+    }
     .profile-select {
       width: 100%;
-      padding: 7px 10px;
+      appearance: none;
+      -webkit-appearance: none;
+      padding: 7px 30px 7px 10px;
       border-radius: 6px;
-      background: #090D16;
-      color: #F8FAFC;
-      border: 1px solid #374151;
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
       font-size: 12px;
       font-weight: 500;
       cursor: pointer;
       outline: none;
-      transition: all 0.15s ease;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .profile-select:hover {
+      border-color: var(--border-strong);
     }
     .profile-select:focus {
-      border-color: #06B6D4;
-      box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.2);
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    }
+    .select-arrow {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      color: var(--text-muted);
     }
 
-    /* Memorized Groups & Tabs */
+    /* ── Memorized Groups & Tab List ── */
     .groups-list {
       display: flex;
       flex-direction: column;
       gap: 8px;
-      max-height: 220px;
+      max-height: 230px;
       overflow-y: auto;
       padding-right: 2px;
     }
     .groups-list::-webkit-scrollbar {
       width: 4px;
     }
+    .groups-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
     .groups-list::-webkit-scrollbar-thumb {
-      background: #374151;
+      background: rgba(255, 255, 255, 0.12);
       border-radius: 4px;
+    }
+    .groups-list::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.2);
     }
 
     .group-section {
-      background: #090D16;
-      border-radius: 8px;
-      padding: 9px;
-      border: 1px solid #1F2937;
+      background: var(--bg-surface-elevated);
+      border-radius: 6px;
+      padding: 8px 9px;
+      border: 1px solid var(--border-subtle);
     }
     .group-section-title {
       display: flex;
       align-items: center;
       justify-content: space-between;
       font-size: 11.5px;
-      font-weight: 700;
-      color: #E2E8F0;
+      font-weight: 600;
+      color: var(--text-primary);
       margin-bottom: 6px;
+      letter-spacing: -0.1px;
     }
     .group-badge {
       font-size: 9.5px;
-      font-weight: 700;
-      padding: 1px 6px;
+      font-weight: 500;
+      padding: 1px 5px;
       border-radius: 4px;
-      background: rgba(59, 130, 246, 0.15);
-      color: #60A5FA;
-      border: 1px solid rgba(59, 130, 246, 0.3);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-subtle);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .group-tabs-list {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
     }
 
     .tab-item {
@@ -177,163 +241,209 @@
       justify-content: space-between;
       gap: 8px;
       padding: 5px 7px;
-      background: rgba(255, 255, 255, 0.02);
+      background: transparent;
       border-radius: 5px;
-      border: 1px solid rgba(255, 255, 255, 0.04);
-      margin-bottom: 4px;
+      border: 1px solid transparent;
       font-size: 11px;
-      transition: all 0.15s ease;
+      transition: background-color 0.12s ease, border-color 0.12s ease;
     }
-    .tab-item:last-child { margin-bottom: 0; }
     .tab-item:hover {
-      background: rgba(255, 255, 255, 0.05);
-      border-color: rgba(6, 182, 212, 0.3);
+      background: var(--bg-surface-hover);
+      border-color: var(--border-subtle);
     }
     .tab-left {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 7px;
       min-width: 0;
       flex: 1;
     }
     .tab-idx {
       font-size: 9.5px;
-      font-weight: 700;
-      padding: 1px 5px;
-      border-radius: 3px;
-      background: #1F2937;
-      color: #94A3B8;
+      font-weight: 600;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--text-muted);
       flex-shrink: 0;
+      width: 16px;
+      text-align: right;
     }
     .tab-info {
       min-width: 0;
       flex: 1;
     }
     .tab-title {
-      font-weight: 600;
-      color: #F1F5F9;
+      font-weight: 500;
+      color: var(--text-primary);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      font-size: 11.5px;
     }
     .tab-url {
       font-size: 9.5px;
-      color: #64748B;
+      color: var(--text-muted);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
     .focus-btn {
-      padding: 3px 6px;
+      padding: 3px 7px;
       font-size: 10px;
-      font-weight: 600;
+      font-weight: 500;
       border-radius: 4px;
-      border: 1px solid #374151;
-      background: #1F2937;
-      color: #06B6D4;
+      border: 1px solid var(--border-subtle);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-secondary);
       cursor: pointer;
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      gap: 3px;
+      gap: 4px;
       flex-shrink: 0;
-      transition: all 0.15s ease;
+      transition: all 0.12s ease;
     }
     .focus-btn:hover {
-      background: #06B6D4;
-      color: #090D16;
-      border-color: #06B6D4;
+      background: rgba(255, 255, 255, 0.09);
+      color: var(--text-primary);
+      border-color: var(--border-strong);
+    }
+    .focus-btn:active {
+      transform: scale(0.97);
     }
 
-    /* Buttons */
+    /* ── Action Buttons ── */
+    .button-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
     .btn {
       width: 100%;
-      height: 36px;
-      border-radius: 7px;
-      border: none;
-      background: linear-gradient(135deg, #06B6D4 0%, #2563EB 100%);
+      height: 33px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: linear-gradient(180deg, #2563EB 0%, #1D4ED8 100%);
       color: #FFFFFF;
-      font-weight: 700;
-      font-size: 12px;
+      font-weight: 600;
+      font-size: 11.5px;
+      letter-spacing: -0.1px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 7px;
-      box-shadow: 0 2px 8px rgba(6, 182, 212, 0.25);
+      gap: 6px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 1px 3px rgba(0, 0, 0, 0.4);
       transition: all 0.15s ease;
     }
     .btn:hover {
-      filter: brightness(1.1);
-      transform: translateY(-1px);
+      background: linear-gradient(180deg, #3B82F6 0%, #2563EB 100%);
+      border-color: rgba(255, 255, 255, 0.2);
     }
     .btn:active {
-      transform: translateY(0);
+      transform: translateY(1px);
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
     }
+
     .btn-secondary {
-      background: #1F2937;
-      border: 1px solid #374151;
-      color: #E2E8F0;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
       box-shadow: none;
-      margin-top: 6px;
-      height: 32px;
-      font-size: 11px;
     }
     .btn-secondary:hover {
-      background: #374151;
-      color: #FFFFFF;
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+      border-color: var(--border-strong);
+    }
+    .btn-secondary:active {
+      transform: translateY(1px);
+    }
+
+    .btn-icon {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
   </style>
 </head>
 <body>
   <!-- Header -->
-  <div class="header">
+  <header class="header">
     <div class="header-left">
-      <div class="logo-badge">BH</div>
+      <div class="logo-mark">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+      </div>
       <div>
-        <div class="title">
-          <span>BoltHaven Pro</span>
-          <span class="version-pill">v2.5</span>
+        <div class="title-row">
+          <span class="title-text">BoltHaven Pro</span>
+          <span class="version-chip">v2.5</span>
         </div>
-        <div class="subtitle">Smart Tab Memory & Automation</div>
+        <div class="subtitle-text">Tab Memory & Automation Pipeline</div>
       </div>
     </div>
     <div class="status-beacon" id="companion-beacon">
       <span class="status-dot"></span>
-      <span id="beacon-text">Online (:9224)</span>
+      <span id="beacon-text">Port :9224</span>
     </div>
-  </div>
+  </header>
 
-  <!-- Current Chrome Profile Card -->
-  <div class="card">
-    <div class="card-header">
-      <span class="card-label">Active Chrome Profile</span>
-      <span id="profile-status" style="font-size: 10px; color: #10B981; font-weight: 600;">● Bound</span>
+  <!-- Profile Card -->
+  <section class="section-card">
+    <div class="section-header">
+      <span class="section-label">Active Chrome Profile</span>
+      <span id="profile-status" class="section-meta" style="color: var(--success);">Linked</span>
     </div>
-    <select id="profile-select" class="profile-select">
-      <option value="">Detecting profile...</option>
-      <option value="Profile 14">Hsu (Profile 14)</option>
-      <option value="Profile 2">Note Zin Wai (Profile 2)</option>
-    </select>
-  </div>
+    <div class="select-wrapper">
+      <select id="profile-select" class="profile-select">
+        <option value="">Auto-Detect Profile</option>
+        <option value="Profile 14">Hsu (Profile 14)</option>
+        <option value="Profile 2">Note Zin Wai (Profile 2)</option>
+      </select>
+      <div class="select-arrow">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </div>
+    </div>
+  </section>
 
-  <!-- Memorized Worker Pipelines Card -->
-  <div class="card">
-    <div class="card-header">
-      <span class="card-label">Memorized Worker Pipelines</span>
-      <span id="tabs-summary" style="font-size: 10px; color: #06B6D4; font-weight: 600;">Live Memory</span>
+  <!-- Memorized Worker Pipelines -->
+  <section class="section-card">
+    <div class="section-header">
+      <span class="section-label">Worker Pipelines</span>
+      <span id="tabs-summary" class="section-meta">Sync Ready</span>
     </div>
     <div class="groups-list" id="groups-container">
-      <div style="color: #64748B; font-size: 11px; padding: 10px 0; text-align: center;">Scanning memorized & active worker tabs...</div>
+      <div style="color: var(--text-muted); font-size: 11px; padding: 12px 0; text-align: center;">Scanning memorized worker pipelines...</div>
     </div>
-  </div>
+  </section>
 
-  <!-- Action Buttons -->
-  <button class="btn" id="sync-btn">
-    <span>⚡ Sync Memory to BoltHaven Site</span>
-  </button>
-  <button class="btn btn-secondary" id="open-workers-btn">
-    <span>🚀 Open & Focus Worker Tabs</span>
-  </button>
+  <!-- Actions -->
+  <div class="button-group">
+    <button class="btn" id="sync-btn" type="button">
+      <span class="btn-icon">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+        </svg>
+      </span>
+      <span id="sync-btn-label">Sync Memory to BoltHaven Workflow</span>
+    </button>
+    <button class="btn btn-secondary" id="open-workers-btn" type="button">
+      <span class="btn-icon">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+          <polyline points="15 3 21 3 21 9"></polyline>
+          <line x1="10" y1="14" x2="21" y2="3"></line>
+        </svg>
+      </span>
+      <span id="open-btn-label">Focus Active Worker Tabs</span>
+    </button>
+  </div>
 
   <script src="popup.js"></script>
 </body>
