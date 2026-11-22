@@ -5690,9 +5690,9 @@ export const FacebookWorkflowCanvas = forwardRef<
       b.browserGroupName?.toLowerCase().includes('hero')
     );
 
-    // 2. Child: Enhance IMG
+    // 2. Child: Enhance IMG - strictly uses REAL enhanced output, never falls back to raw property listing photos!
     const hasEnhanced = formattedEnhancedImages.length > 0;
-    const enhanceCandidateImages = hasEnhanced ? formattedEnhancedImages : formattedPropertyImages;
+    const enhanceCandidateImages = formattedEnhancedImages;
     nodes.push({
       id: enhanceTabBox?.id || 'tabgroup-enhance-img',
       title: enhanceTabBox?.title || 'Enhance IMG',
@@ -5702,7 +5702,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       count: enhanceCandidateImages.length,
       description: hasEnhanced
         ? `${formattedEnhancedImages.length} enhanced photos`
-        : `${formattedPropertyImages.length} listing photos (to enhance)`,
+        : '0 enhanced photos (awaiting results)',
     });
 
     // 3. Child: FB Hero
@@ -18352,6 +18352,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                           }));
                         }
 
+                        const formattedEnhancedImages = Object.entries(allEnhancedPhotos || {}).map(([k, url], i) => ({
+                          url: String(url),
+                          index: Number(k) + 1 || i + 1,
+                          filename: `Enhanced Photo #${Number(k) + 1 || i + 1}`,
+                        }));
+
                         return (
                           <>
                             <ExternalBrowserSidebar
@@ -18388,6 +18394,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 upstreamPrompts: effectiveUpstreamPrompts,
                                 upstreamTabGroups,
                                 images: effectiveBrowserImages,
+                                enhancedImages: formattedEnhancedImages,
                               }}
                               rawPostContent={effectiveRawContent || ''}
                               onRunCondoNameStep={handleRunCondoNameStep}
@@ -18417,6 +18424,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 upstreamPrompts: effectiveUpstreamPrompts,
                                 upstreamTabGroups,
                                 images: effectiveBrowserImages,
+                                enhancedImages: formattedEnhancedImages,
                               }}
                               workflowImageSources={computedWorkflowImageNodes}
                             />

@@ -89,11 +89,12 @@ export function resolveAttachedPhotosFromSteps(
       const src = (workflowImageSources && workflowImageSources.length > 0)
         ? (workflowImageSources.find((s) => s.id === step.workflowSourceId) || workflowImageSources[0])
         : null;
+      const isEnhance = (src?.nodeType === 'enhance') || (src?.title?.toLowerCase().includes('enhance')) || step.workflowSourceId === 'enhanced-images' || step.sourceType === 'enhanced';
       const imgs = (src?.images && src.images.length > 0)
         ? src.images
-        : (step.workflowSourceId === 'enhanced-images' || step.sourceType === 'enhanced'
-          ? (enhancedImages && enhancedImages.length > 0 ? enhancedImages : propertyImages)
-          : propertyImages);
+        : isEnhance
+        ? (enhancedImages && enhancedImages.length > 0 ? enhancedImages : [])
+        : propertyImages;
 
       if (imgs && imgs.length > 0) {
         const chosen = (step.selectedIndices && step.selectedIndices.length > 0)
@@ -183,8 +184,8 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
       title: 'Enhance IMG',
       groupTitle: 'External Browser #1',
       nodeType: 'enhance',
-      images: enhancedImages && enhancedImages.length > 0 ? enhancedImages : propertyImages,
-      count: enhancedImages && enhancedImages.length > 0 ? enhancedImages.length : propertyImages.length,
+      images: enhancedImages && enhancedImages.length > 0 ? enhancedImages : [],
+      count: enhancedImages && enhancedImages.length > 0 ? enhancedImages.length : 0,
       description: `${enhancedImages?.length || 0} enhanced photos`,
     });
     defs.push({
@@ -515,9 +516,10 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
         <div style={{ paddingLeft: boxless ? '23px' : '0px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {steps.map((step, sIdx) => {
             const selectedSource = activeSources.find((s) => s.id === step.workflowSourceId) || activeSources[0];
-            const sourceImages = selectedSource?.images && selectedSource.images.length > 0
+            const isEnhance = selectedSource?.nodeType === 'enhance' || selectedSource?.title?.toLowerCase().includes('enhance') || step.sourceType === 'enhanced' || step.workflowSourceId === 'enhanced-images';
+            const sourceImages = (selectedSource?.images && selectedSource.images.length > 0 && (!isEnhance || selectedSource.images !== propertyImages))
               ? selectedSource.images
-              : (selectedSource?.nodeType === 'enhance' ? enhancedImages : propertyImages);
+              : (isEnhance ? (enhancedImages && enhancedImages.length > 0 ? enhancedImages : []) : propertyImages);
 
             return (
               <div
@@ -1199,7 +1201,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                         <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {sourceImages.length > 0
                             ? `Found ${sourceImages.length} photo${sourceImages.length !== 1 ? 's' : ''} in ${selectedSource?.title || 'Workflow'}`
-                            : `Pulling from ${selectedSource?.title || 'Workflow'}`}
+                            : `Found 0 photos in ${selectedSource?.title || 'Workflow'} (Awaiting results)`}
                         </span>
                         {sourceImages.length > 0 && (
                           <button
@@ -1237,6 +1239,23 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                       </div>
                       {renderCountStepper(step)}
                     </div>
+
+                    {sourceImages.length === 0 && (
+                      <div
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#F8FAFC',
+                          border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                          fontSize: '0.65625rem',
+                          color: isDark ? '#8B949E' : '#64748B',
+                          fontStyle: 'italic',
+                          textAlign: 'center',
+                        }}
+                      >
+                        No enhanced photos available yet. Run the Enhance IMG step to generate results.
+                      </div>
+                    )}
 
                     {/* Thumbnail carousel with toggleable selection */}
                     {sourceImages && sourceImages.length > 0 && (
@@ -1389,11 +1408,12 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
         if (!modalStep) return null;
         const isFolder = modalStep.sourceType === 'folder';
         const selectedSrc = activeSources.find((s) => s.id === modalStep.workflowSourceId) || activeSources[0];
+        const isEnhanceModal = selectedSrc?.nodeType === 'enhance' || selectedSrc?.title?.toLowerCase().includes('enhance') || modalStep.sourceType === 'enhanced' || modalStep.workflowSourceId === 'enhanced-images';
         const imagesList = isFolder
           ? (modalStep.folderImages || []).map((f, i) => ({ url: f.data_url || f.full_path || '', filename: f.filename || `Photo #${i + 1}` }))
-          : (selectedSrc?.images && selectedSrc.images.length > 0
+          : ((selectedSrc?.images && selectedSrc.images.length > 0 && (!isEnhanceModal || selectedSrc.images !== propertyImages))
               ? selectedSrc.images
-              : (selectedSrc?.nodeType === 'enhance' ? enhancedImages : propertyImages));
+              : (isEnhanceModal ? (enhancedImages && enhancedImages.length > 0 ? enhancedImages : []) : propertyImages));
 
         const otherGroupsCount = steps
           .filter((o) => o.id !== modalStep.id && o.enabled)

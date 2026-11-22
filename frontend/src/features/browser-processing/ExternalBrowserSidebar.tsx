@@ -540,11 +540,34 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const selectedCondoCount = condoSlots.filter(Boolean).length;
 
   const availableEnhancedPhotos = useMemo(() => {
+    if (enhancedImages && enhancedImages.length > 0) {
+      return enhancedImages.map((img, i) => ({
+        url: img.url,
+        index: img.position || i + 1,
+        filename: img.filename || `Enhanced Photo #${img.position || i + 1}`,
+      }));
+    }
     if (propertyContext?.enhancedImages && propertyContext.enhancedImages.length > 0) {
       return propertyContext.enhancedImages;
     }
     return [];
-  }, [propertyContext?.enhancedImages]);
+  }, [enhancedImages, propertyContext?.enhancedImages]);
+
+  const effectiveWorkflowImageSources = useMemo<WorkflowImageSource[]>(() => {
+    return (workflowImageSources || []).map((src) => {
+      const isEnhance = src.nodeType === 'enhance' || src.title?.toLowerCase().includes('enhance') || src.id?.includes('enhance');
+      if (isEnhance) {
+        const enh = availableEnhancedPhotos.length > 0 ? availableEnhancedPhotos : (src.images && src.images.length > 0 && src.images !== propertyContext?.images ? src.images : []);
+        return {
+          ...src,
+          images: enh,
+          count: enh.length,
+          description: enh.length > 0 ? `${enh.length} enhanced photos` : '0 enhanced photos (awaiting results)',
+        };
+      }
+      return src;
+    });
+  }, [workflowImageSources, availableEnhancedPhotos, propertyContext?.images]);
 
   const availableSourcePhotos = useMemo(() => {
     return receivedImages;
@@ -1296,7 +1319,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       if (shouldAttachCondo) {
         const resolvedGroupPhotos = resolveAttachedPhotosFromSteps(
           attachmentSteps,
-          workflowImageSources,
+          effectiveWorkflowImageSources,
           propertyContext?.images,
           availableEnhancedPhotos
         );
@@ -3834,7 +3857,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                         isDark={isDark}
                         useCondoImages={true}
                         onToggleUseCondoImages={() => {}}
-                        workflowImageSources={workflowImageSources}
+                        workflowImageSources={effectiveWorkflowImageSources}
                         propertyImages={propertyContext?.images}
                         enhancedImages={availableEnhancedPhotos}
                         condoName={

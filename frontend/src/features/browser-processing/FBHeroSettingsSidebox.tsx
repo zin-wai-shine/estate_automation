@@ -33,7 +33,7 @@ import {
   clearPersistedReferenceImage,
   isReferenceImageExplicitlyDeleted,
 } from './referenceImageStorage';
-import { fetchMemorizedTabs, clearMemorizedTabs, focusBrowserTabGroup, type MemorizedTabItem } from './browserAutomationService';
+import { fetchMemorizedTabs, clearMemorizedTabs, focusBrowserTabGroup, fetchEnhancedDownloadedImages, type MemorizedTabItem } from './browserAutomationService';
 import { AttachmentGroupsManager, type AttachmentStep, type WorkflowImageSource } from './AttachmentGroupsManager';
 
 interface FBHeroSettingsSideboxProps {
@@ -169,6 +169,54 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
       condoImagesCount: total,
     });
   };
+
+  const [downloadedEnhanced, setDownloadedEnhanced] = useState<Array<{ url: string; index?: number; filename?: string }>>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadEnhanced = async () => {
+      try {
+        const list = await fetchEnhancedDownloadedImages(propertyContext?.id, propertyContext?.listingCode);
+        if (list && list.length > 0 && !cancelled) {
+          setDownloadedEnhanced(
+            list.map((img, i) => ({
+              url: img.url,
+              index: img.position || i + 1,
+              filename: img.filename || `Enhanced Photo #${img.position || i + 1}`,
+            }))
+          );
+        }
+      } catch (_) {}
+    };
+    loadEnhanced();
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyContext?.id, propertyContext?.listingCode]);
+
+  const availableEnhancedPhotos = React.useMemo(() => {
+    if (downloadedEnhanced.length > 0) return downloadedEnhanced;
+    if (propertyContext?.enhancedImages && propertyContext.enhancedImages.length > 0) {
+      return propertyContext.enhancedImages;
+    }
+    return [];
+  }, [downloadedEnhanced, propertyContext?.enhancedImages]);
+
+  const effectiveWorkflowImageSources = React.useMemo<WorkflowImageSource[]>(() => {
+    return (workflowImageSources || []).map((src) => {
+      const isEnhance = src.nodeType === 'enhance' || src.title?.toLowerCase().includes('enhance') || src.id?.includes('enhance');
+      if (isEnhance) {
+        const enh = availableEnhancedPhotos.length > 0 ? availableEnhancedPhotos : (src.images && src.images.length > 0 && src.images !== propertyContext?.images ? src.images : []);
+        return {
+          ...src,
+          images: enh,
+          count: enh.length,
+          description: enh.length > 0 ? `${enh.length} enhanced photos` : '0 enhanced photos (awaiting results)',
+        };
+      }
+      return src;
+    });
+  }, [workflowImageSources, availableEnhancedPhotos, propertyContext?.images]);
 
   const [useEnhancedImages, setUseEnhancedImages] = useState<boolean>(() => {
     return boxConfig.useEnhancedImages !== undefined ? boxConfig.useEnhancedImages : true;
@@ -906,9 +954,6 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                     <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
                       Connected Prompt
                     </div>
-                    <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                      AI prompt from canvas
-                    </div>
                   </div>
                 </div>
 
@@ -1231,9 +1276,9 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                   setUseCondoImages(val);
                   updateSettings({ useCondoImages: val });
                 }}
-                workflowImageSources={workflowImageSources}
+                workflowImageSources={effectiveWorkflowImageSources}
                 propertyImages={propertyContext?.images}
-                enhancedImages={propertyContext?.enhancedImages}
+                enhancedImages={availableEnhancedPhotos}
                 condoName={resolvedCondoName}
               />
             </div>
