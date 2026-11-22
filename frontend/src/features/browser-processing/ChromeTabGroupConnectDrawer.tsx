@@ -206,6 +206,113 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
     );
   };
 
+  const renderCountStepper = (s: typeof attachmentSteps[0]) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Count:</span>
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          backgroundColor: isDark ? 'rgba(0, 0, 0, 0.4)' : '#F1F5F9',
+          borderRadius: '5px',
+          border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+          height: '24px',
+          padding: '0 2px',
+        }}
+      >
+        <button
+          type="button"
+          disabled={s.count <= 1}
+          onClick={() => handleUpdateStep(s.id, { count: Math.max(1, s.count - 1) })}
+          title="Decrease count"
+          style={{
+            width: '20px',
+            height: '20px',
+            borderRadius: '3px',
+            border: 'none',
+            backgroundColor: 'transparent',
+            color: s.count <= 1 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155'),
+            cursor: s.count <= 1 ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0,
+            transition: 'all 0.12s ease',
+          }}
+          onMouseEnter={(e) => {
+            if (s.count > 1) {
+              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0';
+              e.currentTarget.style.color = isDark ? '#F0F6FC' : '#0F172A';
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent';
+            e.currentTarget.style.color = s.count <= 1 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155');
+          }}
+        >
+          <FiMinus size={10} />
+        </button>
+        <input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={s.count}
+          onChange={(e) => {
+            const val = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10);
+            handleUpdateStep(s.id, { count: isNaN(val) ? 1 : Math.min(10, Math.max(1, val)) });
+          }}
+          style={{
+            width: '22px',
+            height: '20px',
+            textAlign: 'center',
+            border: 'none',
+            backgroundColor: 'transparent',
+            color: isDark ? '#F0F6FC' : '#0F172A',
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            outline: 'none',
+            padding: 0,
+            margin: 0,
+            appearance: 'none',
+            MozAppearance: 'textfield',
+          }}
+        />
+        <button
+          type="button"
+          disabled={s.count >= 10}
+          onClick={() => handleUpdateStep(s.id, { count: Math.min(10, s.count + 1) })}
+          title="Increase count"
+          style={{
+            width: '20px',
+            height: '20px',
+            borderRadius: '3px',
+            border: 'none',
+            backgroundColor: 'transparent',
+            color: s.count >= 10 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155'),
+            cursor: s.count >= 10 ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0,
+            transition: 'all 0.12s ease',
+          }}
+          onMouseEnter={(e) => {
+            if (s.count < 10) {
+              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0';
+              e.currentTarget.style.color = isDark ? '#F0F6FC' : '#0F172A';
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent';
+            e.currentTarget.style.color = s.count >= 10 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155');
+          }}
+        >
+          <FiPlus size={10} />
+        </button>
+      </div>
+    </div>
+  );
+
   // File upload and removal handlers
   const handleReferenceImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1234,217 +1341,93 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                               transition: 'all 0.12s ease',
                             }}
                           >
-                            {/* Child Title Header: Group N (#2 in Chat) */}
+                            {/* Child Title Header: Group N on left, Segmented Source Selector (+ Trash) on right */}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span
-                                  style={{
-                                    fontSize: '0.6875rem',
-                                    fontWeight: 600,
-                                    color: isDark ? '#F0F6FC' : '#0F172A',
-                                  }}
-                                >
-                                  Group {idx + 1}
-                                </span>
-                                <span
-                                  style={{
-                                    fontSize: '0.59375rem',
-                                    fontWeight: 500,
-                                    color: isDark ? '#58A6FF' : '#2563EB',
-                                    backgroundColor: isDark ? 'rgba(88, 166, 255, 0.1)' : '#EFF6FF',
-                                    padding: '1px 5px',
-                                    borderRadius: '3px',
-                                  }}
-                                >
-                                  #{idx + 2} in Chat
-                                </span>
-                              </div>
-
-                              {attachmentSteps.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveStep(step.id)}
-                                  title={`Remove Group ${idx + 1}`}
-                                  style={{
-                                    width: '20px',
-                                    height: '20px',
-                                    borderRadius: '4px',
-                                    backgroundColor: 'transparent',
-                                    color: isDark ? '#8B949E' : '#94A3B8',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    padding: 0,
-                                    transition: 'all 0.12s ease',
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.color = isDark ? '#F85149' : '#DC2626';
-                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(248, 81, 73, 0.1)' : '#FEF2F2';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.color = isDark ? '#8B949E' : '#94A3B8';
-                                    e.currentTarget.style.backgroundColor = 'transparent';
-                                  }}
-                                >
-                                  <FiTrash2 size={11} />
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Streamlined Row: Segmented Source Selector + Compact Count Stepper */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                              {/* Sleek Segmented Control */}
-                              <div
+                              <span
                                 style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : '#E2E8F0',
-                                  borderRadius: '5px',
-                                  padding: '2px',
-                                  gap: '2px',
-                                  border: isDark ? '1px solid rgba(255, 255, 255, 0.04)' : '1px solid rgba(0, 0, 0, 0.04)',
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 600,
+                                  color: isDark ? '#F0F6FC' : '#0F172A',
                                 }}
                               >
-                                {(['folder', 'upload', 'enhanced'] as const).map((st) => {
-                                  const isSel = step.sourceType === st;
-                                  return (
-                                    <button
-                                      key={st}
-                                      type="button"
-                                      onClick={() => handleUpdateStep(step.id, { sourceType: st })}
-                                      style={{
-                                        padding: '2px 8px',
-                                        borderRadius: '3px',
-                                        fontSize: '0.625rem',
-                                        fontWeight: isSel ? 600 : 500,
-                                        backgroundColor: isSel
-                                          ? (isDark ? '#21262D' : '#FFFFFF')
-                                          : 'transparent',
-                                        color: isSel
-                                          ? (isDark ? '#F0F6FC' : '#0F172A')
-                                          : (isDark ? '#8B949E' : '#64748B'),
-                                        border: 'none',
-                                        boxShadow: isSel ? (isDark ? '0 1px 2px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.08)') : 'none',
-                                        cursor: 'pointer',
-                                        textTransform: 'capitalize',
-                                        transition: 'all 0.12s ease',
-                                      }}
-                                    >
-                                      {st}
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                                Group {idx + 1}
+                              </span>
 
-                              {/* Compact Clean Count Stepper */}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Count:</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                {/* Sleek Segmented Control */}
                                 <div
                                   style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.4)' : '#F1F5F9',
+                                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : '#E2E8F0',
                                     borderRadius: '5px',
-                                    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
-                                    height: '24px',
-                                    padding: '0 2px',
+                                    padding: '2px',
+                                    gap: '2px',
+                                    border: isDark ? '1px solid rgba(255, 255, 255, 0.04)' : '1px solid rgba(0, 0, 0, 0.04)',
                                   }}
                                 >
-                                  <button
-                                    type="button"
-                                    disabled={step.count <= 1}
-                                    onClick={() => handleUpdateStep(step.id, { count: Math.max(1, step.count - 1) })}
-                                    title="Decrease count"
-                                    style={{
-                                      width: '20px',
-                                      height: '20px',
-                                      borderRadius: '3px',
-                                      border: 'none',
-                                      backgroundColor: 'transparent',
-                                      color: step.count <= 1 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155'),
-                                      cursor: step.count <= 1 ? 'not-allowed' : 'pointer',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      padding: 0,
-                                      transition: 'all 0.12s ease',
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      if (step.count > 1) {
-                                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0';
-                                        e.currentTarget.style.color = isDark ? '#F0F6FC' : '#0F172A';
-                                      }
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.backgroundColor = 'transparent';
-                                      e.currentTarget.style.color = step.count <= 1 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155');
-                                    }}
-                                  >
-                                    <FiMinus size={10} />
-                                  </button>
-                                  <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    pattern="[0-9]*"
-                                    value={step.count}
-                                    onChange={(e) => {
-                                      const val = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10);
-                                      handleUpdateStep(step.id, { count: isNaN(val) ? 1 : Math.min(10, Math.max(1, val)) });
-                                    }}
-                                    style={{
-                                      width: '22px',
-                                      height: '20px',
-                                      textAlign: 'center',
-                                      border: 'none',
-                                      backgroundColor: 'transparent',
-                                      color: isDark ? '#F0F6FC' : '#0F172A',
-                                      fontSize: '0.75rem',
-                                      fontWeight: 600,
-                                      outline: 'none',
-                                      padding: 0,
-                                      margin: 0,
-                                      appearance: 'none',
-                                      MozAppearance: 'textfield',
-                                    }}
-                                  />
-                                  <button
-                                    type="button"
-                                    disabled={step.count >= 10}
-                                    onClick={() => handleUpdateStep(step.id, { count: Math.min(10, step.count + 1) })}
-                                    title="Increase count"
-                                    style={{
-                                      width: '20px',
-                                      height: '20px',
-                                      borderRadius: '3px',
-                                      border: 'none',
-                                      backgroundColor: 'transparent',
-                                      color: step.count >= 10 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155'),
-                                      cursor: step.count >= 10 ? 'not-allowed' : 'pointer',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      padding: 0,
-                                      transition: 'all 0.12s ease',
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      if (step.count < 10) {
-                                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0';
-                                        e.currentTarget.style.color = isDark ? '#F0F6FC' : '#0F172A';
-                                      }
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.backgroundColor = 'transparent';
-                                      e.currentTarget.style.color = step.count >= 10 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#C9D1D9' : '#334155');
-                                    }}
-                                  >
-                                    <FiPlus size={10} />
-                                  </button>
+                                  {(['folder', 'upload', 'enhanced'] as const).map((st) => {
+                                    const isSel = step.sourceType === st;
+                                    return (
+                                      <button
+                                        key={st}
+                                        type="button"
+                                        onClick={() => handleUpdateStep(step.id, { sourceType: st })}
+                                        style={{
+                                          padding: '2px 8px',
+                                          borderRadius: '3px',
+                                          fontSize: '0.625rem',
+                                          fontWeight: isSel ? 600 : 500,
+                                          backgroundColor: isSel
+                                            ? (isDark ? '#21262D' : '#FFFFFF')
+                                            : 'transparent',
+                                          color: isSel
+                                            ? (isDark ? '#F0F6FC' : '#0F172A')
+                                            : (isDark ? '#8B949E' : '#64748B'),
+                                          border: 'none',
+                                          boxShadow: isSel ? (isDark ? '0 1px 2px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.08)') : 'none',
+                                          cursor: 'pointer',
+                                          textTransform: 'capitalize',
+                                          transition: 'all 0.12s ease',
+                                        }}
+                                      >
+                                        {st}
+                                      </button>
+                                    );
+                                  })}
                                 </div>
-                                <span style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                                  (Max 10)
-                                </span>
+
+                                {attachmentSteps.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveStep(step.id)}
+                                    title={`Remove Group ${idx + 1}`}
+                                    style={{
+                                      width: '20px',
+                                      height: '20px',
+                                      borderRadius: '4px',
+                                      backgroundColor: 'transparent',
+                                      color: isDark ? '#8B949E' : '#94A3B8',
+                                      border: 'none',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      padding: 0,
+                                      transition: 'all 0.12s ease',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.color = isDark ? '#F85149' : '#DC2626';
+                                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(248, 81, 73, 0.1)' : '#FEF2F2';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.color = isDark ? '#8B949E' : '#94A3B8';
+                                      e.currentTarget.style.backgroundColor = 'transparent';
+                                    }}
+                                  >
+                                    <FiTrash2 size={11} />
+                                  </button>
+                                )}
                               </div>
                             </div>
 
@@ -1529,6 +1512,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                         <FiRefreshCw size={11} />
                                       </button>
                                     )}
+
+                                    {renderCountStepper(step)}
                                   </div>
 
                                   {/* Dropdown Menu */}
@@ -1804,58 +1789,64 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                             )}
 
                             {step.sourceType === 'upload' && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <label
-                                  style={{
-                                    height: '28px',
-                                    padding: '0 10px',
-                                    borderRadius: '4px',
-                                    fontSize: '0.65625rem',
-                                    fontWeight: 500,
-                                    backgroundColor: isDark ? '#21262D' : '#E2E8F0',
-                                    color: isDark ? '#E6EDF3' : '#334155',
-                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                    cursor: 'pointer',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '5px',
-                                  }}
-                                >
-                                  <FiUpload size={12} />
-                                  <span>Choose Files ({step.uploadedUrls?.length || 0}/{step.count})</span>
-                                  <input
-                                    type="file"
-                                    multiple
-                                    accept="image/*"
-                                    onChange={(e) => {
-                                      const files = Array.from(e.target.files || []);
-                                      if (files.length === 0) return;
-                                      const urls: string[] = [];
-                                      let readCount = 0;
-                                      files.slice(0, step.count).forEach((f) => {
-                                        const reader = new FileReader();
-                                        reader.onload = (ev) => {
-                                          if (ev.target?.result) urls.push(ev.target.result as string);
-                                          readCount++;
-                                          if (readCount === Math.min(files.length, step.count)) {
-                                            handleUpdateStep(step.id, { uploadedUrls: urls });
-                                          }
-                                        };
-                                        reader.readAsDataURL(f);
-                                      });
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <label
+                                    style={{
+                                      height: '28px',
+                                      padding: '0 10px',
+                                      borderRadius: '4px',
+                                      fontSize: '0.65625rem',
+                                      fontWeight: 500,
+                                      backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                                      color: isDark ? '#E6EDF3' : '#334155',
+                                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '5px',
                                     }}
-                                    style={{ display: 'none' }}
-                                  />
-                                </label>
-                                <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                                  {step.uploadedUrls?.length ? `${step.uploadedUrls.length} file(s) ready` : `Select up to ${step.count} image(s)`}
-                                </span>
+                                  >
+                                    <FiUpload size={12} />
+                                    <span>Choose Files ({step.uploadedUrls?.length || 0}/{step.count})</span>
+                                    <input
+                                      type="file"
+                                      multiple
+                                      accept="image/*"
+                                      onChange={(e) => {
+                                        const files = Array.from(e.target.files || []);
+                                        if (files.length === 0) return;
+                                        const urls: string[] = [];
+                                        let readCount = 0;
+                                        files.slice(0, step.count).forEach((f) => {
+                                          const reader = new FileReader();
+                                          reader.onload = (ev) => {
+                                            if (ev.target?.result) urls.push(ev.target.result as string);
+                                            readCount++;
+                                            if (readCount === Math.min(files.length, step.count)) {
+                                              handleUpdateStep(step.id, { uploadedUrls: urls });
+                                            }
+                                          };
+                                          reader.readAsDataURL(f);
+                                        });
+                                      }}
+                                      style={{ display: 'none' }}
+                                    />
+                                  </label>
+                                  <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                    {step.uploadedUrls?.length ? `${step.uploadedUrls.length} file(s) ready` : `Select up to ${step.count} image(s)`}
+                                  </span>
+                                </div>
+                                {renderCountStepper(step)}
                               </div>
                             )}
 
                             {step.sourceType === 'enhanced' && (
-                              <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                                Will pull {step.count} enhanced room photo(s) from Canvas AI processor.
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                  Will pull {step.count} enhanced room photo(s) from Canvas AI processor.
+                                </div>
+                                {renderCountStepper(step)}
                               </div>
                             )}
                           </div>
