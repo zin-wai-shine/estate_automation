@@ -158,6 +158,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
   const [activeWorkflowDropdownStepId, setActiveWorkflowDropdownStepId] = useState<string | null>(null);
   const [manualChooseModalStepId, setManualChooseModalStepId] = useState<string | null>(null);
   const [folderSearchFilter, setFolderSearchFilter] = useState<string>('');
+  const [reloadingStepId, setReloadingStepId] = useState<string | null>(null);
   // In-memory condo folder images cache: folderName.toLowerCase() -> images
   const condoImagesCacheRef = React.useRef<Record<string, Array<{ filename: string; data_url?: string; full_path?: string; index?: number }>>>({});
 
@@ -731,35 +732,58 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                         </div>
                       )}
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const target = (condoName || step.folderName || '').trim();
-                          if (target) {
-                            fetchImagesForStep(step.id, target, true);
-                          } else {
-                            loadCondoFolders();
-                          }
-                        }}
-                        title="Reload folder photos from disk"
-                        style={{
-                          height: '26px',
-                          padding: '0 8px',
-                          borderRadius: '4px',
-                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                          backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-                          color: isDark ? '#8B949E' : '#64748B',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <FiRefreshCw size={11} />
-                      </button>
+                      {(() => {
+                        const isReloading = reloadingStepId === step.id;
+                        return (
+                          <button
+                            type="button"
+                            disabled={isReloading}
+                            onClick={async () => {
+                              if (reloadingStepId) return;
+                              const target = (condoName || step.folderName || '').trim();
+                              setReloadingStepId(step.id);
+                              const minTimer = new Promise((resolve) => setTimeout(resolve, 650));
+                              try {
+                                if (target) {
+                                  await Promise.all([fetchImagesForStep(step.id, target, true), minTimer]);
+                                } else {
+                                  await Promise.all([loadCondoFolders(), minTimer]);
+                                }
+                              } finally {
+                                setReloadingStepId(null);
+                              }
+                            }}
+                            title="Reload folder photos from disk"
+                            style={{
+                              height: '26px',
+                              padding: '0 8px',
+                              borderRadius: '4px',
+                              border: isReloading ? '1px solid #58A6FF' : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                              backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                              color: isReloading ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B'),
+                              cursor: isReloading ? 'wait' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <FiRefreshCw
+                              size={11}
+                              className={isReloading ? 'animate-spin' : ''}
+                              style={isReloading ? { animation: 'spin 0.75s linear infinite' } : {}}
+                            />
+                          </button>
+                        );
+                      })()}
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-                        <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          Found {step.folderImages?.length || 0} photos in {condoName || step.folderName || 'folder'}
+                        <span style={{ fontSize: '0.625rem', color: reloadingStepId === step.id ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {reloadingStepId === step.id
+                            ? `Reloading photos in ${condoName || step.folderName || 'folder'}...`
+                            : `Found ${step.folderImages?.length || 0} photos in ${condoName || step.folderName || 'folder'}`}
                         </span>
                         {step.folderImages && step.folderImages.length > 0 && (
                           <button
