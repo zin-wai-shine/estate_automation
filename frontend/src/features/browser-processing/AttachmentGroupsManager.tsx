@@ -127,6 +127,7 @@ interface AttachmentGroupsManagerProps {
   condoName?: string;
   title?: string;
   subtitle?: string;
+  boxless?: boolean;
 }
 
 export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = ({
@@ -141,6 +142,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
   condoName = '',
   title = 'Condo Photos',
   subtitle = 'Exterior & facility photos (10 max combined across all groups)',
+  boxless = false,
 }) => {
   const [availableCondoFolders, setAvailableCondoFolders] = useState<string[]>([]);
   const [baseCondoDirectory, setBaseCondoDirectory] = useState<string>('/Users/zinwaishine/Desktop/Condo Building');
@@ -385,55 +387,69 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
 
   return (
     <div
-      style={{
-        borderRadius: '12px',
-        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-        border: '1px solid var(--border-color)',
-        boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
-        padding: '0.875rem 1rem',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.75rem',
-      }}
+      style={
+        boxless
+          ? {
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+            }
+          : {
+              borderRadius: '12px',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+              border: '1px solid var(--border-color)',
+              boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+              padding: '0.875rem 1rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem',
+            }
+      }
     >
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-          <div
-            style={{
-              width: '28px',
-              height: '28px',
-              borderRadius: '7px',
-              backgroundColor: 'rgba(59, 130, 246, 0.12)',
-              color: '#3B82F6',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <FiFolder size={14} />
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: boxless ? '8px' : '9px' }}>
+          {boxless ? (
+            <FiFolder size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+          ) : (
+            <div
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '7px',
+                backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                color: '#3B82F6',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <FiFolder size={14} />
+            </div>
+          )}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
                 {title}
               </span>
               <span
                 style={{
-                  fontSize: '0.5625rem',
+                  fontSize: '0.59375rem',
                   fontWeight: 600,
                   padding: '1px 6px',
                   borderRadius: '10px',
-                  backgroundColor: totalCondoImagesCount > 0 ? (isDark ? 'rgba(59, 130, 246, 0.15)' : '#DBEAFE') : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
-                  color: totalCondoImagesCount > 0 ? (isDark ? '#60A5FA' : '#2563EB') : 'var(--text-muted)',
-                  border: isDark ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid #CBD5E1',
+                  backgroundColor: totalCondoImagesCount > 0
+                    ? (isDark ? 'rgba(88, 166, 255, 0.1)' : '#EFF6FF')
+                    : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
+                  color: totalCondoImagesCount > 0 ? (isDark ? '#58A6FF' : '#2563EB') : 'var(--text-muted)',
+                  border: isDark ? '1px solid rgba(88, 166, 255, 0.3)' : '1px solid #CBD5E1',
                 }}
               >
                 {totalCondoImagesCount}/10 Total
               </span>
             </div>
-            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
               {subtitle}
             </div>
           </div>
@@ -442,7 +458,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
       </div>
 
       {useCondoImages && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ paddingLeft: boxless ? '23px' : '0px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {steps.map((step, sIdx) => {
             const selectedSource = activeSources.find((s) => s.id === step.workflowSourceId) || activeSources[0];
             const sourceImages = selectedSource?.images && selectedSource.images.length > 0
@@ -453,10 +469,10 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
               <div
                 key={step.id}
                 style={{
-                  borderRadius: '8px',
-                  border: isDark ? '1px solid rgba(255, 255, 255, 0.07)' : '1px solid #E2E8F0',
-                  backgroundColor: isDark ? 'rgba(0, 0, 0, 0.22)' : '#F8FAFC',
-                  padding: '0.75rem',
+                  borderRadius: '6px',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.025)' : '#F8FAFC',
+                  padding: '10px 12px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '8px',
