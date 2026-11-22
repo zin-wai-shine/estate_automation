@@ -664,7 +664,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                         />
 
                         {referenceImageUrl ? (
-                          /* Attached Preview Bar */
+                          /* Attached Preview Bar: Cool, sleek card layout */
                           <div
                             style={{
                               display: 'flex',
@@ -684,7 +684,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                 style={{
                                   width: '36px',
                                   height: '36px',
-                                  borderRadius: '4px',
+                                  borderRadius: '5px',
                                   objectFit: 'cover',
                                   border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                                   flexShrink: 0,
@@ -701,30 +701,42 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                     whiteSpace: 'nowrap',
                                   }}
                                 >
-                                  {referenceImageName || 'Active Reference Photo'}
+                                  {referenceImageName || 'Reference Photo'}
                                 </div>
-                                <div style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                                  Will attach 1st in ChatGPT
+                                <div
+                                  style={{
+                                    fontSize: '0.625rem',
+                                    color: isDark ? '#8B949E' : '#64748B',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    marginTop: '1px',
+                                  }}
+                                >
+                                  Attached 1st in ChatGPT
                                 </div>
                               </div>
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
                               <button
                                 type="button"
                                 onClick={() => refFileInputRef.current?.click()}
+                                title="Change reference photo"
                                 style={{
-                                  padding: '4px 8px',
-                                  borderRadius: '4px',
-                                  fontSize: '0.65625rem',
+                                  height: '28px',
+                                  padding: '0 8px',
+                                  borderRadius: '5px',
+                                  fontSize: '0.6875rem',
                                   fontWeight: 500,
-                                  backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                                  backgroundColor: isDark ? '#21262D' : '#F1F5F9',
                                   color: isDark ? '#E6EDF3' : '#334155',
                                   border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                                   cursor: 'pointer',
                                   display: 'flex',
                                   alignItems: 'center',
                                   gap: '4px',
+                                  transition: 'all 0.12s ease',
                                 }}
                               >
                                 <FiUpload size={11} />
@@ -733,18 +745,21 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                               <button
                                 type="button"
                                 onClick={() => setShowFolderImagePicker(!showFolderImagePicker)}
+                                title="Pick from folder"
                                 style={{
-                                  padding: '4px 8px',
-                                  borderRadius: '4px',
-                                  fontSize: '0.65625rem',
+                                  height: '28px',
+                                  padding: '0 8px',
+                                  borderRadius: '5px',
+                                  fontSize: '0.6875rem',
                                   fontWeight: 500,
-                                  backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                                  backgroundColor: isDark ? '#21262D' : '#F1F5F9',
                                   color: isDark ? '#E6EDF3' : '#334155',
                                   border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                                   cursor: 'pointer',
                                   display: 'flex',
                                   alignItems: 'center',
                                   gap: '4px',
+                                  transition: 'all 0.12s ease',
                                 }}
                               >
                                 <FiFolder size={11} />
@@ -753,22 +768,23 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                               <button
                                 type="button"
                                 onClick={handleRemoveReferenceImage}
+                                title="Remove reference photo"
                                 style={{
-                                  padding: '4px 8px',
-                                  borderRadius: '4px',
-                                  fontSize: '0.65625rem',
-                                  fontWeight: 500,
-                                  backgroundColor: 'transparent',
+                                  width: '28px',
+                                  height: '28px',
+                                  borderRadius: '5px',
+                                  backgroundColor: isDark ? 'rgba(248, 81, 73, 0.08)' : '#FEF2F2',
                                   color: isDark ? '#F85149' : '#DC2626',
-                                  border: isDark ? '1px solid rgba(248, 81, 73, 0.3)' : '1px solid #FECACA',
+                                  border: isDark ? '1px solid rgba(248, 81, 73, 0.25)' : '1px solid #FECACA',
                                   cursor: 'pointer',
                                   display: 'flex',
                                   alignItems: 'center',
-                                  gap: '4px',
+                                  justifyContent: 'center',
+                                  padding: 0,
+                                  transition: 'all 0.12s ease',
                                 }}
                               >
-                                <FiTrash2 size={11} />
-                                <span>Remove</span>
+                                <FiTrash2 size={13} />
                               </button>
                             </div>
                           </div>
