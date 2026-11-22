@@ -27,6 +27,7 @@ import {
 import { Select } from '../../components/ui/Select';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import type { BrowserGroupItem } from './types';
+import { AttachmentGroupsManager, type AttachmentStep } from './AttachmentGroupsManager';
 
 export interface WorkflowImageSource {
   id: string;
@@ -142,19 +143,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
   const [folderSearchFilter, setFolderSearchFilter] = useState<string>('');
 
   // Child Attachment Groups inside Condo Photos
-  const [attachmentSteps, setAttachmentSteps] = useState<Array<{
-    id: string;
-    title: string;
-    count: number;
-    sourceType: 'folder' | 'upload' | 'workflow' | 'enhanced';
-    workflowSourceId?: string;
-    folderName: string;
-    folderImages?: Array<{ filename: string; data_url?: string; full_path?: string; index?: number }>;
-    imageSelection?: string;
-    uploadedUrls?: string[];
-    selectedIndices?: number[];
-    enabled: boolean;
-  }>>([
+  const [attachmentSteps, setAttachmentSteps] = useState<AttachmentStep[]>([
     {
       id: 'group-1',
       title: 'Group 1',
@@ -988,37 +977,45 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                 </label>
                 <div
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '3px',
+                    borderRadius: '9px',
+                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : 'rgba(0, 0, 0, 0.05)',
+                    border: '1px solid var(--border-color)',
                   }}
                 >
                   <button
                     type="button"
                     onClick={() => setTabGroupMode('generate')}
                     style={{
+                      flex: 1,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '8px',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      fontSize: '0.75rem',
-                      fontWeight: tabGroupMode === 'generate' ? 600 : 400,
+                      gap: '6px',
+                      padding: '6px 10px',
+                      borderRadius: '7px',
+                      fontSize: '0.6875rem',
+                      fontWeight: tabGroupMode === 'generate' ? 700 : 500,
                       backgroundColor: tabGroupMode === 'generate'
-                        ? (isDark ? '#21262D' : '#FFFFFF')
+                        ? (isDark ? 'rgba(59, 130, 246, 0.22)' : '#FFFFFF')
                         : 'transparent',
                       color: tabGroupMode === 'generate'
-                        ? (isDark ? '#F0F6FC' : '#0F172A')
-                        : (isDark ? '#8B949E' : '#64748B'),
+                        ? (isDark ? '#60A5FA' : '#2563EB')
+                        : 'var(--text-muted)',
                       border: tabGroupMode === 'generate'
-                        ? (isDark ? '1px solid #58A6FF' : '1px solid #2563EB')
-                        : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
+                        ? (isDark ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(0,0,0,0.08)')
+                        : '1px solid transparent',
+                      boxShadow: tabGroupMode === 'generate'
+                        ? (isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.06)')
+                        : 'none',
                       cursor: 'pointer',
-                      transition: 'all 0.12s ease',
+                      transition: 'all 0.15s ease',
                     }}
                   >
-                    <FiImage size={14} style={{ color: tabGroupMode === 'generate' ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B'), flexShrink: 0 }} />
+                    <FiImage size={13} />
                     <span>Generate Image</span>
                   </button>
 
@@ -1026,28 +1023,32 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     type="button"
                     onClick={() => setTabGroupMode('enhance')}
                     style={{
+                      flex: 1,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '8px',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      fontSize: '0.75rem',
-                      fontWeight: tabGroupMode === 'enhance' ? 600 : 400,
+                      gap: '6px',
+                      padding: '6px 10px',
+                      borderRadius: '7px',
+                      fontSize: '0.6875rem',
+                      fontWeight: tabGroupMode === 'enhance' ? 700 : 500,
                       backgroundColor: tabGroupMode === 'enhance'
-                        ? (isDark ? '#21262D' : '#FFFFFF')
+                        ? (isDark ? 'rgba(16, 185, 129, 0.22)' : '#FFFFFF')
                         : 'transparent',
                       color: tabGroupMode === 'enhance'
-                        ? (isDark ? '#F0F6FC' : '#0F172A')
-                        : (isDark ? '#8B949E' : '#64748B'),
+                        ? (isDark ? '#34D399' : '#059669')
+                        : 'var(--text-muted)',
                       border: tabGroupMode === 'enhance'
-                        ? (isDark ? '1px solid #58A6FF' : '1px solid #2563EB')
-                        : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
+                        ? (isDark ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(0,0,0,0.08)')
+                        : '1px solid transparent',
+                      boxShadow: tabGroupMode === 'enhance'
+                        ? (isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.06)')
+                        : 'none',
                       cursor: 'pointer',
-                      transition: 'all 0.12s ease',
+                      transition: 'all 0.15s ease',
                     }}
                   >
-                    <FiSliders size={14} style={{ color: tabGroupMode === 'enhance' ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B'), flexShrink: 0 }} />
+                    <FiSliders size={13} />
                     <span>Enhance Images</span>
                   </button>
                 </div>
@@ -1056,73 +1057,102 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
               {/* 3. Pipeline Settings */}
               {tabGroupMode === 'generate' ? (
                 /* GENERATE MODE PIPELINE */
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  {/* Item 1: Prompt Section */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
-                    <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {/* Section: Prompt */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: '0.02em', marginTop: '2px' }}>
                       Prompt
-                    </label>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <FiFileText size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
-                        <div>
-                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                            Connected Prompt
-                          </div>
-                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                            AI prompt from canvas
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPromptSource('upstream_ai')}
-                          style={{
-                            padding: '3px 10px',
-                            borderRadius: '4px',
-                            fontSize: '0.65625rem',
-                            fontWeight: selectedPromptSource === 'upstream_ai' ? 600 : 400,
-                            backgroundColor: selectedPromptSource === 'upstream_ai'
-                              ? (isDark ? '#21262D' : '#E2E8F0')
-                              : 'transparent',
-                            color: selectedPromptSource === 'upstream_ai'
-                              ? (isDark ? '#F0F6FC' : '#0F172A')
-                              : (isDark ? '#8B949E' : '#64748B'),
-                            border: selectedPromptSource === 'upstream_ai'
-                              ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                              : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Canvas AI
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPromptSource('custom')}
-                          style={{
-                            padding: '3px 10px',
-                            borderRadius: '4px',
-                            fontSize: '0.65625rem',
-                            fontWeight: selectedPromptSource === 'custom' ? 600 : 400,
-                            backgroundColor: selectedPromptSource === 'custom'
-                              ? (isDark ? '#21262D' : '#E2E8F0')
-                              : 'transparent',
-                            color: selectedPromptSource === 'custom'
-                              ? (isDark ? '#F0F6FC' : '#0F172A')
-                              : (isDark ? '#8B949E' : '#64748B'),
-                            border: selectedPromptSource === 'custom'
-                              ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                              : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Custom
-                        </button>
-                      </div>
                     </div>
 
-                    <div style={{ paddingLeft: '23px' }}>
+                    {/* Connected Prompt Card */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.625rem',
+                        padding: '0.875rem 1rem',
+                        borderRadius: '12px',
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                        border: '1px solid var(--border-color)',
+                        boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                          <div
+                            style={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '7px',
+                              backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                              color: '#3B82F6',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiFileText size={14} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              Connected Prompt
+                            </div>
+                            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                              AI prompt from canvas
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Mode pills */}
+                        <div
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
+                            padding: '2px',
+                            borderRadius: '6px',
+                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPromptSource('upstream_ai')}
+                            style={{
+                              padding: '3px 10px',
+                              borderRadius: '4px',
+                              border: 'none',
+                              fontSize: '0.65625rem',
+                              fontWeight: 600,
+                              textTransform: 'none',
+                              backgroundColor: selectedPromptSource === 'upstream_ai' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
+                              color: selectedPromptSource === 'upstream_ai' ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Canvas AI
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPromptSource('custom')}
+                            style={{
+                              padding: '3px 10px',
+                              borderRadius: '4px',
+                              border: 'none',
+                              fontSize: '0.65625rem',
+                              fontWeight: 600,
+                              textTransform: 'none',
+                              backgroundColor: selectedPromptSource === 'custom' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
+                              color: selectedPromptSource === 'custom' ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Custom
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Prompt Input */}
                       {selectedPromptSource === 'upstream_ai' ? (
                         <Select
                           options={cleanPromptOptions}
@@ -1152,1416 +1182,373 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     </div>
                   </div>
 
-                  {/* Attached Images Section */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  {/* Section: Attached Images */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
+                      <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: '0.02em', marginTop: '2px' }}>
                         Attached Images
-                      </label>
-                      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                      </div>
+                      <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
                         {totalCompositePhotos} total photo{totalCompositePhotos !== 1 ? 's' : ''}
                       </span>
                     </div>
 
-                    {/* Item 2: Reference Layout */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <FiImage size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
-                        <div>
-                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                            Reference Layout
-                          </div>
-                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                            Example design attached first to guide composition
-                          </div>
-                        </div>
-                      </div>
-                      <ToggleSwitch
-                        checked={useReferenceImage}
-                        onChange={(val) => setUseReferenceImage(val)}
-                        size="sm"
-                        activeColor="#2563EB"
-                      />
-                    </div>
-
-                    {useReferenceImage && (
-                      <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {/* Hidden native file input */}
-                        <input
-                          type="file"
-                          ref={refFileInputRef}
-                          accept="image/*"
-                          onChange={handleReferenceImageUpload}
-                          style={{ display: 'none' }}
-                        />
-
-                        {referenceImageUrl ? (
-                          /* Attached Preview Bar: Cool, sleek card layout */
+                    {/* Reference Layout Card */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.625rem',
+                        padding: '0.875rem 1rem',
+                        borderRadius: '12px',
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                        border: '1px solid var(--border-color)',
+                        boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
                           <div
                             style={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '7px',
+                              backgroundColor: 'rgba(236, 72, 153, 0.12)',
+                              color: '#EC4899',
                               display: 'flex',
                               alignItems: 'center',
-                              justifyContent: 'space-between',
-                              padding: '6px 10px',
-                              borderRadius: '6px',
-                              backgroundColor: isDark ? '#161B22' : '#F8FAFC',
-                              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                              gap: '10px',
+                              justifyContent: 'center',
+                              flexShrink: 0,
                             }}
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-                              <img
-                                src={referenceImageUrl}
-                                alt="Reference"
-                                style={{
-                                  width: '36px',
-                                  height: '36px',
-                                  borderRadius: '5px',
-                                  objectFit: 'cover',
-                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                  flexShrink: 0,
-                                }}
-                              />
-                              <div style={{ minWidth: 0, flex: 1 }}>
-                                <div
+                            <FiImage size={14} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              Reference Layout
+                            </div>
+                            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                              Example design attached first to guide composition
+                            </div>
+                          </div>
+                        </div>
+                        <ToggleSwitch
+                          checked={useReferenceImage}
+                          onChange={(val) => setUseReferenceImage(val)}
+                          size="sm"
+                          activeColor="#2563EB"
+                        />
+                      </div>
+
+                      {useReferenceImage && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <input
+                            type="file"
+                            ref={refFileInputRef}
+                            accept="image/*"
+                            onChange={handleReferenceImageUpload}
+                            style={{ display: 'none' }}
+                          />
+
+                          {referenceImageUrl ? (
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '6px 10px',
+                                borderRadius: '8px',
+                                backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC',
+                                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                gap: '10px',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                                <img
+                                  src={referenceImageUrl}
+                                  alt="Reference"
                                   style={{
-                                    fontSize: '0.75rem',
-                                    fontWeight: 600,
-                                    color: isDark ? '#F0F6FC' : '#0F172A',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
+                                    width: '36px',
+                                    height: '36px',
+                                    borderRadius: '6px',
+                                    objectFit: 'cover',
+                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                    flexShrink: 0,
                                   }}
-                                >
-                                  {referenceImageName || 'Reference Photo'}
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: '0.625rem',
-                                    color: isDark ? '#8B949E' : '#64748B',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                    marginTop: '1px',
-                                  }}
-                                >
-                                  Attached 1st in ChatGPT
+                                />
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981', flexShrink: 0 }} />
+                                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      Photo Attached
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
+                                    {referenceImageName || 'Reference Photo'}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
-                              <button
-                                type="button"
-                                onClick={() => refFileInputRef.current?.click()}
-                                title="Change reference photo"
-                                style={{
-                                  height: '28px',
-                                  padding: '0 8px',
-                                  borderRadius: '5px',
-                                  fontSize: '0.6875rem',
-                                  fontWeight: 500,
-                                  backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                                  color: isDark ? '#E6EDF3' : '#334155',
-                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  transition: 'all 0.12s ease',
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => refFileInputRef.current?.click()}
+                                  style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '5px',
+                                    fontSize: '0.6875rem',
+                                    fontWeight: 500,
+                                    backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                                    color: isDark ? '#E6EDF3' : '#334155',
+                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  Change
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleRemoveReferenceImage}
+                                  style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '5px',
+                                    fontSize: '0.6875rem',
+                                    fontWeight: 500,
+                                    backgroundColor: isDark ? 'rgba(248, 81, 73, 0.1)' : '#FEF2F2',
+                                    color: isDark ? '#F85149' : '#DC2626',
+                                    border: isDark ? '1px solid rgba(248, 81, 73, 0.25)' : '1px solid #FECACA',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <input
+                                type="text"
+                                value={referenceImageUrl}
+                                onChange={(e) => {
+                                  setReferenceImageUrl(e.target.value);
+                                  setReferenceImageName('URL Image');
                                 }}
-                              >
-                                <FiUpload size={11} />
-                                <span>Change</span>
-                              </button>
+                                placeholder="Paste image URL or choose..."
+                                style={{
+                                  flex: 1,
+                                  minWidth: 0,
+                                  height: '32px',
+                                  padding: '0 10px',
+                                  borderRadius: '6px',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                  color: isDark ? '#F0F6FC' : '#0F172A',
+                                  fontSize: '0.6875rem',
+                                  outline: 'none',
+                                  boxSizing: 'border-box',
+                                }}
+                              />
                               <button
                                 type="button"
                                 onClick={() => setShowFolderImagePicker(!showFolderImagePicker)}
-                                title="Pick from folder"
                                 style={{
-                                  height: '28px',
-                                  padding: '0 8px',
-                                  borderRadius: '5px',
-                                  fontSize: '0.6875rem',
+                                  height: '32px',
+                                  padding: '0 10px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.65625rem',
                                   fontWeight: 500,
-                                  backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                                  backgroundColor: isDark ? '#21262D' : '#E2E8F0',
                                   color: isDark ? '#E6EDF3' : '#334155',
                                   border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                                   cursor: 'pointer',
-                                  display: 'flex',
+                                  display: 'inline-flex',
                                   alignItems: 'center',
-                                  gap: '4px',
-                                  transition: 'all 0.12s ease',
+                                  gap: '5px',
+                                  whiteSpace: 'nowrap',
+                                  flexShrink: 0,
                                 }}
                               >
-                                <FiFolder size={11} />
+                                <FiFolder size={12} />
                                 <span>Folder</span>
                               </button>
                               <button
                                 type="button"
-                                onClick={handleRemoveReferenceImage}
-                                title="Remove reference photo"
+                                onClick={() => refFileInputRef.current?.click()}
                                 style={{
-                                  width: '28px',
-                                  height: '28px',
-                                  borderRadius: '5px',
-                                  backgroundColor: isDark ? 'rgba(248, 81, 73, 0.08)' : '#FEF2F2',
-                                  color: isDark ? '#F85149' : '#DC2626',
-                                  border: isDark ? '1px solid rgba(248, 81, 73, 0.25)' : '1px solid #FECACA',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  padding: 0,
-                                  transition: 'all 0.12s ease',
-                                }}
-                              >
-                                <FiTrash2 size={13} />
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          /* No Reference Image Selected Yet: Clean input + Folder & Upload action buttons */
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <input
-                              type="text"
-                              value={referenceImageUrl}
-                              onChange={(e) => {
-                                setReferenceImageUrl(e.target.value);
-                                setReferenceImageName('URL Image');
-                              }}
-                              placeholder="Paste image URL or choose..."
-                              style={{
-                                flex: 1,
-                                minWidth: 0,
-                                height: '32px',
-                                padding: '0 10px',
-                                borderRadius: '4px',
-                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                                color: isDark ? '#F0F6FC' : '#0F172A',
-                                fontSize: '0.6875rem',
-                                outline: 'none',
-                                boxSizing: 'border-box',
-                              }}
-                            />
-
-                            <button
-                              type="button"
-                              onClick={() => setShowFolderImagePicker(!showFolderImagePicker)}
-                              title="Choose reference photo from property images"
-                              style={{
-                                height: '32px',
-                                padding: '0 10px',
-                                borderRadius: '4px',
-                                fontSize: '0.65625rem',
-                                fontWeight: 500,
-                                backgroundColor: isDark ? '#21262D' : '#E2E8F0',
-                                color: isDark ? '#E6EDF3' : '#334155',
-                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '5px',
-                                whiteSpace: 'nowrap',
-                                flexShrink: 0,
-                              }}
-                            >
-                              <FiFolder size={12} />
-                              <span>Folder</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => refFileInputRef.current?.click()}
-                              title="Upload reference photo from local drive"
-                              style={{
-                                height: '32px',
-                                padding: '0 10px',
-                                borderRadius: '4px',
-                                fontSize: '0.65625rem',
-                                fontWeight: 500,
-                                backgroundColor: isDark ? '#21262D' : '#E2E8F0',
-                                color: isDark ? '#E6EDF3' : '#334155',
-                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '5px',
-                                whiteSpace: 'nowrap',
-                                flexShrink: 0,
-                              }}
-                            >
-                              <FiUpload size={12} />
-                              <span>Upload</span>
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Collapsible Folder & Image Picker Drawer */}
-                        {showFolderImagePicker && (
-                          <div
-                            style={{
-                              padding: '10px',
-                              borderRadius: '6px',
-                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                              backgroundColor: isDark ? '#161B22' : '#F8FAFC',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '8px',
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                                Choose Image from Folder
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setShowFolderImagePicker(false)}
-                                style={{
-                                  border: 'none',
-                                  background: 'none',
-                                  color: isDark ? '#8B949E' : '#64748B',
-                                  cursor: 'pointer',
-                                  padding: '2px',
-                                }}
-                              >
-                                <FiX size={12} />
-                              </button>
-                            </div>
-
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Folder:</span>
-                              <input
-                                type="text"
-                                value={referenceFolderName}
-                                onChange={(e) => setReferenceFolderName(e.target.value)}
-                                placeholder="e.g. Reference Layout"
-                                style={{
-                                  flex: 1,
-                                  height: '26px',
-                                  padding: '0 8px',
-                                  borderRadius: '4px',
-                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                  backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-                                  color: isDark ? '#F0F6FC' : '#0F172A',
+                                  height: '32px',
+                                  padding: '0 10px',
+                                  borderRadius: '6px',
                                   fontSize: '0.65625rem',
-                                  outline: 'none',
-                                }}
-                              />
-                            </div>
-
-                            {propertyImages.length > 0 ? (
-                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', maxHeight: '140px', overflowY: 'auto' }}>
-                                {propertyImages.map((img, i) => {
-                                  const isSelected = referenceImageUrl === img.url;
-                                  return (
-                                    <button
-                                      key={`ref-pick-${i}`}
-                                      type="button"
-                                      onClick={() => {
-                                        setReferenceImageUrl(img.url);
-                                        setReferenceImageName(img.filename || `Photo #${img.index || i + 1}`);
-                                        setShowFolderImagePicker(false);
-                                      }}
-                                      style={{
-                                        padding: 0,
-                                        borderRadius: '4px',
-                                        border: isSelected
-                                          ? (isDark ? '2px solid #58A6FF' : '2px solid #2563EB')
-                                          : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                                        overflow: 'hidden',
-                                        position: 'relative',
-                                        aspectRatio: '1',
-                                        cursor: 'pointer',
-                                        backgroundColor: '#1E293B',
-                                      }}
-                                    >
-                                      <img src={img.url} alt={`Option ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                      <span
-                                        style={{
-                                          position: 'absolute',
-                                          bottom: 2,
-                                          right: 2,
-                                          backgroundColor: 'rgba(0,0,0,0.75)',
-                                          color: '#fff',
-                                          fontSize: '8px',
-                                          padding: '1px 3px',
-                                          borderRadius: '2px',
-                                          fontWeight: 600,
-                                        }}
-                                      >
-                                        #{img.index || i + 1}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', textAlign: 'center', padding: '10px 0' }}>
-                                No images in folder yet. Click Upload to attach from your computer.
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Item 3: Condo Photos (Main Title) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <FiFolder size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                              Condo Photos
-                            </span>
-                            <span
-                              style={{
-                                fontSize: '0.59375rem',
-                                fontWeight: 600,
-                                color: totalCondoImagesCount >= 10 ? (isDark ? '#F85149' : '#DC2626') : (isDark ? '#58A6FF' : '#2563EB'),
-                                backgroundColor: totalCondoImagesCount >= 10
-                                  ? (isDark ? 'rgba(248, 81, 73, 0.15)' : '#FEF2F2')
-                                  : (isDark ? 'rgba(88, 166, 255, 0.1)' : '#EFF6FF'),
-                                padding: '1px 6px',
-                                borderRadius: '10px',
-                                border: totalCondoImagesCount >= 10
-                                  ? (isDark ? '1px solid rgba(248, 81, 73, 0.3)' : '1px solid #FECACA')
-                                  : 'none',
-                              }}
-                            >
-                              {totalCondoImagesCount}/10 Total
-                            </span>
-                          </div>
-                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                            Exterior & facility photos (10 max combined across all groups)
-                          </div>
-                        </div>
-                      </div>
-                      <ToggleSwitch
-                        checked={useCondoImages}
-                        onChange={(val) => setUseCondoImages(val)}
-                        size="sm"
-                        activeColor="#2563EB"
-                      />
-                    </div>
-
-                    {useCondoImages && (
-                      <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {/* Child Groups inside Condo Photos */}
-                        {attachmentSteps.map((step, idx) => (
-                          <div
-                            key={step.id}
-                            style={{
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '10px',
-                              padding: '10px 12px',
-                              borderRadius: '6px',
-                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
-                              border: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid rgba(0, 0, 0, 0.06)',
-                              transition: 'all 0.12s ease',
-                            }}
-                          >
-                            {/* Child Title Header: Group N on left, Segmented Source Selector (+ Trash) on right */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <span
-                                style={{
-                                  fontSize: '0.6875rem',
-                                  fontWeight: 600,
-                                  color: isDark ? '#F0F6FC' : '#0F172A',
+                                  fontWeight: 500,
+                                  backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                                  color: isDark ? '#E6EDF3' : '#334155',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  whiteSpace: 'nowrap',
+                                  flexShrink: 0,
                                 }}
                               >
-                                Group {idx + 1}
-                              </span>
+                                <FiUpload size={12} />
+                                <span>Upload</span>
+                              </button>
+                            </div>
+                          )}
 
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                {/* Sleek Segmented Control */}
-                                <div
+                          {/* Collapsible Folder & Image Picker Drawer */}
+                          {showFolderImagePicker && (
+                            <div
+                              style={{
+                                padding: '10px',
+                                borderRadius: '8px',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '8px',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                                  Choose Image from Folder
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowFolderImagePicker(false)}
                                   style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : '#E2E8F0',
-                                    borderRadius: '5px',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: isDark ? '#8B949E' : '#64748B',
+                                    cursor: 'pointer',
                                     padding: '2px',
-                                    gap: '2px',
-                                    border: isDark ? '1px solid rgba(255, 255, 255, 0.04)' : '1px solid rgba(0, 0, 0, 0.04)',
+                                    display: 'flex',
+                                    alignItems: 'center',
                                   }}
                                 >
-                                  {(['folder', 'upload', 'workflow'] as const).map((st) => {
-                                    const isSel = step.sourceType === st || (st === 'workflow' && step.sourceType === 'enhanced');
-                                    const label = st === 'workflow' ? 'Workflow' : st === 'upload' ? 'Upload' : 'Folder';
+                                  <FiX size={12} />
+                                </button>
+                              </div>
+
+                              {propertyImages && propertyImages.length > 0 ? (
+                                <div
+                                  style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(5, 1fr)',
+                                    gap: '6px',
+                                    maxHeight: '160px',
+                                    overflowY: 'auto',
+                                    padding: '4px',
+                                  }}
+                                >
+                                  {propertyImages.map((img, i) => {
+                                    const isSelected = referenceImageUrl === img.url;
                                     return (
                                       <button
-                                        key={st}
+                                        key={i}
                                         type="button"
                                         onClick={() => {
-                                          handleUpdateStep(step.id, {
-                                            sourceType: st,
-                                            workflowSourceId: st === 'workflow' ? (step.workflowSourceId || activeWorkflowSources[0]?.id || 'get-images') : step.workflowSourceId,
-                                          });
+                                          setReferenceImageUrl(img.url);
+                                          setReferenceImageName(img.filename || ("Photo #" + (img.index || i + 1)));
+                                          setShowFolderImagePicker(false);
                                         }}
                                         style={{
-                                          padding: '2px 8px',
-                                          borderRadius: '3px',
-                                          fontSize: '0.625rem',
-                                          fontWeight: isSel ? 600 : 500,
-                                          backgroundColor: isSel
-                                            ? (isDark ? '#21262D' : '#FFFFFF')
-                                            : 'transparent',
-                                          color: isSel
-                                            ? (isDark ? '#F0F6FC' : '#0F172A')
-                                            : (isDark ? '#8B949E' : '#64748B'),
-                                          border: 'none',
-                                          boxShadow: isSel ? (isDark ? '0 1px 2px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.08)') : 'none',
+                                          padding: 0,
+                                          borderRadius: '4px',
+                                          border: isSelected
+                                            ? (isDark ? '2px solid #58A6FF' : '2px solid #2563EB')
+                                            : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                          overflow: 'hidden',
+                                          position: 'relative',
+                                          aspectRatio: '1',
                                           cursor: 'pointer',
-                                          transition: 'all 0.12s ease',
+                                          backgroundColor: '#1E293B',
                                         }}
                                       >
-                                        {label}
+                                        <img src={img.url} alt={"Option " + (i + 1)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        <span
+                                          style={{
+                                            position: 'absolute',
+                                            bottom: 2,
+                                            right: 2,
+                                            backgroundColor: 'rgba(0,0,0,0.75)',
+                                            color: '#fff',
+                                            fontSize: '8px',
+                                            padding: '1px 3px',
+                                            borderRadius: '2px',
+                                            fontWeight: 600,
+                                          }}
+                                        >
+                                          #{(img.index || i + 1)}
+                                        </span>
                                       </button>
                                     );
                                   })}
                                 </div>
-
-                                {attachmentSteps.length > 1 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveStep(step.id)}
-                                    style={{
-                                      width: '20px',
-                                      height: '20px',
-                                      borderRadius: '4px',
-                                      backgroundColor: 'transparent',
-                                      color: isDark ? '#8B949E' : '#94A3B8',
-                                      border: 'none',
-                                      cursor: 'pointer',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      padding: 0,
-                                      transition: 'all 0.12s ease',
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      e.currentTarget.style.color = isDark ? '#F85149' : '#DC2626';
-                                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(248, 81, 73, 0.1)' : '#FEF2F2';
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.color = isDark ? '#8B949E' : '#94A3B8';
-                                      e.currentTarget.style.backgroundColor = 'transparent';
-                                    }}
-                                  >
-                                    <FiTrash2 size={11} />
-                                  </button>
-                                )}
-                              </div>
+                              ) : (
+                                <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', textAlign: 'center', padding: '10px 0' }}>
+                                  No images in folder yet. Click Upload to attach from your computer.
+                                </div>
+                              )}
                             </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
-                            {/* Group Content: Folder, Upload, or Enhanced */}
-                            {step.sourceType === 'folder' && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', position: 'relative' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setActiveFolderDropdownStepId(activeFolderDropdownStepId === step.id ? null : step.id);
-                                        setFolderSearchFilter('');
-                                      }}
-                                      style={{
-                                        flex: 1,
-                                        height: '28px',
-                                        padding: '0 8px',
-                                        borderRadius: '4px',
-                                        border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                        backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                                        color: isDark ? '#F0F6FC' : '#0F172A',
-                                        fontSize: '0.6875rem',
-                                        fontWeight: 500,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        cursor: 'pointer',
-                                        textAlign: 'left',
-                                      }}
-                                    >
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
-                                        <FiFolder size={12} style={{ color: step.folderName ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B'), flexShrink: 0 }} />
-                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: step.folderName ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B') }}>
-                                          {step.folderName || 'Search condo folder (optional)...'}
-                                        </span>
-                                      </div>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        {step.folderName && (
-                                          <span
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleUpdateStep(step.id, { folderName: '', folderImages: [] });
-                                            }}
-                                            title="Clear folder"
-                                            style={{
-                                              padding: '2px',
-                                              display: 'flex',
-                                              alignItems: 'center',
-                                              color: isDark ? '#8B949E' : '#64748B',
-                                            }}
-                                          >
-                                            <FiX size={11} />
-                                          </span>
-                                        )}
-                                        <FiChevronDown size={12} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
-                                      </div>
-                                    </button>
-
-                                    {step.folderName && (
-                                      <button
-                                        type="button"
-                                        title="Refresh folders from disk"
-                                        onClick={() => {
-                                          loadCondoFolders();
-                                          fetchImagesForStep(step.id, step.folderName);
-                                        }}
-                                        style={{
-                                          width: '28px',
-                                          height: '28px',
-                                          borderRadius: '4px',
-                                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                                          color: isDark ? '#8B949E' : '#64748B',
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'center',
-                                          cursor: 'pointer',
-                                          flexShrink: 0,
-                                          transition: 'all 0.12s ease',
-                                        }}
-                                        onMouseEnter={(e) => {
-                                          e.currentTarget.style.color = isDark ? '#58A6FF' : '#2563EB';
-                                          e.currentTarget.style.borderColor = isDark ? '#58A6FF' : '#2563EB';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                          e.currentTarget.style.color = isDark ? '#8B949E' : '#64748B';
-                                          e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
-                                        }}
-                                      >
-                                        <FiRefreshCw size={11} />
-                                      </button>
-                                    )}
-                                  </div>
-
-                                  {/* Dropdown Menu */}
-                                  {activeFolderDropdownStepId === step.id && (
-                                    <>
-                                      <div
-                                        style={{ position: 'fixed', inset: 0, zIndex: 40 }}
-                                        onClick={() => setActiveFolderDropdownStepId(null)}
-                                      />
-                                      <div
-                                        style={{
-                                          position: 'absolute',
-                                          top: '32px',
-                                          left: 0,
-                                          right: 0,
-                                          zIndex: 50,
-                                          borderRadius: '6px',
-                                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                                          boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-                                          padding: '6px',
-                                          display: 'flex',
-                                          flexDirection: 'column',
-                                          gap: '6px',
-                                        }}
-                                      >
-                                        <div
-                                          style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '6px',
-                                            padding: '0 8px',
-                                            height: '26px',
-                                            borderRadius: '4px',
-                                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                            backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
-                                          }}
-                                        >
-                                          <FiSearch size={11} style={{ color: isDark ? '#8B949E' : '#64748B' }} />
-                                          <input
-                                            type="text"
-                                            autoFocus
-                                            value={folderSearchFilter}
-                                            onChange={(e) => setFolderSearchFilter(e.target.value)}
-                                            placeholder="Type condo name to search..."
-                                            style={{
-                                              flex: 1,
-                                              border: 'none',
-                                              background: 'transparent',
-                                              outline: 'none',
-                                              fontSize: '0.65625rem',
-                                              color: isDark ? '#F0F6FC' : '#0F172A',
-                                            }}
-                                          />
-                                        </div>
-
-                                        <div
-                                          style={{
-                                            maxHeight: '160px',
-                                            overflowY: 'auto',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: '2px',
-                                          }}
-                                        >
-                                          {!folderSearchFilter.trim() ? (
-                                            <div style={{ padding: '8px', fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', textAlign: 'center' }}>
-                                              Type condo name to search folders...
-                                            </div>
-                                          ) : filteredCondoFolders.length === 0 ? (
-                                            <div style={{ padding: '8px', fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', textAlign: 'center' }}>
-                                              No matching condo folder found
-                                            </div>
-                                          ) : (
-                                            filteredCondoFolders.map((fName) => {
-                                              const isSelected = step.folderName === fName;
-                                              return (
-                                                <button
-                                                  key={fName}
-                                                  type="button"
-                                                  onClick={() => {
-                                                    handleUpdateStep(step.id, { folderName: fName });
-                                                    fetchImagesForStep(step.id, fName);
-                                                    setActiveFolderDropdownStepId(null);
-                                                    setFolderSearchFilter('');
-                                                  }}
-                                                  style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '6px',
-                                                    padding: '5px 8px',
-                                                    borderRadius: '4px',
-                                                    border: 'none',
-                                                    backgroundColor: isSelected
-                                                      ? (isDark ? '#21262D' : '#E2E8F0')
-                                                      : 'transparent',
-                                                    color: isSelected ? '#58A6FF' : (isDark ? '#C9D1D9' : '#334155'),
-                                                    fontSize: '0.65625rem',
-                                                    fontWeight: isSelected ? 600 : 400,
-                                                    cursor: 'pointer',
-                                                    textAlign: 'left',
-                                                  }}
-                                                >
-                                                  <FiFolder size={11} style={{ flexShrink: 0, color: isSelected ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B') }} />
-                                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                    {fName}
-                                                  </span>
-                                                </button>
-                                              );
-                                            })
-                                          )}
-                                        </div>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-
-                                {/* Photos Found & Thumbnails, or Manual Selection */}
-                                {step.folderImages && step.folderImages.length > 0 ? (
-                                  <div
-                                    style={{
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      gap: '6px',
-                                      marginTop: '2px',
-                                    }}
-                                  >
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                                        Found {step.folderImages.length} photo{step.folderImages.length > 1 ? 's' : ''} in {step.folderName}
-                                      </span>
-                                      {renderCountStepper(step)}
-                                    </div>
-
-                                    {/* Real photo thumbnails grid */}
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', padding: '2px 0' }}>
-                                      {step.folderImages.map((img, tIdx) => {
-                                        const isSelected = tIdx < step.count;
-                                        return (
-                                          <div
-                                            key={img.filename || tIdx}
-                                            onClick={() => {
-                                              const otherGroupsCount = attachmentSteps
-                                                .filter((other) => other.id !== step.id && other.enabled)
-                                                .reduce((acc, other) => acc + other.count, 0);
-                                              const maxAllowed = Math.max(1, 10 - otherGroupsCount);
-                                              handleUpdateStep(step.id, { count: Math.min(maxAllowed, tIdx + 1) });
-                                            }}
-                                            style={{
-                                              width: '42px',
-                                              height: '42px',
-                                              borderRadius: '4px',
-                                              border: isSelected
-                                                ? (isDark ? '1.5px solid #58A6FF' : '1.5px solid #2563EB')
-                                                : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
-                                              opacity: isSelected ? 1 : 0.4,
-                                              overflow: 'hidden',
-                                              position: 'relative',
-                                              flexShrink: 0,
-                                              cursor: 'pointer',
-                                              backgroundColor: isDark ? '#161B22' : '#F1F5F9',
-                                              transition: 'all 0.15s ease',
-                                            }}
-                                          >
-                                            {img.data_url ? (
-                                              <img
-                                                src={img.data_url}
-                                                alt={img.filename}
-                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                              />
-                                            ) : (
-                                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isDark ? '#8B949E' : '#64748B' }}>
-                                                <FiImage size={13} />
-                                              </div>
-                                            )}
-                                            <span
-                                              style={{
-                                                position: 'absolute',
-                                                bottom: 1,
-                                                right: 1,
-                                                backgroundColor: isSelected ? 'rgba(37,99,235,0.85)' : 'rgba(0,0,0,0.65)',
-                                                color: '#fff',
-                                                fontSize: '7px',
-                                                fontWeight: 600,
-                                                padding: '1px 3px',
-                                                borderRadius: '2px',
-                                              }}
-                                            >
-                                              {isSelected ? `✓ #${tIdx + 1}` : `#${tIdx + 1}`}
-                                            </span>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  /* Manual Mode when no condo folder selected yet */
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
-                                        <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', width: '38px', flexShrink: 0 }}>
-                                          Image:
-                                        </span>
-                                        <input
-                                          type="text"
-                                          value={step.imageSelection || ''}
-                                          onChange={(e) => handleUpdateStep(step.id, { imageSelection: e.target.value })}
-                                          placeholder="Specific photo name (e.g. 1.png, 2.png) or choose manual..."
-                                          style={{
-                                            flex: 1,
-                                            height: '26px',
-                                            padding: '0 8px',
-                                            borderRadius: '4px',
-                                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                                            color: isDark ? '#F0F6FC' : '#0F172A',
-                                            fontSize: '0.65625rem',
-                                            outline: 'none',
-                                          }}
-                                        />
-                                      </div>
-                                      {renderCountStepper(step)}
-                                    </div>
-
-                                    {/* Manual selection from listing photos if available */}
-                                    {propertyImages.length > 0 && (
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                        <span style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                                          Select from listing photos ({propertyImages.length} available):
-                                        </span>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflowX: 'auto', padding: '2px 0' }}>
-                                          {propertyImages.slice(0, 10).map((pImg, pIdx) => {
-                                            const isSel = pIdx < step.count;
-                                            return (
-                                              <div
-                                                key={pImg.url || pIdx}
-                                                onClick={() => handleUpdateStep(step.id, { count: pIdx + 1, imageSelection: pImg.filename || `Photo #${pIdx + 1}` })}
-                                                style={{
-                                                  width: '38px',
-                                                  height: '38px',
-                                                  borderRadius: '4px',
-                                                  border: isSel
-                                                    ? (isDark ? '1.5px solid #58A6FF' : '1.5px solid #2563EB')
-                                                    : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
-                                                  opacity: isSel ? 1 : 0.45,
-                                                  overflow: 'hidden',
-                                                  position: 'relative',
-                                                  flexShrink: 0,
-                                                  cursor: 'pointer',
-                                                  backgroundColor: isDark ? '#161B22' : '#F1F5F9',
-                                                }}
-                                              >
-                                                <img src={pImg.url} alt={`Listing ${pIdx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                <span
-                                                  style={{
-                                                    position: 'absolute',
-                                                    bottom: 1,
-                                                    right: 1,
-                                                    backgroundColor: isSel ? 'rgba(37,99,235,0.85)' : 'rgba(0,0,0,0.65)',
-                                                    color: '#fff',
-                                                    fontSize: '7px',
-                                                    fontWeight: 600,
-                                                    padding: '1px 3px',
-                                                    borderRadius: '2px',
-                                                  }}
-                                                >
-                                                  {isSel ? `✓ #${pIdx + 1}` : `#${pIdx + 1}`}
-                                                </span>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {step.sourceType === 'upload' && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                  <label
-                                    style={{
-                                      height: '28px',
-                                      padding: '0 10px',
-                                      borderRadius: '4px',
-                                      fontSize: '0.65625rem',
-                                      fontWeight: 500,
-                                      backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                                      color: isDark ? '#F0F6FC' : '#0F172A',
-                                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                      cursor: 'pointer',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '6px',
-                                      whiteSpace: 'nowrap',
-                                      flexShrink: 0,
-                                      transition: 'all 0.12s ease',
-                                    }}
-                                  >
-                                    <FiUpload size={12} style={{ color: isDark ? '#58A6FF' : '#2563EB' }} />
-                                    <span>{step.uploadedUrls?.length ? `${step.uploadedUrls.length}/${step.count} Selected` : 'Choose Files'}</span>
-                                    <input
-                                      type="file"
-                                      multiple
-                                      accept="image/*"
-                                      onChange={(e) => {
-                                        const files = Array.from(e.target.files || []);
-                                        if (files.length === 0) return;
-                                        const urls: string[] = [];
-                                        let readCount = 0;
-                                        files.slice(0, step.count).forEach((f) => {
-                                          const reader = new FileReader();
-                                          reader.onload = (ev) => {
-                                            if (ev.target?.result) urls.push(ev.target.result as string);
-                                            readCount++;
-                                            if (readCount === Math.min(files.length, step.count)) {
-                                              handleUpdateStep(step.id, { uploadedUrls: urls });
-                                            }
-                                          };
-                                          reader.readAsDataURL(f);
-                                        });
-                                      }}
-                                      style={{ display: 'none' }}
-                                    />
-                                  </label>
-
-                                  <span
-                                    style={{
-                                      fontSize: '0.625rem',
-                                      color: isDark ? '#8B949E' : '#64748B',
-                                      whiteSpace: 'nowrap',
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      flex: 1,
-                                    }}
-                                  >
-                                    {step.uploadedUrls?.length ? `${step.uploadedUrls.length} file(s) ready` : `Max ${step.count} image(s)`}
-                                  </span>
-
-                                  {renderCountStepper(step)}
-                                </div>
-
-                                {/* Thumbnail previews for uploaded files */}
-                                {step.uploadedUrls && step.uploadedUrls.length > 0 && (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', padding: '2px 0' }}>
-                                    {step.uploadedUrls.map((url, uIdx) => (
-                                      <div
-                                        key={uIdx}
-                                        style={{
-                                          width: '42px',
-                                          height: '42px',
-                                          borderRadius: '4px',
-                                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                          overflow: 'hidden',
-                                          position: 'relative',
-                                          flexShrink: 0,
-                                          backgroundColor: isDark ? '#161B22' : '#F1F5F9',
-                                        }}
-                                      >
-                                        <img src={url} alt={`Upload ${uIdx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                        <span
-                                          style={{
-                                            position: 'absolute',
-                                            bottom: 1,
-                                            right: 1,
-                                            backgroundColor: 'rgba(37,99,235,0.85)',
-                                            color: '#fff',
-                                            fontSize: '7px',
-                                            fontWeight: 600,
-                                            padding: '1px 3px',
-                                            borderRadius: '2px',
-                                          }}
-                                        >
-                                          #{uIdx + 1}
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {(step.sourceType === 'workflow' || step.sourceType === 'enhanced') && (() => {
-                              const selectedSource = activeWorkflowSources.find((s) => s.id === step.workflowSourceId) ||
-                                activeWorkflowSources.find((s) => s.id === (activeWorkflowSources[0]?.id)) ||
-                                activeWorkflowSources[0];
-                              const sourceImages = selectedSource?.images && selectedSource.images.length > 0
-                                ? selectedSource.images
-                                : (selectedSource?.nodeType === 'enhance' ? enhancedImages : (selectedSource?.nodeType === 'hero' ? (selectedSource?.images || []) : propertyImages));
-                              const isDropdownOpen = activeWorkflowDropdownStepId === step.id;
-
-                              return (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                  {/* Sleek Full-Width Workflow Source Selector Bar */}
-                                  <div style={{ position: 'relative' }}>
-                                    <button
-                                      type="button"
-                                      onClick={() => setActiveWorkflowDropdownStepId(isDropdownOpen ? null : step.id)}
-                                      style={{
-                                        width: '100%',
-                                        height: '26px',
-                                        padding: '0 8px',
-                                        borderRadius: '4px',
-                                        border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                        backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                                        color: isDark ? '#F0F6FC' : '#0F172A',
-                                        fontSize: '0.65625rem',
-                                        fontWeight: 500,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.12s ease',
-                                        outline: 'none',
-                                      }}
-                                    >
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1, marginRight: '8px' }}>
-                                        <FiLayers size={12} style={{ color: '#58A6FF', flexShrink: 0 }} />
-                                        <span style={{ fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                          {selectedSource?.title || 'Select workflow source...'}
-                                        </span>
-                                      </div>
-
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                                        <span
-                                          style={{
-                                            fontSize: '0.5625rem',
-                                            fontWeight: 500,
-                                            padding: '1px 5px',
-                                            borderRadius: '8px',
-                                            backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                                            color: isDark ? '#8B949E' : '#64748B',
-                                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                          }}
-                                        >
-                                          {sourceImages.length} photo{sourceImages.length !== 1 ? 's' : ''}
-                                        </span>
-                                        <FiChevronDown
-                                          size={11}
-                                          style={{
-                                            color: isDark ? '#8B949E' : '#64748B',
-                                            transform: isDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                                            transition: 'transform 0.15s ease',
-                                          }}
-                                        />
-                                      </div>
-                                    </button>
-
-                                    {/* Dropdown Menu Popover */}
-                                    {isDropdownOpen && (
-                                      <>
-                                        <div
-                                          style={{ position: 'fixed', inset: 0, zIndex: 40 }}
-                                          onClick={() => setActiveWorkflowDropdownStepId(null)}
-                                        />
-                                        <div
-                                          style={{
-                                            position: 'absolute',
-                                            top: '29px',
-                                            left: 0,
-                                            right: 0,
-                                            zIndex: 50,
-                                            maxHeight: '170px',
-                                            overflowY: 'auto',
-                                            borderRadius: '5px',
-                                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                                            boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-                                            padding: '4px',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: '2px',
-                                          }}
-                                        >
-                                          {(() => {
-                                            const rootSources = activeWorkflowSources.filter((s) => !s.groupTitle);
-                                            const groupedMap: Record<string, WorkflowImageSource[]> = {};
-                                            activeWorkflowSources
-                                              .filter((s) => s.groupTitle)
-                                              .forEach((s) => {
-                                                const g = s.groupTitle!;
-                                                if (!groupedMap[g]) groupedMap[g] = [];
-                                                groupedMap[g].push(s);
-                                              });
-
-                                            const renderSourceButton = (src: WorkflowImageSource, isIndented = false) => {
-                                              const isCurrent = src.id === selectedSource?.id;
-                                              const count = src.images?.length ?? src.count ?? 0;
-                                              return (
-                                                <button
-                                                  key={src.id}
-                                                  type="button"
-                                                  onClick={() => {
-                                                    handleUpdateStep(step.id, { workflowSourceId: src.id });
-                                                    setActiveWorkflowDropdownStepId(null);
-                                                  }}
-                                                  style={{
-                                                    width: '100%',
-                                                    height: '25px',
-                                                    padding: isIndented ? '0 8px 0 18px' : '0 8px',
-                                                    borderRadius: '3px',
-                                                    border: 'none',
-                                                    backgroundColor: isCurrent
-                                                      ? (isDark ? '#21262D' : '#E2E8F0')
-                                                      : 'transparent',
-                                                    color: isCurrent
-                                                      ? (isDark ? '#F0F6FC' : '#0F172A')
-                                                      : (isDark ? '#C9D1D9' : '#334155'),
-                                                    fontSize: '0.65625rem',
-                                                    fontWeight: isCurrent ? 600 : 400,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'space-between',
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.1s ease',
-                                                  }}
-                                                  onMouseEnter={(e) => {
-                                                    if (!isCurrent) {
-                                                      e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
-                                                    }
-                                                  }}
-                                                  onMouseLeave={(e) => {
-                                                    if (!isCurrent) {
-                                                      e.currentTarget.style.backgroundColor = 'transparent';
-                                                    }
-                                                  }}
-                                                >
-                                                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                                                    <FiLayers
-                                                      size={11}
-                                                      style={{
-                                                        color: isCurrent ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B'),
-                                                        flexShrink: 0,
-                                                      }}
-                                                    />
-                                                    <span>{src.title}</span>
-                                                  </div>
-
-                                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                    <span
-                                                      style={{
-                                                        fontSize: '0.59375rem',
-                                                        color: isDark ? '#8B949E' : '#64748B',
-                                                      }}
-                                                    >
-                                                      {count} photo{count !== 1 ? 's' : ''}
-                                                    </span>
-                                                    {isCurrent && (
-                                                      <FiCheck size={11} style={{ color: '#58A6FF' }} />
-                                                    )}
-                                                  </div>
-                                                </button>
-                                              );
-                                            };
-
-                                            return (
-                                              <>
-                                                {/* Top Level / Root Sources (e.g. Get Images) */}
-                                                {rootSources.map((src) => renderSourceButton(src, false))}
-
-                                                {/* Grouped Sources (e.g. Under Main Box: External Browser #1) */}
-                                                {Object.entries(groupedMap).map(([groupTitle, items]) => (
-                                                  <div key={`group-${groupTitle}`} style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                                                    {/* Main Box Header */}
-                                                    <div
-                                                      style={{
-                                                        padding: '5px 8px 3px 8px',
-                                                        marginTop: '3px',
-                                                        marginBottom: '1px',
-                                                        borderTop: isDark ? '1px solid #21262D' : '1px solid #F1F5F9',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'space-between',
-                                                        userSelect: 'none',
-                                                      }}
-                                                    >
-                                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                        <FiMonitor size={11} style={{ color: '#06B6D4' }} />
-                                                        <span
-                                                          style={{
-                                                            fontSize: '0.625rem',
-                                                            fontWeight: 600,
-                                                            color: isDark ? '#E6EDF3' : '#1E293B',
-                                                          }}
-                                                        >
-                                                          {groupTitle}
-                                                        </span>
-                                                      </div>
-                                                      <span
-                                                        style={{
-                                                          fontSize: '0.5rem',
-                                                          fontWeight: 600,
-                                                          padding: '1px 4px',
-                                                          borderRadius: '3px',
-                                                          backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                                                          color: isDark ? '#8B949E' : '#64748B',
-                                                          textTransform: 'uppercase',
-                                                          letterSpacing: '0.04em',
-                                                        }}
-                                                      >
-                                                        Main Box
-                                                      </span>
-                                                    </div>
-
-                                                    {/* Child Boxes with Images (e.g. Enhance IMG, FB Hero) */}
-                                                    {items.map((src) => renderSourceButton(src, true))}
-                                                  </div>
-                                                ))}
-                                              </>
-                                            );
-                                          })()}
-                                        </div>
-                                      </>
-                                    )}
-                                  </div>
-
-                                   {/* Sub-bar with Live Count, Manual Choose button and Stepper */}
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-                                      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                        {sourceImages.length > 0
-                                          ? `Found ${sourceImages.length} photo${sourceImages.length !== 1 ? 's' : ''} in ${selectedSource?.title || 'Workflow'}`
-                                          : `Pulling from ${selectedSource?.title || 'Workflow'}`}
-                                      </span>
-                                      {sourceImages.length > 0 && (
-                                        <button
-                                          type="button"
-                                          onClick={() => setManualChooseModalStepId(step.id)}
-                                          style={{
-                                            padding: '2px 7px',
-                                            borderRadius: '3px',
-                                            fontSize: '0.59375rem',
-                                            fontWeight: 600,
-                                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                            backgroundColor: (step.selectedIndices && step.selectedIndices.length > 0)
-                                              ? (isDark ? '#1F3554' : '#DBEAFE')
-                                              : (isDark ? '#21262D' : '#F1F5F9'),
-                                            color: (step.selectedIndices && step.selectedIndices.length > 0)
-                                              ? '#58A6FF'
-                                              : (isDark ? '#C9D1D9' : '#475569'),
-                                            cursor: 'pointer',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                            flexShrink: 0,
-                                            transition: 'all 0.12s ease',
-                                          }}
-                                          title="Manually choose which specific photos to attach"
-                                        >
-                                          <FiCheckSquare size={11} />
-                                          <span>
-                                            {step.selectedIndices && step.selectedIndices.length > 0
-                                              ? `Manual: ${step.selectedIndices.length} Chosen`
-                                              : 'Manual Choose'}
-                                          </span>
-                                        </button>
-                                      )}
-                                    </div>
-                                    {renderCountStepper(step)}
-                                  </div>
-
-                                  {/* Real photo thumbnails grid with toggleable manual selection */}
-                                  {sourceImages && sourceImages.length > 0 && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', padding: '2px 0' }}>
-                                      {sourceImages.slice(0, 15).map((img, tIdx) => {
-                                        const isSelected = step.selectedIndices && step.selectedIndices.length > 0
-                                          ? step.selectedIndices.includes(tIdx)
-                                          : tIdx < step.count;
-                                        const selectionIndex = step.selectedIndices && step.selectedIndices.length > 0
-                                          ? step.selectedIndices.indexOf(tIdx) + 1
-                                          : (tIdx < step.count ? tIdx + 1 : null);
-
-                                        return (
-                                          <div
-                                            key={tIdx}
-                                            onClick={() => {
-                                              const otherGroupsCount = attachmentSteps
-                                                .filter((other) => other.id !== step.id && other.enabled)
-                                                .reduce((acc, other) => acc + other.count, 0);
-                                              const maxAllowed = Math.max(1, 10 - otherGroupsCount);
-
-                                              let currentSelected = step.selectedIndices
-                                                ? [...step.selectedIndices]
-                                                : Array.from({ length: Math.min(step.count, sourceImages.length) }, (_, i) => i);
-
-                                              if (currentSelected.includes(tIdx)) {
-                                                if (currentSelected.length > 1) {
-                                                  currentSelected = currentSelected.filter((idx) => idx !== tIdx);
-                                                }
-                                              } else {
-                                                if (currentSelected.length < maxAllowed) {
-                                                  currentSelected.push(tIdx);
-                                                }
-                                              }
-
-                                              handleUpdateStep(step.id, {
-                                                selectedIndices: currentSelected,
-                                                count: currentSelected.length,
-                                              });
-                                            }}
-                                            style={{
-                                              width: '42px',
-                                              height: '42px',
-                                              borderRadius: '4px',
-                                              border: isSelected
-                                                ? (isDark ? '1.5px solid #58A6FF' : '1.5px solid #2563EB')
-                                                : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
-                                              opacity: isSelected ? 1 : 0.4,
-                                              overflow: 'hidden',
-                                              position: 'relative',
-                                              flexShrink: 0,
-                                              cursor: 'pointer',
-                                              backgroundColor: isDark ? '#161B22' : '#F1F5F9',
-                                              transition: 'all 0.15s ease',
-                                            }}
-                                          >
-                                            {img.url ? (
-                                              <img
-                                                src={img.url}
-                                                alt={`Photo #${tIdx + 1}`}
-                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                              />
-                                            ) : (
-                                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isDark ? '#8B949E' : '#64748B' }}>
-                                                <FiImage size={13} />
-                                              </div>
-                                            )}
-                                            <span
-                                              style={{
-                                                position: 'absolute',
-                                                bottom: 1,
-                                                right: 1,
-                                                backgroundColor: isSelected ? 'rgba(37,99,235,0.85)' : 'rgba(0,0,0,0.65)',
-                                                color: '#fff',
-                                                fontSize: '7px',
-                                                fontWeight: 600,
-                                                padding: '1px 3px',
-                                                borderRadius: '2px',
-                                              }}
-                                            >
-                                              {isSelected ? `✓ #${selectionIndex}` : `#${tIdx + 1}`}
-                                            </span>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                          </div>
-                        ))}
-
-                        {/* Add Group Button */}
-                        <button
-                          type="button"
-                          disabled={totalCondoImagesCount >= 10}
-                          onClick={handleAddStep}
+                    {/* Condo Photos Multi-Group Manager */}
+                    <AttachmentGroupsManager
+                      steps={attachmentSteps}
+                      onChange={setAttachmentSteps}
+                      isDark={isDark}
+                      useCondoImages={useCondoImages}
+                      onToggleUseCondoImages={setUseCondoImages}
+                      workflowImageSources={activeWorkflowSources}
+                      propertyImages={propertyImages}
+                      enhancedImages={enhancedImages}
+                      condoName={condoName}
+                    />
+                  </div>
+                </div>
+              ) : (
+                /* ENHANCE MODE PIPELINE */
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {/* Worker Tabs Card */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.625rem',
+                      padding: '0.875rem 1rem',
+                      borderRadius: '12px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                      border: '1px solid var(--border-color)',
+                      boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                        <div
                           style={{
+                            width: '28px',
                             height: '28px',
-                            borderRadius: '4px',
-                            fontSize: '0.65625rem',
-                            fontWeight: 500,
-                            backgroundColor: 'transparent',
-                            border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
-                            color: totalCondoImagesCount >= 10 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#8B949E' : '#64748B'),
-                            cursor: totalCondoImagesCount >= 10 ? 'not-allowed' : 'pointer',
-                            opacity: totalCondoImagesCount >= 10 ? 0.45 : 1,
+                            borderRadius: '7px',
+                            backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                            color: '#3B82F6',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            gap: '5px',
-                            transition: 'all 0.12s ease',
-                          }}
-                          onMouseEnter={(e) => {
-                            if (totalCondoImagesCount < 10) {
-                              e.currentTarget.style.borderColor = isDark ? '#58A6FF' : '#2563EB';
-                              e.currentTarget.style.color = isDark ? '#58A6FF' : '#2563EB';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
-                            e.currentTarget.style.color = totalCondoImagesCount >= 10 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#8B949E' : '#64748B');
+                            flexShrink: 0,
                           }}
                         >
-                          <FiPlus size={11} />
-                          <span>{totalCondoImagesCount >= 10 ? 'Max 10 Photos Limit Reached' : `Add Group (${attachmentSteps.length + 1})`}</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* ENHANCE MODE PIPELINE */
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                {/* Worker Tabs Count */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
-                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
-                    Worker Tabs
-                  </label>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <FiSliders size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                          <FiSliders size={14} />
+                        </div>
                         <div>
-                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                             Worker Tabs
                           </div>
-                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                          <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
                             Parallel tabs for processing
                           </div>
                         </div>
@@ -2599,43 +1586,91 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     </div>
                   </div>
 
-                  {/* Enhancement Template */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <FiFileText size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                  {/* Enhancement Template Card */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.625rem',
+                      padding: '0.875rem 1rem',
+                      borderRadius: '12px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                      border: '1px solid var(--border-color)',
+                      boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                      <div
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '7px',
+                          backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                          color: '#10B981',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <FiFileText size={14} />
+                      </div>
                       <div>
-                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                           Enhance Preset
                         </div>
-                        <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                        <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
                           Prompt sent to each worker tab
                         </div>
                       </div>
                     </div>
-                    <div style={{ paddingLeft: '23px' }}>
-                      <Select
-                        options={[
-                          { label: 'Photo Retouch & Straightening', value: 'photo_retouch' },
-                          { label: 'Clean & Bright Interior', value: 'clean_interior' },
-                          { label: 'Architectural Exterior', value: 'architectural' },
-                        ]}
-                        value={enhancePromptPreset}
-                        onChange={(val) => setEnhancePromptPreset(String(val))}
-                        height="34px"
-                      />
-                    </div>
+                    <Select
+                      options={[
+                        { label: 'Photo Retouch & Straightening', value: 'photo_retouch' },
+                        { label: 'Clean & Bright Interior', value: 'clean_interior' },
+                        { label: 'Architectural Exterior', value: 'architectural' },
+                      ]}
+                      value={enhancePromptPreset}
+                      onChange={(val) => setEnhancePromptPreset(String(val))}
+                      height="34px"
+                    />
                   </div>
 
-                  {/* Input Source */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {/* Input Source Card */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.625rem',
+                      padding: '0.875rem 1rem',
+                      borderRadius: '12px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                      border: '1px solid var(--border-color)',
+                      boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+                    }}
+                  >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <FiFolder size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                        <div
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '7px',
+                            backgroundColor: 'rgba(249, 115, 22, 0.12)',
+                            color: '#F97316',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <FiFolder size={14} />
+                        </div>
                         <div>
-                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                             Input Photos
                           </div>
-                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                          <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
                             Photos from Get Images
                           </div>
                         </div>
@@ -3170,293 +2205,6 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
         </div>
       </div>
 
-      {/* Manual Choose Photos Modal */}
-      {manualChooseModalStepId && (() => {
-        const modalStep = attachmentSteps.find((s) => s.id === manualChooseModalStepId);
-        if (!modalStep) return null;
-        const selectedSrc = activeWorkflowSources.find((s) => s.id === modalStep.workflowSourceId) ||
-          activeWorkflowSources.find((s) => s.id === activeWorkflowSources[0]?.id) ||
-          activeWorkflowSources[0];
-        const imagesList = selectedSrc?.images && selectedSrc.images.length > 0
-          ? selectedSrc.images
-          : (selectedSrc?.nodeType === 'enhance' ? enhancedImages : propertyImages);
-
-        const otherGroupsCount = attachmentSteps
-          .filter((o) => o.id !== modalStep.id && o.enabled)
-          .reduce((acc, o) => acc + o.count, 0);
-        const maxAllowed = Math.max(1, 10 - otherGroupsCount);
-
-        const currentSelected = modalStep.selectedIndices && modalStep.selectedIndices.length > 0
-          ? [...modalStep.selectedIndices]
-          : Array.from({ length: Math.min(modalStep.count, imagesList.length) }, (_, i) => i);
-
-        return (
-          <div
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 100,
-              backgroundColor: 'rgba(0,0,0,0.7)',
-              backdropFilter: 'blur(3px)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '16px',
-            }}
-            onClick={() => setManualChooseModalStepId(null)}
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                width: '540px',
-                maxWidth: '92vw',
-                maxHeight: '85vh',
-                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                borderRadius: '8px',
-                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
-              }}
-            >
-              {/* Header */}
-              <div
-                style={{
-                  padding: '12px 16px',
-                  borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <FiCheckSquare size={16} style={{ color: '#58A6FF' }} />
-                  <div>
-                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                      Manual Choose Photos
-                    </div>
-                    <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                      Select up to {maxAllowed} images from {selectedSrc?.title || 'Workflow'}
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setManualChooseModalStepId(null)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: isDark ? '#8B949E' : '#64748B',
-                    cursor: 'pointer',
-                    padding: '4px',
-                  }}
-                >
-                  <FiX size={16} />
-                </button>
-              </div>
-
-              {/* Action toolbar */}
-              <div
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
-                  borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <span style={{ fontSize: '0.6875rem', fontWeight: 500, color: isDark ? '#C9D1D9' : '#334155' }}>
-                  Selected: <strong style={{ color: '#58A6FF' }}>{currentSelected.length}</strong> / {maxAllowed} max
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const firstN = Array.from({ length: Math.min(modalStep.count, imagesList.length) }, (_, i) => i);
-                      handleUpdateStep(modalStep.id, { selectedIndices: firstN, count: firstN.length });
-                    }}
-                    style={{
-                      padding: '3px 8px',
-                      borderRadius: '4px',
-                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                      backgroundColor: isDark ? '#21262D' : '#FFFFFF',
-                      color: isDark ? '#C9D1D9' : '#334155',
-                      fontSize: '0.625rem',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Select First {modalStep.count}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const all = Array.from({ length: Math.min(maxAllowed, imagesList.length) }, (_, i) => i);
-                      handleUpdateStep(modalStep.id, { selectedIndices: all, count: all.length });
-                    }}
-                    style={{
-                      padding: '3px 8px',
-                      borderRadius: '4px',
-                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                      backgroundColor: isDark ? '#21262D' : '#FFFFFF',
-                      color: isDark ? '#C9D1D9' : '#334155',
-                      fontSize: '0.625rem',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Select All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleUpdateStep(modalStep.id, { selectedIndices: [0], count: 1 });
-                    }}
-                    style={{
-                      padding: '3px 8px',
-                      borderRadius: '4px',
-                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                      backgroundColor: isDark ? '#21262D' : '#FFFFFF',
-                      color: isDark ? '#C9D1D9' : '#334155',
-                      fontSize: '0.625rem',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Reset
-                  </button>
-                </div>
-              </div>
-
-              {/* Image Grid */}
-              <div
-                style={{
-                  padding: '16px',
-                  overflowY: 'auto',
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))',
-                  gap: '10px',
-                  flex: 1,
-                  maxHeight: '400px',
-                }}
-              >
-                {imagesList.map((img, idx) => {
-                  const isChosen = currentSelected.includes(idx);
-                  const orderNum = currentSelected.indexOf(idx) + 1;
-                  return (
-                    <div
-                      key={idx}
-                      onClick={() => {
-                        let updated = [...currentSelected];
-                        if (isChosen) {
-                          if (updated.length > 1) {
-                            updated = updated.filter((i) => i !== idx);
-                          }
-                        } else {
-                          if (updated.length < maxAllowed) {
-                            updated.push(idx);
-                          }
-                        }
-                        handleUpdateStep(modalStep.id, {
-                          selectedIndices: updated,
-                          count: updated.length,
-                        });
-                      }}
-                      style={{
-                        aspectRatio: '1',
-                        borderRadius: '6px',
-                        border: isChosen
-                          ? '2px solid #58A6FF'
-                          : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                        opacity: isChosen ? 1 : 0.5,
-                        overflow: 'hidden',
-                        position: 'relative',
-                        cursor: 'pointer',
-                        backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      {img.url ? (
-                        <img
-                          src={img.url}
-                          alt={img.filename || `Photo #${idx + 1}`}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
-                      ) : (
-                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isDark ? '#8B949E' : '#64748B' }}>
-                          <FiImage size={20} />
-                        </div>
-                      )}
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: 4,
-                          right: 4,
-                          width: '18px',
-                          height: '18px',
-                          borderRadius: '4px',
-                          backgroundColor: isChosen ? '#2563EB' : 'rgba(0,0,0,0.5)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: '#fff',
-                          fontSize: '10px',
-                          fontWeight: 700,
-                        }}
-                      >
-                        {isChosen ? `✓` : ''}
-                      </div>
-                      <span
-                        style={{
-                          position: 'absolute',
-                          bottom: 3,
-                          left: 3,
-                          backgroundColor: 'rgba(0,0,0,0.7)',
-                          color: '#fff',
-                          fontSize: '8px',
-                          padding: '1px 4px',
-                          borderRadius: '2px',
-                          fontWeight: 600,
-                        }}
-                      >
-                        {isChosen ? `#${orderNum} (Img ${idx + 1})` : `Img #${idx + 1}`}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Footer */}
-              <div
-                style={{
-                  padding: '10px 16px',
-                  borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'flex-end',
-                  gap: '8px',
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setManualChooseModalStepId(null)}
-                  style={{
-                    padding: '6px 14px',
-                    borderRadius: '4px',
-                    backgroundColor: '#2563EB',
-                    color: '#FFFFFF',
-                    border: 'none',
-                    fontSize: '0.6875rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Done ({currentSelected.length} Photos Selected)
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-    </aside>
+      </aside>
   );
 };

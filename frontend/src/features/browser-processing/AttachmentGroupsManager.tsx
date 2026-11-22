@@ -386,10 +386,11 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
   return (
     <div
       style={{
-        borderRadius: '8px',
-        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-        backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-        padding: '0.75rem',
+        borderRadius: '12px',
+        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+        border: '1px solid var(--border-color)',
+        boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+        padding: '0.875rem 1rem',
         display: 'flex',
         flexDirection: 'column',
         gap: '0.75rem',
@@ -397,11 +398,25 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
     >
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <FiFolder size={14} style={{ color: isDark ? '#58A6FF' : '#2563EB' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+          <div
+            style={{
+              width: '28px',
+              height: '28px',
+              borderRadius: '7px',
+              backgroundColor: 'rgba(59, 130, 246, 0.12)',
+              color: '#3B82F6',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <FiFolder size={14} />
+          </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                 {title}
               </span>
               <span
@@ -410,15 +425,15 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                   fontWeight: 600,
                   padding: '1px 6px',
                   borderRadius: '10px',
-                  backgroundColor: totalCondoImagesCount > 0 ? (isDark ? '#1F3554' : '#DBEAFE') : (isDark ? '#21262D' : '#F1F5F9'),
-                  color: totalCondoImagesCount > 0 ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B'),
-                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  backgroundColor: totalCondoImagesCount > 0 ? (isDark ? 'rgba(59, 130, 246, 0.15)' : '#DBEAFE') : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
+                  color: totalCondoImagesCount > 0 ? (isDark ? '#60A5FA' : '#2563EB') : 'var(--text-muted)',
+                  border: isDark ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid #CBD5E1',
                 }}
               >
                 {totalCondoImagesCount}/10 Total
               </span>
             </div>
-            <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
               {subtitle}
             </div>
           </div>
@@ -438,10 +453,10 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
               <div
                 key={step.id}
                 style={{
-                  borderRadius: '6px',
-                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                  backgroundColor: isDark ? '#161B22' : '#F8FAFC',
-                  padding: '0.65rem',
+                  borderRadius: '8px',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.07)' : '1px solid #E2E8F0',
+                  backgroundColor: isDark ? 'rgba(0, 0, 0, 0.22)' : '#F8FAFC',
+                  padding: '0.75rem',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '8px',
