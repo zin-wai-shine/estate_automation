@@ -63,7 +63,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
   const [activeTab, setActiveTab] = useState<'custom_flow' | 'discovered_groups'>('custom_flow');
 
   // Custom Flow Configuration State
-  const [flowName, setFlowName] = useState<string>('FB Hero');
+  const [flowName, setFlowName] = useState<string>(() => `Flow-${Math.floor(1000 + Math.random() * 9000)}`);
+  const [showTemplatesDropdown, setShowTemplatesDropdown] = useState<boolean>(false);
   const [tabGroupMode, setTabGroupMode] = useState<'generate' | 'enhance'>('generate');
 
   // Generate Mode Settings
@@ -632,16 +633,51 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
           ) : (
             /* VIEW 2: CUSTOM FLOW BUILDER */
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {/* 1. Flow Name & Quick Presets */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Flow Name
-                </label>
+              {/* 1. Flow Name & Use Template Button */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', position: 'relative' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Flow Name
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowTemplatesDropdown(!showTemplatesDropdown)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      fontSize: '0.65625rem',
+                      fontWeight: 500,
+                      backgroundColor: showTemplatesDropdown
+                        ? (isDark ? '#21262D' : '#E2E8F0')
+                        : (isDark ? '#161B22' : '#F1F5F9'),
+                      color: showTemplatesDropdown
+                        ? (isDark ? '#58A6FF' : '#2563EB')
+                        : (isDark ? '#C9D1D9' : '#475569'),
+                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                      cursor: 'pointer',
+                      transition: 'all 0.12s ease',
+                    }}
+                  >
+                    <FiLayers size={11} style={{ color: isDark ? '#58A6FF' : '#2563EB' }} />
+                    <span>Use Template</span>
+                    <FiChevronDown
+                      size={11}
+                      style={{
+                        transform: showTemplatesDropdown ? 'rotate(180deg)' : 'none',
+                        transition: 'transform 0.15s ease',
+                      }}
+                    />
+                  </button>
+                </div>
+
                 <input
                   type="text"
                   value={flowName}
                   onChange={(e) => setFlowName(e.target.value)}
-                  placeholder="e.g. FB Hero, Enhance IMG, Tiktok Hero"
+                  placeholder="e.g. Flow-4821, FB Hero, Enhance IMG"
                   style={{
                     width: '100%',
                     height: '34px',
@@ -657,48 +693,93 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                   }}
                 />
 
-                {/* Presets */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '2px' }}>
-                  <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Presets:</span>
-                  {[
-                    { label: 'FB Hero', mode: 'generate' as const },
-                    { label: 'Enhance IMG', mode: 'enhance' as const },
-                    { label: 'Tiktok Hero', mode: 'generate' as const },
-                    { label: 'Marketplace', mode: 'generate' as const },
-                    { label: 'Facilities', mode: 'generate' as const },
-                  ].map((p) => {
-                    const isActive = flowName === p.label;
-                    return (
-                      <button
-                        key={p.label}
-                        type="button"
-                        onClick={() => {
-                          setFlowName(p.label);
-                          setTabGroupMode(p.mode);
-                        }}
-                        style={{
-                          padding: '3px 9px',
-                          borderRadius: '4px',
-                          fontSize: '0.625rem',
-                          fontWeight: isActive ? 600 : 400,
-                          backgroundColor: isActive
-                            ? (isDark ? '#21262D' : '#E2E8F0')
-                            : (isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC'),
-                          color: isActive
-                            ? (isDark ? '#F0F6FC' : '#0F172A')
-                            : (isDark ? '#8B949E' : '#64748B'),
-                          border: isActive
-                            ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                            : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
-                          cursor: 'pointer',
-                          transition: 'all 0.12s ease',
-                        }}
-                      >
-                        {p.label}
-                      </button>
-                    );
-                  })}
-                </div>
+                {/* Template Selection Dropdown */}
+                {showTemplatesDropdown && (
+                  <>
+                    <div
+                      style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+                      onClick={() => setShowTemplatesDropdown(false)}
+                    />
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '64px',
+                        right: 0,
+                        left: 0,
+                        zIndex: 50,
+                        borderRadius: '6px',
+                        border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                        backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+                        padding: '6px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '3px',
+                      }}
+                    >
+                      <div style={{ padding: '4px 6px', fontSize: '0.625rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B', textTransform: 'uppercase' }}>
+                        Choose a Template
+                      </div>
+                      {[
+                        { label: 'FB Hero', mode: 'generate' as const, desc: 'Facebook composite real-estate hero post' },
+                        { label: 'Enhance IMG', mode: 'enhance' as const, desc: 'Batch architectural room photo retouch' },
+                        { label: 'Tiktok Hero', mode: 'generate' as const, desc: 'Vertical video/slideshow hero format' },
+                        { label: 'Marketplace', mode: 'generate' as const, desc: 'Facebook marketplace multi-photo card' },
+                        { label: 'Facilities', mode: 'generate' as const, desc: 'Building pool, gym and facility layout' },
+                      ].map((t) => {
+                        const isSelected = flowName === t.label;
+                        return (
+                          <button
+                            key={t.label}
+                            type="button"
+                            onClick={() => {
+                              setFlowName(t.label);
+                              setTabGroupMode(t.mode);
+                              setShowTemplatesDropdown(false);
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '6px 10px',
+                              borderRadius: '4px',
+                              border: 'none',
+                              backgroundColor: isSelected
+                                ? (isDark ? '#21262D' : '#E2E8F0')
+                                : 'transparent',
+                              color: isSelected ? (isDark ? '#58A6FF' : '#2563EB') : (isDark ? '#F0F6FC' : '#0F172A'),
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              transition: 'all 0.12s ease',
+                            }}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: isSelected ? 600 : 500 }}>
+                                {t.label}
+                              </span>
+                              <span style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                {t.desc}
+                              </span>
+                            </div>
+                            <span
+                              style={{
+                                fontSize: '0.59375rem',
+                                padding: '2px 6px',
+                                borderRadius: '3px',
+                                backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
+                                color: isDark ? '#8B949E' : '#64748B',
+                                fontWeight: 500,
+                                textTransform: 'capitalize',
+                              }}
+                            >
+                              {t.mode}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* 2. Action Mode Switcher */}
