@@ -5717,8 +5717,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(2, 1fr)',
-              gap: '0.5rem',
-              maxHeight: '380px',
+              gap: '0.625rem',
+              maxHeight: '520px',
               overflowY: 'auto',
               paddingRight: '2px',
             }}
@@ -5768,13 +5768,18 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                         backgroundColor: isDark ? 'rgba(245, 158, 11, 0.04)' : '#FFFBEB',
                         display: 'flex',
                         flexDirection: 'column',
+                        flexShrink: 0,
+                        minHeight: '215px',
                       }}
                     >
                       <div
                         style={{
                           position: 'relative',
                           width: '100%',
+                          height: '180px',
+                          minHeight: '180px',
                           aspectRatio: '4/5',
+                          flexShrink: 0,
                           backgroundColor: isDark ? '#1E293B' : '#FEF3C7',
                           overflow: 'hidden',
                         }}
@@ -5788,8 +5793,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                               height: '100%',
                               objectFit: 'cover',
                               display: 'block',
-                              opacity: 0.55,
-                              filter: 'grayscale(30%)',
+                              opacity: 0.65,
+                              filter: 'grayscale(20%)',
                             }}
                           />
                         )}
@@ -5805,6 +5810,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                             fontSize: '0.625rem',
                             fontWeight: 700,
                             backdropFilter: 'blur(4px)',
+                            zIndex: 2,
                           }}
                         >
                           #{item.position}
@@ -5821,6 +5827,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                             fontSize: '0.5625rem',
                             fontWeight: 700,
                             boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
+                            zIndex: 2,
                           }}
                         >
                           ⚠️ Missing
@@ -5832,8 +5839,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          padding: '5px 6px',
+                          padding: '6px 8px',
                           backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : '#FEF3C7',
+                          flexShrink: 0,
+                          minHeight: '34px',
+                          boxSizing: 'border-box',
                         }}
                       >
                         <span style={{ fontSize: '0.5625rem', fontWeight: 600, color: '#F59E0B' }}>
@@ -5886,17 +5896,25 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                       backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
                       display: 'flex',
                       flexDirection: 'column',
+                      flexShrink: 0,
+                      minHeight: '215px',
                       transition: 'transform 0.15s ease, box-shadow 0.15s ease',
                     }}
                   >
                     <div
+                      onClick={() => window.open(displayUrl || img.url, '_blank')}
                       style={{
                         position: 'relative',
                         width: '100%',
+                        height: '180px',
+                        minHeight: '180px',
                         aspectRatio: '4/5',
+                        flexShrink: 0,
                         backgroundColor: isDark ? '#1E293B' : '#E2E8F0',
                         overflow: 'hidden',
+                        cursor: 'pointer',
                       }}
+                      title="Click to view full resolution"
                     >
                       <img
                         src={displayUrl}
@@ -5922,6 +5940,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                           fontSize: '0.625rem',
                           fontWeight: 700,
                           backdropFilter: 'blur(4px)',
+                          zIndex: 2,
                         }}
                       >
                         #{img.position || item.position}
@@ -5941,6 +5960,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                           alignItems: 'center',
                           gap: '2px',
                           boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
+                          zIndex: 2,
                         }}
                       >
                         ✓ Enhanced
@@ -5952,10 +5972,13 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '4px 6px',
+                        padding: '6px 8px',
                         fontSize: '0.625rem',
                         color: 'var(--text-secondary)',
                         backgroundColor: isDark ? 'rgba(0, 0, 0, 0.3)' : '#F1F5F9',
+                        flexShrink: 0,
+                        minHeight: '34px',
+                        boxSizing: 'border-box',
                       }}
                     >
                       <span style={{ fontSize: '0.5625rem', fontWeight: 500 }}>
