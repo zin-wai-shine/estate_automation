@@ -224,8 +224,9 @@ export const isTextFormatAIBox = (
   if (!box) return false;
   if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
   if (isN8NAIBox(box) || isExternalBrowserAIBox(box) || isGoogleSheetBox(box)) return false;
-  if (isWatermarkAIBox(box)) return false;
-  if (box.processType === 'image_enhance' || box.provider === 'runware_ai') return false;
+  if (isCropStudioBox(box) || isWatermarkAIBox(box)) return false;
+  if (Boolean(box.cropFormatId) || Boolean(box.watermarkPresetId)) return false;
+  if (box.processType === 'image_enhance' || box.processType === 'watermark' || box.provider === 'runware_ai' || box.provider === 'watermark') return false;
   if (box.processType === 'text_format') return true;
   if (box.title?.toLowerCase().startsWith('format:') || box.title?.toLowerCase().startsWith('ai format')) return true;
   // Specific prompt template boxes (e.g. BoltHaven-FB Hero Prompt, Get Condo Name, etc.) are prompt format presets
@@ -249,6 +250,7 @@ export const isTextAIBox = (
   connections: { fromNodeId: string; toNodeId: string }[] = []
 ): boolean => {
   if (!box) return false;
+  if (isCropStudioBox(box)) return false;
   if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
   if (isN8NAIBox(box) || isExternalBrowserAIBox(box) || isGoogleSheetBox(box)) return false;
   if (isWatermarkAIBox(box)) return false;
@@ -266,6 +268,7 @@ export const isImageAIBox = (
   connections: { fromNodeId: string; toNodeId: string }[] = []
 ): boolean => {
   if (!box) return false;
+  if (isCropStudioBox(box)) return true;
   if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
   if (isN8NAIBox(box) || isGoogleSheetBox(box)) return false;
   if (isExternalBrowserAIBox(box)) return true;
@@ -296,7 +299,7 @@ export const isEnhanceAIBox = (
   box: { id?: string; provider?: string; model?: string; processType?: string },
   connections: { fromNodeId: string; toNodeId: string }[] = []
 ): boolean => {
-  if (!box || isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box) || isWatermarkAIBox(box)) return false;
+  if (!box || isCropStudioBox(box) || isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box) || isWatermarkAIBox(box)) return false;
   return isImageAIBox(box, connections);
 };
 

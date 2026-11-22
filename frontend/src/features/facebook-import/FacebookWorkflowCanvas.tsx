@@ -956,7 +956,7 @@ export const autoConnectWorkflow = (
 
       // Connect cropStudio -> child watermark boxes
       watermarkBoxes.forEach((wm) => {
-        const exists = conns.some((c) => c.fromNodeId === primaryCrop.id && c.toNodeId === wm.id);
+        const exists = conns.some((c) => (c.fromNodeId === primaryCrop.id && c.toNodeId === wm.id) || (c.fromNodeId === wm.id && c.toNodeId === primaryCrop.id));
         if (!exists) {
           conns.push({
             id: `conn-${primaryCrop.id}-${wm.id}`,
@@ -2123,11 +2123,13 @@ export const sanitizeAndResolveCollisions = (
 
   // Check if we have crop format presets but no central wide Crop Studio Box ("Photo Format & Crop")
   const existingWatermarkBoxes = finalAiBoxes.filter((b) => isWatermarkAIBox(b));
-  const existingCropStudioBoxes = finalAiBoxes.filter((b) => isCropStudioBox(b));
+  let centralCropBox = finalAiBoxes.find((b) => isCropStudioBox(b));
 
-  if (existingWatermarkBoxes.length > 0 && existingCropStudioBoxes.length === 0) {
-    // Automatically synthesize the central wide Crop Studio Box ("Photo Format & Crop" container)
-    const centralCropBox: DynamicAIBoxConfig = {
+  if (existingWatermarkBoxes.length > 0 && !centralCropBox) {
+    const sourceBox = finalAiBoxes.find((b) => isExternalBrowserAIBox(b) || isEnhanceAIBox(b, finalConnections));
+    const parentX = sourceBox?.x ?? 520;
+    const parentY = sourceBox?.y ?? 485;
+    centralCropBox = {
       id: 'ai-box-crop-studio-main',
       title: 'Photo Format & Crop',
       subtitle: 'Crop & Cut Studio',
@@ -2138,25 +2140,25 @@ export const sanitizeAndResolveCollisions = (
       templateText: '',
       customPrompt: '',
       enabled: true,
-      x: 740,
-      y: 350,
+      x: parentX + 220,
+      y: parentY,
     };
     finalAiBoxes.push(centralCropBox);
+  }
 
-    // Rewire: source (external browser or get-images) -> centralCropBox
-    // centralCropBox -> each child crop format box
-    // centralCropBox -> combine box
+  // Crop format presets sit vertically attached above Crop Studio Box only; they must never have outgoing wires to combine boxes, output, or destinations
+  if (centralCropBox) {
     const wmIds = new Set(existingWatermarkBoxes.map((w) => w.id));
     finalConnections = finalConnections.filter(
       (c) =>
         !(c.fromNodeId === 'get-images' && wmIds.has(c.toNodeId)) &&
         !(wmIds.has(c.toNodeId) && finalAiBoxes.some((b) => (isExternalBrowserAIBox(b) || isEnhanceAIBox(b, finalConnections)) && b.id === c.fromNodeId)) &&
-        !(wmIds.has(c.fromNodeId) && (c.toNodeId === 'output' || activeCombineBoxIds.includes(c.toNodeId) || c.toNodeId === 'destination' || c.toNodeId.startsWith('dest-')))
+        !(wmIds.has(c.fromNodeId) && (c.toNodeId === 'output' || allCombineBoxIds.includes(c.toNodeId) || c.toNodeId === 'destination' || c.toNodeId.startsWith('dest-')))
     );
 
     const sourceBox = finalAiBoxes.find((b) => isExternalBrowserAIBox(b) || isEnhanceAIBox(b, finalConnections));
     const sourceId = sourceBox ? sourceBox.id : 'get-images';
-    if (!finalConnections.some((c) => c.fromNodeId === sourceId && c.toNodeId === centralCropBox.id)) {
+    if (!finalConnections.some((c) => c.fromNodeId === sourceId && c.toNodeId === centralCropBox!.id)) {
       finalConnections.push({
         id: `conn-${sourceId}-${centralCropBox.id}`,
         fromNodeId: sourceId,
@@ -2165,10 +2167,13 @@ export const sanitizeAndResolveCollisions = (
     }
 
     existingWatermarkBoxes.forEach((w) => {
-      if (!finalConnections.some((c) => c.fromNodeId === centralCropBox.id && c.toNodeId === w.id)) {
+      const isConnected = finalConnections.some(
+        (c) => (c.fromNodeId === centralCropBox!.id && c.toNodeId === w.id) || (c.fromNodeId === w.id && c.toNodeId === centralCropBox!.id)
+      );
+      if (!isConnected) {
         finalConnections.push({
-          id: `conn-${centralCropBox.id}-${w.id}`,
-          fromNodeId: centralCropBox.id,
+          id: `conn-${centralCropBox!.id}-${w.id}`,
+          fromNodeId: centralCropBox!.id,
           toNodeId: w.id,
         });
       }
@@ -2176,7 +2181,7 @@ export const sanitizeAndResolveCollisions = (
 
     if (activeCombineBoxIds.length > 0) {
       const primaryCb = activeCombineBoxIds[0];
-      if (!finalConnections.some((c) => c.fromNodeId === centralCropBox.id && c.toNodeId === primaryCb)) {
+      if (!finalConnections.some((c) => c.fromNodeId === centralCropBox!.id && c.toNodeId === primaryCb)) {
         finalConnections.push({
           id: `conn-${centralCropBox.id}-${primaryCb}`,
           fromNodeId: centralCropBox.id,
@@ -2184,18 +2189,6 @@ export const sanitizeAndResolveCollisions = (
         });
       }
     }
-  }
-
-  // Crop format presets sit vertically attached above Crop Studio Box only; they must never have outgoing wires to combine boxes, output, or destinations
-  const allWatermarkIds = new Set(finalAiBoxes.filter((b) => isWatermarkAIBox(b)).map((b) => b.id));
-  const hasCentralCrop = finalAiBoxes.some((b) => isCropStudioBox(b));
-  if (hasCentralCrop && allWatermarkIds.size > 0) {
-    finalConnections = finalConnections.filter(
-      (c) =>
-        !(c.fromNodeId === 'get-images' && allWatermarkIds.has(c.toNodeId)) &&
-        !(allWatermarkIds.has(c.toNodeId) && finalAiBoxes.some((b) => (isExternalBrowserAIBox(b) || isEnhanceAIBox(b, finalConnections)) && b.id === c.fromNodeId)) &&
-        !(allWatermarkIds.has(c.fromNodeId) && (c.toNodeId === 'output' || allCombineBoxIds.includes(c.toNodeId) || c.toNodeId === 'destination' || c.toNodeId.startsWith('dest-')))
-    );
   }
 
   // 2. Remove dangling/ghost wires to destination if no destination is active on canvas
@@ -2331,24 +2324,38 @@ export const sanitizeAndResolveCollisions = (
     const primaryCrop = finalAiBoxes.find((b) => isCropStudioBox(b));
     const cropFormatBoxes = finalAiBoxes.filter((b) => isWatermarkAIBox(b));
 
-    if (primaryCrop && cropFormatBoxes.length > 0) {
-      const sortedCropFormats = [...cropFormatBoxes].sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
-      const cropCenterX = (primaryCrop.x ?? 740) + 108;
-      const FORMAT_COL_WIDTH = 155;
-      const totalWidth = (sortedCropFormats.length - 1) * FORMAT_COL_WIDTH;
-      const startLeft = cropCenterX - totalWidth / 2;
-      const centerIdx = (sortedCropFormats.length - 1) / 2;
-      const apexY = (primaryCrop.y ?? 350) - 148;
+    if (primaryCrop) {
+      const sourceBox = finalAiBoxes.find((b) => isExternalBrowserAIBox(b) || isEnhanceAIBox(b, nextConnections));
+      const parentX = sourceBox?.x ?? 520;
+      const parentY = sourceBox?.y ?? 485;
 
-      sortedCropFormats.forEach((b, idx) => {
-        const distFromCenter = Math.abs(idx - centerIdx);
-        const normalizedDist = centerIdx > 0 ? distFromCenter / centerIdx : 0;
-        const archDrop = Math.round(Math.pow(normalizedDist, 1.8) * 34);
-        alignedCoordsById.set(b.id, {
-          x: Math.round(startLeft + idx * FORMAT_COL_WIDTH - 36),
-          y: apexY + archDrop,
+      let cropX = typeof primaryCrop.x === 'number' && primaryCrop.x >= parentX + 200 ? primaryCrop.x : (parentX + 220);
+      let cropY = typeof primaryCrop.y === 'number' ? primaryCrop.y : parentY;
+      // If primaryCrop.y was colliding with Google Sheet (y=360 or 350) or below (y>600), align it with parentY (485)
+      if (Math.abs(cropY - 350) < 30 || Math.abs(cropY - 360) < 30 || cropY < 400) {
+        cropY = parentY;
+      }
+      alignedCoordsById.set(primaryCrop.id, { x: cropX, y: cropY });
+
+      if (cropFormatBoxes.length > 0) {
+        const sortedCropFormats = [...cropFormatBoxes].sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
+        const cropCenterX = cropX + 108;
+        const FORMAT_COL_WIDTH = 155;
+        const totalWidth = (sortedCropFormats.length - 1) * FORMAT_COL_WIDTH;
+        const startLeft = cropCenterX - totalWidth / 2;
+        const centerIdx = (sortedCropFormats.length - 1) / 2;
+        const apexY = cropY - 148;
+
+        sortedCropFormats.forEach((b, idx) => {
+          const distFromCenter = Math.abs(idx - centerIdx);
+          const normalizedDist = centerIdx > 0 ? distFromCenter / centerIdx : 0;
+          const archDrop = Math.round(Math.pow(normalizedDist, 1.8) * 34);
+          alignedCoordsById.set(b.id, {
+            x: Math.round(startLeft + idx * FORMAT_COL_WIDTH - 36),
+            y: apexY + archDrop,
+          });
         });
-      });
+      }
     }
 
     // 2. Auto-heal Chrome Profile and Tab Group clusters under External Browser
@@ -6243,10 +6250,33 @@ export const FacebookWorkflowCanvas = forwardRef<
       return Boolean(fromBox && isTextAIBox(fromBox, config.connections));
     }
 
+    // Crop Studio <-> Watermark / Crop Format preset rules
+    if (fromBox && isCropStudioBox(fromBox)) {
+      if (toBox && isWatermarkAIBox(toBox)) return true;
+      if (isTargetCombine) return true;
+    }
+    if (toBox && isCropStudioBox(toBox)) {
+      if (fromBox && isWatermarkAIBox(fromBox)) return true;
+      if (fromId === 'get-images') return true;
+      if (fromBox && (isEnhanceAIBox(fromBox, config.connections) || isExternalBrowserAIBox(fromBox))) return true;
+    }
+
+    const hasCropStudio = config.aiBoxes.some((b) => isCropStudioBox(b));
+    // Watermark crop format presets can only connect to Crop Studio when Crop Studio exists
+    if (fromBox && isWatermarkAIBox(fromBox)) {
+      if (toBox && isCropStudioBox(toBox)) return true;
+      if (hasCropStudio) return false;
+    }
+    if (toBox && isWatermarkAIBox(toBox)) {
+      if (fromBox && isCropStudioBox(fromBox)) return true;
+      if (hasCropStudio) return false;
+    }
+
     // Target is a Combine Box: can receive from content, images, central AI Model box, watermark, or another Combine Box
     if (isTargetCombine) {
       if (fromId === 'trigger' || fromId === toId) return false;
       if (fromBox && isTextFormatAIBox(fromBox)) return false;
+      if (fromBox && isWatermarkAIBox(fromBox) && hasCropStudio) return false;
       return true;
     }
 
@@ -6315,14 +6345,22 @@ export const FacebookWorkflowCanvas = forwardRef<
         return !alreadyConnected;
       }
 
-      // B) Image Enhancer / External Browser -> Watermark node
+      // B) Image Enhancer / External Browser -> Crop Studio or Watermark node
       // "if that enhance have that watermark must be have after that enhance"
-      if (sourceBox && (isEnhanceAIBox(sourceBox, conns) || isExternalBrowserAIBox(sourceBox)) && targetBox && isWatermarkAIBox(targetBox)) {
+      if (sourceBox && (isEnhanceAIBox(sourceBox, conns) || isExternalBrowserAIBox(sourceBox))) {
+        if (targetBox && (isCropStudioBox(targetBox) || isWatermarkAIBox(targetBox))) {
+          const alreadyConnected = conns.some((c) => c.fromNodeId === fromId && c.toNodeId === toId);
+          return !alreadyConnected;
+        }
+      }
+
+      // C) Crop Studio -> Watermark / Crop Format preset node (1-to-many crown fanout)
+      if (sourceBox && isCropStudioBox(sourceBox) && targetBox && isWatermarkAIBox(targetBox)) {
         const alreadyConnected = conns.some((c) => c.fromNodeId === fromId && c.toNodeId === toId);
         return !alreadyConnected;
       }
 
-      // C) Watermark -> Watermark node (chaining multiple watermarks for multiple pages)
+      // D) Watermark -> Watermark node (chaining multiple watermarks for multiple pages)
       if (sourceBox && isWatermarkAIBox(sourceBox) && targetBox && isWatermarkAIBox(targetBox)) {
         const alreadyConnected = conns.some((c) => c.fromNodeId === fromId && c.toNodeId === toId);
         return !alreadyConnected;
@@ -8042,13 +8080,25 @@ export const FacebookWorkflowCanvas = forwardRef<
 
     let nextConns = [...(config.connections || [])].filter((c) => c.fromNodeId !== 'trigger');
 
+    // If central Crop Studio exists, connect crop studio -> new watermark format node!
+    const cropStudio = config.aiBoxes.find((b) => isCropStudioBox(b));
+    if (cropStudio) {
+      if (!nextConns.some((c) => (c.fromNodeId === cropStudio.id && c.toNodeId === newId) || (c.fromNodeId === newId && c.toNodeId === cropStudio.id))) {
+        nextConns.push({
+          id: `conn-${cropStudio.id}-${newId}`,
+          fromNodeId: cropStudio.id,
+          toNodeId: newId,
+        });
+      }
+    }
+
     nextConns = autoConnectImagePipeline(nextBoxes, nextConns, config.getContent.enabled, true);
-    const nextConfig = {
+    const nextConfig = sanitizeAndResolveCollisions({
       ...config,
       getImages: updatedGetImages,
       aiBoxes: nextBoxes,
       connections: nextConns,
-    };
+    }, formatId);
     updateConfig(nextConfig);
     setSelectedBoxId(newId);
     return newId;
@@ -10236,7 +10286,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                 : (isAIToFormatWire || isCropToFormatWire)
                   ? Math.abs(fromPos.x - toPos.x) < 5
                     ? `M ${fromPos.x} ${fromPos.y} L ${toPos.x} ${toPos.y}`
-                    : `M ${fromPos.x} ${fromPos.y} C ${fromPos.x} ${fromPos.y - Math.max((fromPos.y - toPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y + Math.max((fromPos.y - toPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y}`
+                    : fromPos.y >= toPos.y
+                      ? `M ${fromPos.x} ${fromPos.y} C ${fromPos.x} ${fromPos.y - Math.max((fromPos.y - toPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y + Math.max((fromPos.y - toPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y}`
+                      : `M ${fromPos.x} ${fromPos.y} C ${fromPos.x} ${fromPos.y + Math.max((toPos.y - fromPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y - Math.max((toPos.y - fromPos.y) * 0.45, 20)}, ${toPos.x} ${toPos.y}`
                   : conn.fromNodeId === 'get-images' && (conn.toNodeId === 'destination' || conn.toNodeId.startsWith('dest-'))
                     ? createBaseChannelPath(fromPos, toPos)
                     : createBezierPath(fromPos, toPos);
