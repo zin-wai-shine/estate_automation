@@ -206,42 +206,29 @@ async function recoverMissingDownloads(payload = {}) {
     const candidateTabIds = [];
     const allTabs = await chrome.tabs.query({});
 
-    // 1. Memorized thread URL
-    if (threadUrl) {
-      const matchingTab = allTabs.find((t) => t.url === threadUrl || (t.url && threadUrl.includes(t.url)));
+    // STRICT THREAD MATCHING ONLY:
+    // Only query a tab if that tab's URL matches the EXACT chat thread where Image #pos was generated!
+    // NEVER query random other tabs in the group, because doing so steals another photo (e.g. Photo #4)
+    // and wrongly renames it as Photo #pos (e.g. Photo #1)!
+    if (threadUrl && (threadUrl.includes('chatgpt.com') || threadUrl.includes('chat.openai.com'))) {
+      const cleanThreadBase = threadUrl.split('?')[0];
+      const matchingTab = allTabs.find((t) => {
+        const u = t.url || '';
+        return u === threadUrl || (cleanThreadBase && u.includes(cleanThreadBase));
+      });
+
       if (matchingTab) {
         candidateTabIds.push(matchingTab.id);
       } else {
         try {
+          console.log(`[BOLTHAVEN EXT] Opening exact memorized thread tab for Image #${pos}: ${threadUrl}`);
           const newTab = await chrome.tabs.create({ url: threadUrl, active: false });
           candidateTabIds.push(newTab.id);
           await delay(3500);
-        } catch (e) {}
-      }
-    }
-
-    // 2. Open tabs in worker tab groups (e.g. Enhance IMG group)
-    try {
-      const groups = await chrome.tabGroups.query({});
-      const enhanceGroup = groups.find((g) => (g.title || '').toLowerCase().includes('enhance'));
-      if (enhanceGroup) {
-        const groupTabs = allTabs.filter((t) => t.groupId === enhanceGroup.id);
-        for (const gt of groupTabs) {
-          if (gt.id && !candidateTabIds.includes(gt.id)) candidateTabIds.push(gt.id);
+        } catch (e) {
+          console.warn(`[BOLTHAVEN EXT] Error opening memorized thread for Image #${pos}:`, e.message);
         }
       }
-    } catch (_) {}
-
-    // 3. Active tab if on ChatGPT
-    const activeChatTabs = allTabs.filter((t) => t.active && t.url && (t.url.includes('chatgpt.com') || t.url.includes('chat.openai.com')));
-    for (const at of activeChatTabs) {
-      if (at.id && !candidateTabIds.includes(at.id)) candidateTabIds.push(at.id);
-    }
-
-    // 4. Any other open ChatGPT tab
-    const chatTabs = allTabs.filter((t) => t.url && (t.url.includes('chatgpt.com') || t.url.includes('chat.openai.com')));
-    for (const ct of chatTabs) {
-      if (ct.id && !candidateTabIds.includes(ct.id)) candidateTabIds.push(ct.id);
     }
 
     let downloaded = false;

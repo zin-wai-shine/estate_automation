@@ -442,8 +442,15 @@
 
   // Detect whether ChatGPT is actively thinking, reasoning, or generating
   function isThinkingOrGenerating() {
-    // 1. Stop button present strictly in composer -> 100% actively generating!
+    // 1. Stop button present anywhere in composer or page -> actively generating!
     if (findStopButton()) return true;
+
+    const anyStopBtn = Array.from(document.querySelectorAll('button')).some((b) => {
+      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+      const testid = (b.getAttribute('data-testid') || '').toLowerCase();
+      return (aria.includes('stop') || testid.includes('stop')) && !aria.includes('voice') && !aria.includes('speech');
+    });
+    if (anyStopBtn) return true;
 
     // 2. Only check inside assistant conversation turns (never whole page / sidebar)
     const assistantTurns = document.querySelectorAll(
@@ -452,8 +459,13 @@
     if (assistantTurns.length === 0) return false;
 
     const lastTurn = assistantTurns[assistantTurns.length - 1];
-    // Active animated spinner or pulsing element in last turn
-    if (lastTurn.querySelector('svg.animate-spin, div[class*="spin"], .result-thinking, .animate-pulse')) {
+    // Active animated spinner, shimmer, or pulsing element in last turn
+    if (lastTurn.querySelector('svg.animate-spin, div[class*="spin"], .result-thinking, .animate-pulse, div[class*="shimmer"], [data-testid*="thinking"], [data-testid*="generating"], div[class*="loading"]')) {
+      return true;
+    }
+
+    const lastTurnText = (lastTurn.textContent || '').toLowerCase();
+    if (lastTurnText.includes('creating image') || lastTurnText.includes('generating image') || lastTurnText.includes('drawing image')) {
       return true;
     }
 
@@ -654,57 +666,7 @@
 
   // ── Locate the latest generated/enhanced image rendered in this ChatGPT tab ──
   function findLatestGeneratedImageInTab() {
-    // 1. Look for image card with an "Edit" button (standard ChatGPT image card)
-    const editButtons = Array.from(document.querySelectorAll('button')).filter(
-      (b) => (b.textContent || '').trim().toLowerCase() === 'edit'
-    );
-    for (let i = editButtons.length - 1; i >= 0; i--) {
-      const editBtn = editButtons[i];
-      const card = editBtn.closest('div[class*="group"], div[class*="relative"], article, section') || editBtn.parentElement;
-      if (card) {
-        const cardImg = card.querySelector('img');
-        if (cardImg) {
-          const src = cardImg.src || cardImg.getAttribute('src') || '';
-          if (src && !src.toLowerCase().includes('avatar') && !src.toLowerCase().includes('icon')) {
-            if (cardImg.complete && (cardImg.naturalWidth >= 100 || cardImg.width >= 100)) {
-              return cardImg;
-            }
-          }
-        }
-      }
-    }
-
-    // 2. Look for image card with a share button [ ↑ ] (modern ChatGPT image card)
-    const allButtons = Array.from(document.querySelectorAll('button'));
-    const shareBtns = allButtons.filter((b) => {
-      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-      const title = (b.getAttribute('title') || '').toLowerCase();
-      if (aria.includes('share') || title.includes('share') || aria.includes('export')) return true;
-      const svg = b.querySelector('svg');
-      if (svg) {
-        const html = svg.innerHTML.toLowerCase();
-        if (html.includes('arrow') || html.includes('upload') || html.includes('share') || html.includes('m12')) return true;
-      }
-      return false;
-    });
-
-    for (let i = shareBtns.length - 1; i >= 0; i--) {
-      const shareBtn = shareBtns[i];
-      const card = shareBtn.closest('div[class*="group"], div[class*="relative"], article, section') || shareBtn.parentElement;
-      if (card) {
-        const cardImg = card.querySelector('img');
-        if (cardImg) {
-          const src = cardImg.src || cardImg.getAttribute('src') || '';
-          if (src && !src.toLowerCase().includes('avatar') && !src.toLowerCase().includes('icon')) {
-            if (cardImg.complete && (cardImg.naturalWidth >= 100 || cardImg.width >= 100)) {
-              return cardImg;
-            }
-          }
-        }
-      }
-    }
-
-    // 3. Inspect newest assistant turn
+    // 1. Inspect the latest assistant turn
     const assistantTurns = Array.from(document.querySelectorAll(
       'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
     )).filter((turn) => {
@@ -712,32 +674,28 @@
       return !turn.querySelector('[data-message-author-role="user"]');
     });
 
-    for (let i = assistantTurns.length - 1; i >= 0; i--) {
-      const turn = assistantTurns[i];
-      const imgs = Array.from(turn.querySelectorAll('img')).filter((img) => {
+    if (assistantTurns.length > 0) {
+      const latestTurn = assistantTurns[assistantTurns.length - 1];
+
+      // If latest turn is currently generating or spinning, don't grab incomplete image
+      if (latestTurn.querySelector('svg.animate-spin, div[class*="spin"], .result-thinking, .animate-pulse, div[class*="shimmer"], [data-testid*="thinking"], [data-testid*="generating"], div[class*="loading"]')) {
+        return null;
+      }
+
+      const imgs = Array.from(latestTurn.querySelectorAll('img')).filter((img) => {
         const s = (img.src || img.getAttribute('src') || '').toLowerCase();
-        if (!s || s.includes('avatar') || s.includes('icon') || s.includes('profile')) return false;
+        if (!s || s.includes('avatar') || s.includes('icon') || s.includes('profile') || s.includes('logo')) return false;
         if (img.closest('form, div[class*="composer"], header, nav')) return false;
-        const rect = img.getBoundingClientRect();
-        const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
-        return (hasSize || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
+        const w = img.naturalWidth || img.width || 0;
+        const h = img.naturalHeight || img.height || 0;
+        return img.complete && w >= 200 && h >= 200;
       });
+
       if (imgs.length > 0) return imgs[imgs.length - 1];
     }
 
-    // 4. Global fallback: Any large image on the page
-    const allImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
-      if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
-      const s = (img.src || img.getAttribute('src') || '').toLowerCase();
-      if (!s || s.includes('avatar') || s.includes('icon') || s.includes('logo')) return false;
-      const rect = img.getBoundingClientRect();
-      const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
-      return (hasSize || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
-    });
-
-    if (allImgs.length > 0) return allImgs[allImgs.length - 1];
-
     return null;
+  }
   }
 
   // Trigger reliable multi-tier image download to disk and browser downloads directory
@@ -1092,90 +1050,11 @@
     return null;
   }
 
-  // Find newly generated enhanced photo for the Enhance IMG pipeline (strictly NEW images only!)
+  // Find newly generated enhanced photo for the Enhance IMG pipeline (strictly NEW images in turns generated AFTER preAssistantCount!)
   function findGeneratedEnhancedImage(preExistingUrls, preAssistantCount = 0) {
     const preUrls = preExistingUrls || new Set();
 
-    // 0. Look for image card with an "Edit" button that was NOT in preExistingUrls
-    const editButtons = Array.from(document.querySelectorAll('button')).filter((b) => (b.textContent || '').trim() === 'Edit');
-    for (let i = editButtons.length - 1; i >= 0; i--) {
-      const editBtn = editButtons[i];
-      const card = editBtn.closest('div[class*="group"], div[class*="relative"], article, section') || editBtn.parentElement;
-      if (card) {
-        const cardImg = card.querySelector('img');
-        if (cardImg) {
-          const src = cardImg.src || cardImg.getAttribute('src') || '';
-          if (src && !preUrls.has(src)) {
-            const s = src.toLowerCase();
-            if (!s.includes('avatar') && !s.includes('profile') && !s.includes('icon') && !s.includes('emoji') && !s.includes('logo')) {
-              if (cardImg.complete && (cardImg.naturalWidth >= 100 || cardImg.width >= 100)) {
-                return cardImg;
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // 0.1. Inspect newest assistant turn directly for output image
-    const assistantTurns = Array.from(document.querySelectorAll(
-      'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
-    )).filter((turn) => {
-      if (turn.getAttribute('data-message-author-role') === 'user') return false;
-      if (turn.querySelector('[data-message-author-role="user"]')) return false;
-      const c = (turn.className || '').toLowerCase();
-      return !c.includes('user-turn') && !c.includes('user-message');
-    });
-
-    if (assistantTurns.length > preAssistantCount) {
-      const latestTurn = assistantTurns[assistantTurns.length - 1];
-      const turnImgs = Array.from(latestTurn.querySelectorAll('img')).filter((img) => {
-        const src = img.src || img.getAttribute('src') || '';
-        if (!src || preUrls.has(src)) return false;
-        const s = src.toLowerCase();
-        if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('logo')) return false;
-        if (img.closest('form, div[class*="composer"], [data-message-author-role="user"], header, nav')) return false;
-        const rect = img.getBoundingClientRect();
-        const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
-        return (hasSize || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
-      });
-      if (turnImgs.length > 0) {
-        return turnImgs[turnImgs.length - 1];
-      }
-    }
-
-    // 0.5. Look for image card with a share/action button (new ChatGPT UI: Edit is hover-only or absent)
-    const candidateImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
-      const src = img.src || img.getAttribute('src') || '';
-      if (!src || preUrls.has(src)) return false;
-      const s = src.toLowerCase();
-      if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('favicon') || s.includes('logo')) return false;
-      if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
-      const rect = img.getBoundingClientRect();
-      const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
-      const isOai = s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:');
-      return (hasSize || isOai) && img.complete;
-    });
-    // Prefer images inside a card that has a share/download/edit action button
-    for (let i = candidateImgs.length - 1; i >= 0; i--) {
-      const img = candidateImgs[i];
-      const card = img.closest('div[class*="group"], div[class*="relative"], article, section') || img.parentElement;
-      if (card) {
-        const btns = Array.from(card.querySelectorAll('button, a[download]'));
-        const hasActionBtn = btns.some((b) => {
-          const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-          const title = (b.getAttribute('title') || '').toLowerCase();
-          return aria.includes('share') || aria.includes('download') || aria.includes('export') ||
-                 title.includes('share') || title.includes('download') || title.includes('export') ||
-                 (b.textContent || '').trim() === 'Edit';
-        });
-        if (hasActionBtn) return img;
-      }
-    }
-    // Final fallback: return any new fully-loaded large image (not in user/composer areas)
-    if (candidateImgs.length > 0) return candidateImgs[candidateImgs.length - 1];
-
-    // 1. Assistant turns (strictly from newest to oldest, excluding user turns)
+    // 1. Assistant turns (strictly excluding user turns)
     const allAssistantTurns = Array.from(
       document.querySelectorAll(
         'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
@@ -1188,49 +1067,65 @@
       return true;
     });
 
-    for (let i = allAssistantTurns.length - 1; i >= 0; i--) {
-      const turn = allAssistantTurns[i];
+    // STRICT REQUIREMENT: Only look at turns generated AFTER preAssistantCount!
+    // A generated image for the current prompt CANNOT exist in turns prior to preAssistantCount!
+    if (allAssistantTurns.length <= preAssistantCount) {
+      // ChatGPT has not finished or rendered the new assistant turn yet
+      return null;
+    }
+
+    const newTurns = allAssistantTurns.slice(preAssistantCount);
+
+    // Inspect new turns from newest to oldest
+    for (let i = newTurns.length - 1; i >= 0; i--) {
+      const turn = newTurns[i];
+
+      // Check if this turn is still actively thinking, generating, or rendering
+      const hasActiveProgress = turn.querySelector(
+        'svg.animate-spin, div[class*="spin"], .result-thinking, .animate-pulse, div[class*="shimmer"], [data-testid*="thinking"], [data-testid*="generating"], div[class*="loading"]'
+      );
+      const turnText = (turn.textContent || '').toLowerCase();
+      const isGeneratingText =
+        turnText.includes('creating image') ||
+        turnText.includes('generating image') ||
+        turnText.includes('drawing image') ||
+        turnText.includes('thinking');
+
+      if (hasActiveProgress || isGeneratingText) {
+        // Still generating in this turn! Wait for completion.
+        return null;
+      }
+
+      // Find valid generated image strictly inside this new assistant turn
       const imgs = Array.from(turn.querySelectorAll('img')).filter((img) => {
         const src = img.src || img.getAttribute('src') || '';
-        if (!src || preUrls.has(src)) return false;
-        // Strictly exclude if inside composer form, nav, header, or user bubble
+        if (!src) return false;
+        const cleanSrc = src.split('?')[0];
+        if (preUrls.has(src) || preUrls.has(cleanSrc)) return false;
+
+        const s = src.toLowerCase();
+        if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('logo')) {
+          return false;
+        }
         if (img.closest('form, div[class*="composer"], [data-message-author-role="user"], header, nav')) {
           return false;
         }
-        const s = src.toLowerCase();
-        if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('favicon') || s.includes('logo')) {
-          return false;
-        }
-        const rect = img.getBoundingClientRect();
-        const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
-        return hasSize || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:');
+
+        // Must be complete and have realistic generated image dimensions (>= 200px)
+        if (!img.complete) return false;
+        const w = img.naturalWidth || img.width || 0;
+        const h = img.naturalHeight || img.height || 0;
+        return w >= 200 && h >= 200;
       });
 
       if (imgs.length > 0) {
-        const best = imgs.find((img) => !preUrls.has(img.src || img.getAttribute('src') || ''));
-        if (best) return best;
+        return imgs[imgs.length - 1];
       }
     }
 
-    // 2. Global fallback across document for newly added images (strictly excluding user bubble, composer, header)
-    const allImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
-      if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
-      const src = img.src || img.getAttribute('src') || '';
-      if (!src || preUrls.has(src)) return false;
-      const s = src.toLowerCase();
-      if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('favicon') || s.includes('logo')) {
-        return false;
-      }
-      const rect = img.getBoundingClientRect();
-      const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
-      return (hasSize || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
-    });
-
-    if (allImgs.length > 0) {
-      return allImgs[allImgs.length - 1];
-    }
-
+    // Never search outside the new turns! If no complete image exists in new turns, it's still generating!
     return null;
+  }
   }
 
   // Detect ChatGPT error banner and locate the Retry button
@@ -2121,7 +2016,7 @@
 
     const startTime = Date.now();
     const maxWaitMs = 360000; // 6 minutes max
-    const MIN_GENERATION_WAIT_MS = 15000; // Must wait at least 15s (AI generation takes 30-90s)
+    const MIN_GENERATION_WAIT_MS = 20000; // Must wait at least 20s (AI image generation takes 30-75s)
     let consecutiveCalmChecks = 0;
     const REQUIRED_CALM_CHECKS = 3;
     let streamRetryCount = 0;
@@ -2193,42 +2088,10 @@
           return;
         }
 
-        // 2. Multi-method image detection (Method A -> Method B -> Method C)
-        // Method A: Targeted search (Edit button, share-button card, assistant turn img)
+        // 2. Strict image search: ONLY inspect the newly created assistant turn for this exact job
+        // NEVER search outside the new assistant turn and NEVER fall back to whole-page queries,
+        // which previously caused grabbing older photos from previous runs!
         let enhancedImg = findGeneratedEnhancedImage(preExistingImageUrls, preAssistantCount);
-
-        // Method B (Fallback): After 10s calm, search for any new oaiusercontent / file-service / blob image
-        if (!enhancedImg && elapsed > MIN_GENERATION_WAIT_MS + 10000) {
-          const oaiImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
-            const src = img.src || img.getAttribute('src') || '';
-            if (!src || preExistingImageUrls.has(src)) return false;
-            if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
-            const s = src.toLowerCase();
-            return (s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
-          });
-          if (oaiImgs.length > 0) {
-            enhancedImg = oaiImgs[oaiImgs.length - 1];
-            console.log(`[BOLTHAVEN] Method B (oaiusercontent): detected enhanced image #${job.original_position || 1}:`, enhancedImg.src);
-          }
-        }
-
-        // Method C (Fallback): After 20s calm, fallback to any large loaded image on page not in composer/user bubble
-        if (!enhancedImg && elapsed > MIN_GENERATION_WAIT_MS + 20000) {
-          const anyLargeImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
-            const src = img.src || img.getAttribute('src') || '';
-            if (!src || preExistingImageUrls.has(src)) return false;
-            if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
-            const s = src.toLowerCase();
-            if (s.includes('avatar') || s.includes('icon') || s.includes('logo') || s.includes('favicon')) return false;
-            const rect = img.getBoundingClientRect();
-            const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
-            return hasSize && img.complete;
-          });
-          if (anyLargeImgs.length > 0) {
-            enhancedImg = anyLargeImgs[anyLargeImgs.length - 1];
-            console.log(`[BOLTHAVEN] Method C (any large img): detected enhanced image #${job.original_position || 1}:`, enhancedImg.src);
-          }
-        }
 
         if (!enhancedImg) {
           consecutiveCalmChecks = 0;
@@ -2598,11 +2461,17 @@
       throw new Error('Job stopped by user');
     }
 
-    // Snapshot pre-existing assistant images currently in chat history
+    // Snapshot pre-existing images currently in chat history (include query-stripped CDN URLs)
     const preExistingImageUrls = new Set();
     document.querySelectorAll('img').forEach((img) => {
       const src = img.src || img.getAttribute('src') || '';
-      if (src) preExistingImageUrls.add(src);
+      if (src) {
+        preExistingImageUrls.add(src);
+        try {
+          const clean = src.split('?')[0];
+          if (clean) preExistingImageUrls.add(clean);
+        } catch (_) {}
+      }
     });
 
     // 0. CLEAN INPUT AT FIRST TIME: Clean out any leftover attachments and residual text from previous runs once
@@ -2684,10 +2553,15 @@
     }
     console.log(`[BOLTHAVEN] ✓ Prompt verified inserted into ChatGPT (${composerText.length} chars)`);
 
-    // Record pre-existing assistant turn count before sending
-    const preAssistantCount = document.querySelectorAll(
-      'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
-    ).length;
+    // Record pre-existing assistant turn count before sending (strictly exclude user turns)
+    const preAssistantCount = Array.from(document.querySelectorAll(
+      'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
+    )).filter((turn) => {
+      if (turn.getAttribute('data-message-author-role') === 'user') return false;
+      if (turn.querySelector('[data-message-author-role="user"]')) return false;
+      const c = (turn.className || '').toLowerCase();
+      return !c.includes('user-turn') && !c.includes('user-message');
+    }).length;
 
     // 4. Click Send button and wait for generation
     console.log(`[BOLTHAVEN] Sending prompt + single image #${job.original_position || 1} to ChatGPT...`);
