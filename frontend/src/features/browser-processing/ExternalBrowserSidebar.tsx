@@ -2351,36 +2351,19 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const renderReferenceImageCard = () => (
     <div
       style={{
-        borderRadius: '12px',
-        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-        border: '1px solid var(--border-color)',
-        padding: '0.875rem 1rem',
         display: 'flex',
         flexDirection: 'column',
-        gap: '0.65rem',
-        boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+        gap: '10px',
+        paddingBottom: '1rem',
+        borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-          <div
-            style={{
-              width: '28px',
-              height: '28px',
-              borderRadius: '7px',
-              backgroundColor: 'rgba(236, 72, 153, 0.12)',
-              color: '#EC4899',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <FiImage size={14} />
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <FiImage size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
                 Reference Layout
               </span>
               <span
@@ -2397,7 +2380,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 1st in Chat
               </span>
             </div>
-            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
               Example design attached first to guide composition
             </div>
           </div>
@@ -2431,1079 +2414,158 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
       {useReferenceImage ? (
         referenceImage ? (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.75rem',
-              padding: '0.5rem 0.65rem',
-              borderRadius: '8px',
-              backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : '#F8FAFC',
-              border: '1px solid rgba(236, 72, 153, 0.25)',
-            }}
-          >
-            <img
-              src={referenceImage}
-              alt="Reference"
+          <div style={{ paddingLeft: '23px' }}>
+            <div
               style={{
-                width: '52px',
-                height: '52px',
-                borderRadius: '6px',
-                objectFit: 'cover',
-                border: '1px solid var(--border-color)',
-                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                padding: '0.5rem 0.65rem',
+                borderRadius: '8px',
+                backgroundColor: isDark ? '#161B22' : '#F8FAFC',
+                border: '1px solid rgba(236, 72, 153, 0.25)',
               }}
-            />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                Active Reference Photo
-              </div>
-              <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                Will attach first into chat
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
-                <label
-                  style={{
-                    fontSize: '0.5625rem',
-                    fontWeight: 600,
-                    color: 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
-                  }}
-                >
-                  Change
-                  <input type="file" accept="image/*" onChange={handleReferenceImageFile} style={{ display: 'none' }} />
-                </label>
-                <button
-                  type="button"
-                  onClick={handleRemoveReferenceImage}
-                  style={{
-                    border: 'none',
-                    background: 'none',
-                    color: '#EF4444',
-                    fontSize: '0.5625rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    padding: '2px 4px',
-                  }}
-                >
-                  Remove
-                </button>
+            >
+              <img
+                src={referenceImage}
+                alt="Reference"
+                style={{
+                  width: '52px',
+                  height: '52px',
+                  borderRadius: '6px',
+                  objectFit: 'cover',
+                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  Active Reference Photo
+                </div>
+                <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B', marginTop: '2px' }}>
+                  Will attach first into chat
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                  <label
+                    style={{
+                      fontSize: '0.5625rem',
+                      fontWeight: 600,
+                      color: isDark ? '#E6EDF3' : '#334155',
+                      cursor: 'pointer',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                    }}
+                  >
+                    Change
+                    <input type="file" accept="image/*" onChange={handleReferenceImageFile} style={{ display: 'none' }} />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await clearPersistedReferenceImage(boxConfig.id);
+                      setReferenceImage('');
+                      updateConfig('referenceImage', '');
+                    }}
+                    style={{
+                      fontSize: '0.5625rem',
+                      fontWeight: 600,
+                      color: isDark ? '#F85149' : '#EF4444',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         ) : (
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '0.7rem 0.85rem',
-              borderRadius: '8px',
-              backgroundColor: isDark ? 'rgba(236, 72, 153, 0.03)' : '#FDF2F8',
-              border: '1px dashed rgba(236, 72, 153, 0.35)',
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div
+          <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <input
+                type="text"
+                placeholder="Paste reference image URL or path..."
+                value={referenceImage}
+                onChange={(e) => {
+                  setReferenceImage(e.target.value);
+                  updateConfig('referenceImage', e.target.value);
+                }}
                 style={{
-                  width: '32px',
+                  flex: 1,
                   height: '32px',
-                  borderRadius: '7px',
-                  backgroundColor: 'rgba(236, 72, 153, 0.12)',
-                  color: '#EC4899',
-                  display: 'flex',
+                  fontSize: '0.6875rem',
+                  padding: '0 10px',
+                  borderRadius: '4px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                  color: isDark ? '#F0F6FC' : '#0F172A',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleChooseFolder}
+                style={{
+                  height: '32px',
+                  display: 'inline-flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
+                  gap: '4px',
+                  padding: '0 10px',
+                  borderRadius: '4px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                  color: isDark ? '#C9D1D9' : '#334155',
+                  fontSize: '0.65625rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
                 }}
               >
-                <FiUploadCloud size={16} />
-              </div>
-              <div>
-                <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  Add Reference Photo
-                </div>
-                <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
-                  Example layout or composition
-                </div>
-              </div>
+                <FiFolder size={12} />
+                <span>Folder</span>
+              </button>
+              <label
+                style={{
+                  height: '32px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '0 10px',
+                  borderRadius: '4px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                  color: isDark ? '#C9D1D9' : '#334155',
+                  fontSize: '0.65625rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                <FiUploadCloud size={12} />
+                <span>Upload</span>
+                <input type="file" accept="image/*" onChange={handleReferenceImageFile} style={{ display: 'none' }} />
+              </label>
             </div>
-            <span
-              style={{
-                fontSize: '0.625rem',
-                fontWeight: 600,
-                padding: '4px 9px',
-                borderRadius: '6px',
-                backgroundColor: 'rgba(236, 72, 153, 0.15)',
-                color: '#EC4899',
-                border: '1px solid rgba(236, 72, 153, 0.3)',
-                flexShrink: 0,
-              }}
-            >
-              Browse...
-            </span>
-            <input type="file" accept="image/*" onChange={handleReferenceImageFile} style={{ display: 'none' }} />
-          </label>
+          </div>
         )
       ) : (
         <div
           style={{
-            padding: '8px 12px',
-            borderRadius: '6px',
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
-            border: '1px dashed var(--border-color)',
-            fontSize: '0.625rem',
+            fontSize: '0.5625rem',
             color: 'var(--text-muted)',
+            fontStyle: 'italic',
+            padding: '4px 0',
             textAlign: 'center',
           }}
         >
-          Reference photo skipped — ChatGPT will generate without reference layout.
+          Interior / Enhanced photos skipped — only reference & folder photos will attach.
         </div>
       )}
     </div>
   );
-
-  const renderCondoPhotosCard = () => (
-    <div
-      style={{
-        borderRadius: '12px',
-        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-        border: '1px solid var(--border-color)',
-        padding: '0.875rem 1rem',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.65rem',
-        boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-          <div
-            style={{
-              width: '28px',
-              height: '28px',
-              borderRadius: '7px',
-              backgroundColor: 'rgba(16, 185, 129, 0.12)',
-              color: '#10B981',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <FiFolder size={14} />
-          </div>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-                Condo Photos ({useCondoImages ? `${condoImagesCount} of 3` : 'Off'})
-              </span>
-              <span
-                style={{
-                  fontSize: '0.53125rem',
-                  fontWeight: 700,
-                  padding: '1px 5px',
-                  borderRadius: '4px',
-                  backgroundColor: 'rgba(16, 185, 129, 0.12)',
-                  color: '#10B981',
-                  border: '1px solid rgba(16, 185, 129, 0.25)',
-                }}
-              >
-                2nd in Chat
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '1px' }}>
-              <div
-                style={{
-                  fontSize: '0.625rem',
-                  color: matchedCondoInfo?.matched_folder ? '#10B981' : 'var(--text-muted)',
-                  fontWeight: matchedCondoInfo?.matched_folder ? 600 : 400,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  maxWidth: '120px',
-                }}
-                title={
-                  matchedCondoInfo?.matched_folder ||
-                  boxConfig.targetFolder ||
-                  localStorage.getItem('bolthaven_condo_target_folder') ||
-                  '~/Desktop/Condo Building'
-                }
-              >
-                {matchedCondoInfo?.matched_folder ? `✓ ${matchedCondoInfo.matched_folder}` : 'Target: Condo Building'}
-              </div>
-              <span
-                style={{
-                  fontSize: '0.53125rem',
-                  fontWeight: 700,
-                  padding: '1px 5px',
-                  borderRadius: '8px',
-                  backgroundColor:
-                    selectedCondoCount === 3
-                      ? 'rgba(16, 185, 129, 0.15)'
-                      : selectedCondoCount > 0
-                      ? 'rgba(245, 158, 11, 0.15)'
-                      : 'rgba(239, 68, 68, 0.12)',
-                  color:
-                    selectedCondoCount === 3
-                      ? '#10B981'
-                      : selectedCondoCount > 0
-                      ? '#F59E0B'
-                      : '#EF4444',
-                  border:
-                    selectedCondoCount === 3
-                      ? '1px solid rgba(16, 185, 129, 0.3)'
-                      : selectedCondoCount > 0
-                      ? '1px solid rgba(245, 158, 11, 0.3)'
-                      : '1px solid rgba(239, 68, 68, 0.25)',
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                }}
-              >
-                {selectedCondoCount === 3 ? '3/3 Ready' : `${selectedCondoCount}/3 Selected`}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <ToggleSwitch
-            checked={useCondoImages}
-            onChange={(val) => {
-              setUseCondoImages(val);
-              updateConfig('useCondoImages', val);
-            }}
-            size="sm"
-            activeColor="#10B981"
-          />
-        </div>
-      </div>
-
-      {useCondoImages ? (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              {[
-                { count: 1, label: '1 Photo (#1)' },
-                { count: 2, label: '2 Photos (#1 & #2)' },
-                { count: 3, label: '3 Photos (All 3)' },
-              ].map((opt) => {
-                const isActive = condoImagesCount === opt.count;
-                return (
-                  <button
-                    key={opt.count}
-                    type="button"
-                    onClick={() => {
-                      setCondoImagesCount(opt.count);
-                      updateConfig('condoImagesCount', opt.count);
-                    }}
-                    style={{
-                      padding: '2px 7px',
-                      borderRadius: '5px',
-                      fontSize: '0.59375rem',
-                      fontWeight: isActive ? 700 : 500,
-                      backgroundColor: isActive
-                        ? 'rgba(16, 185, 129, 0.18)'
-                        : isDark
-                        ? 'rgba(255, 255, 255, 0.05)'
-                        : '#F1F5F9',
-                      color: isActive ? '#10B981' : 'var(--text-secondary)',
-                      border: isActive ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid var(--border-color)',
-                      cursor: 'pointer',
-                      transition: 'all 0.12s ease',
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
-              {/* Change / Select Photos Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowFolderPicker((prev) => !prev);
-                  setActiveCondoSlot(null);
-                }}
-                title="Select & change condo photos"
-                style={{
-                  padding: '3px 7px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: showFolderPicker
-                    ? isDark
-                      ? 'rgba(255,255,255,0.12)'
-                      : '#E2E8F0'
-                    : isDark
-                    ? 'rgba(255,255,255,0.06)'
-                    : '#F1F5F9',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.625rem',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  transition: 'all 0.15s ease',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <FiFolder size={11} style={{ opacity: 0.7 }} />
-                <span>Change</span>
-              </button>
-
-              {/* Open Folder directly in macOS Finder */}
-              <button
-                type="button"
-                onClick={handleOpenFolderInFinder}
-                disabled={isOpeningFinder}
-                title={
-                  matchedCondoInfo?.folder_path
-                    ? `Open folder in macOS Finder: ${matchedCondoInfo.folder_path}`
-                    : 'Open condo folder in macOS Finder'
-                }
-                style={{
-                  padding: '3px 7px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: finderFeedback
-                    ? isDark
-                      ? 'rgba(16, 185, 129, 0.15)'
-                      : '#DEF7EC'
-                    : isDark
-                    ? 'rgba(255,255,255,0.06)'
-                    : '#F1F5F9',
-                  color: finderFeedback ? '#10B981' : 'var(--text-primary)',
-                  fontSize: '0.625rem',
-                  fontWeight: 500,
-                  cursor: isOpeningFinder ? 'wait' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  transition: 'all 0.15s ease',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {finderFeedback ? (
-                  <FiCheck size={11} style={{ color: '#10B981' }} />
-                ) : (
-                  <FiExternalLink size={11} style={{ opacity: 0.7 }} />
-                )}
-                <span>{finderFeedback ? 'Opened' : 'Open'}</span>
-              </button>
-            </div>
-          </div>
-
-      {/* Condo Photo Selector Drawer (Strictly 3 photos, select / remove / change) */}
-      {showFolderPicker && (
-        <div
-          style={{
-            padding: '10px',
-            borderRadius: '8px',
-            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.4)' : '#F8FAFC',
-            border: '1px solid var(--border-color)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            marginBottom: '4px',
-          }}
-        >
-          {/* Drawer Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-              <span
-                style={{
-                  fontSize: '0.71875rem',
-                  fontWeight: 600,
-                  color: 'var(--text-primary)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {matchedCondoInfo?.matched_folder || 'Condo'} Photos
-              </span>
-              <span style={{ fontSize: '0.59375rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                ({(matchedCondoInfo?.available_images || matchedCondoInfo?.images || []).length} available)
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-              <span
-                style={{
-                  fontSize: '0.5625rem',
-                  fontWeight: 700,
-                  padding: '1px 6px',
-                  borderRadius: '10px',
-                  backgroundColor:
-                    selectedCondoCount === 3 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                  color: selectedCondoCount === 3 ? '#10B981' : '#F59E0B',
-                  border:
-                    selectedCondoCount === 3
-                      ? '1px solid rgba(16, 185, 129, 0.3)'
-                      : '1px solid rgba(245, 158, 11, 0.3)',
-                }}
-              >
-                {selectedCondoCount}/3 Selected
-              </span>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowFolderPicker(false);
-                  setActiveCondoSlot(null);
-                }}
-                title="Close photo drawer"
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  padding: '2px',
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
-              >
-                <FiX size={13} />
-              </button>
-            </div>
-          </div>
-
-          {/* Hint if not full 3 */}
-          {selectedCondoCount < 3 ? (
-            <div style={{ fontSize: '0.625rem', color: '#F59E0B', fontWeight: 500, lineHeight: 1.3 }}>
-              Select {3 - selectedCondoCount} more photo{3 - selectedCondoCount > 1 ? 's' : ''} to complete the 3 required photos (Min: 3, Max: 3).
-            </div>
-          ) : (
-            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
-              Click any selected photo to remove, or click an unselected photo to swap it into a slot.
-            </div>
-          )}
-
-          {/* Photo Grid from this Condo Folder */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              gridAutoRows: '64px',
-              gap: '6px',
-              maxHeight: '210px',
-              overflowY: 'auto',
-              padding: '2px',
-            }}
-          >
-            {((matchedCondoInfo?.available_images && matchedCondoInfo.available_images.length > 0)
-              ? matchedCondoInfo.available_images
-              : (matchedCondoInfo?.images || [])
-            ).map((photo: any, pIdx: number) => {
-              // Find which slot (0, 1, 2) this photo is assigned to, if any
-              const assignedSlot = condoSlots.findIndex(
-                (s) =>
-                  s &&
-                  (s.full_path === photo.full_path ||
-                    s.filename === photo.filename ||
-                    (s.data_url && photo.data_url && s.data_url === photo.data_url))
-              );
-              const isSelected = assignedSlot !== -1;
-
-              return (
-                <div
-                  key={photo.id || pIdx}
-                  onClick={() => {
-                    if (isSelected) {
-                      // Clicking an already selected photo removes it from its slot
-                      handleRemoveCondoSlot(assignedSlot);
-                    } else {
-                      // Assign to target or open slot
-                      handleAssignCondoSlot(photo, activeCondoSlot !== null ? activeCondoSlot : undefined);
-                      if (activeCondoSlot !== null) setActiveCondoSlot(null);
-                    }
-                  }}
-                  title={
-                    isSelected
-                      ? `Selected as Slot #${assignedSlot + 1} — Click to remove`
-                      : `${photo.filename} — Click to select`
-                  }
-                  style={{
-                    position: 'relative',
-                    width: '100%',
-                    height: '64px',
-                    borderRadius: '6px',
-                    overflow: 'hidden',
-                    border: isSelected
-                      ? '2px solid var(--accent-primary, #2563EB)'
-                      : '1px solid var(--border-color)',
-                    backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : '#E2E8F0',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    opacity: isSelected ? 1 : 0.7,
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSelected) e.currentTarget.style.opacity = '1';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isSelected) e.currentTarget.style.opacity = '0.7';
-                  }}
-                >
-                  <img
-                    src={photo.data_url}
-                    alt={photo.filename}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    loading="lazy"
-                  />
-
-                  {/* Slot Number Badge */}
-                  {isSelected && (
-                    <span
-                      style={{
-                        position: 'absolute',
-                        top: '3px',
-                        left: '3px',
-                        backgroundColor: 'var(--accent-primary, #2563EB)',
-                        color: '#FFFFFF',
-                        fontSize: '0.5625rem',
-                        fontWeight: 700,
-                        padding: '1px 5px',
-                        borderRadius: '4px',
-                        zIndex: 2,
-                      }}
-                    >
-                      #{assignedSlot + 1}
-                    </span>
-                  )}
-
-                  {/* Remove '✕' on selected photo */}
-                  {isSelected && (
-                    <span
-                      style={{
-                        position: 'absolute',
-                        top: '3px',
-                        right: '3px',
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '50%',
-                        backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                        backdropFilter: 'blur(3px)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: '#FFFFFF',
-                        zIndex: 2,
-                      }}
-                    >
-                      <FiX size={10} />
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* Custom File Upload Option */}
-            <label
-              title="Add custom photo from computer"
-              style={{
-                width: '100%',
-                height: '64px',
-                borderRadius: '6px',
-                border: '1.5px dashed var(--border-color)',
-                backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '2px',
-                cursor: 'pointer',
-                color: 'var(--text-muted)',
-                transition: 'all 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = 'var(--accent-primary, #2563EB)';
-                e.currentTarget.style.color = 'var(--accent-primary, #2563EB)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = 'var(--border-color)';
-                e.currentTarget.style.color = 'var(--text-muted)';
-              }}
-            >
-              <FiUploadCloud size={14} />
-              <span style={{ fontSize: '0.53125rem', fontWeight: 600 }}>+ Upload</span>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) =>
-                  handleUploadCondoPhoto(e, activeCondoSlot !== null ? activeCondoSlot : undefined)
-                }
-                style={{ display: 'none' }}
-              />
-            </label>
-          </div>
-
-          {/* Bottom subtle switch folder option */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginTop: '2px',
-              paddingTop: '5px',
-              borderTop: '1px solid var(--border-color)',
-            }}
-          >
-            <span
-              style={{
-                fontSize: '0.5625rem',
-                color: 'var(--text-muted)',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                maxWidth: '190px',
-              }}
-              title={matchedCondoInfo?.folder_path}
-            >
-              {matchedCondoInfo?.matched_folder ? `Folder: ${matchedCondoInfo.matched_folder}` : 'Condo Directory'}
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={handleOpenFolderInFinder}
-                disabled={isOpeningFinder}
-                title={
-                  matchedCondoInfo?.folder_path
-                    ? `Open folder in Finder: ${matchedCondoInfo.folder_path}`
-                    : 'Open condo folder in macOS Finder'
-                }
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: finderFeedback ? '#10B981' : 'var(--text-secondary)',
-                  fontSize: '0.5625rem',
-                  cursor: isOpeningFinder ? 'wait' : 'pointer',
-                  textDecoration: 'underline',
-                  padding: 0,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '3px',
-                }}
-              >
-                <FiExternalLink size={10} style={{ opacity: 0.7 }} />
-                <span>{finderFeedback ? 'Opened' : 'Open in Finder'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleChooseFolder}
-                title="Choose another condo folder on Mac"
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-secondary)',
-                  fontSize: '0.5625rem',
-                  cursor: 'pointer',
-                  textDecoration: 'underline',
-                  padding: 0,
-                }}
-              >
-                Switch Folder...
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 3 Condo Photo Slots (Min: 3, Max: 3) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.55rem', marginTop: '2px' }}>
-        {[1, 2, 3].map((num) => {
-          const img = condoSlots[num - 1];
-          const isSlotActive = activeCondoSlot === num - 1 && showFolderPicker;
-
-          return (
-            <div
-              key={num}
-              onClick={() => {
-                setActiveCondoSlot(num - 1);
-                setShowFolderPicker(true);
-              }}
-              title={img?.filename ? `${img.filename} — Click to change` : `Slot #${num} — Click to pick photo`}
-              style={{
-                position: 'relative',
-                borderRadius: '8px',
-                overflow: 'hidden',
-                height: '78px',
-                backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : '#F8FAFC',
-                border: isSlotActive
-                  ? '2px solid var(--accent-primary, #2563EB)'
-                  : '1px solid var(--border-color)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: 'none',
-                transition: 'all 0.15s ease',
-                cursor: 'pointer',
-              }}
-            >
-              <span
-                style={{
-                  position: 'absolute',
-                  top: '4px',
-                  left: '4px',
-                  backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                  backdropFilter: 'blur(4px)',
-                  color: '#FFFFFF',
-                  fontSize: '0.5625rem',
-                  fontWeight: 600,
-                  padding: '1px 5px',
-                  borderRadius: '4px',
-                  zIndex: 2,
-                }}
-              >
-                #{num}
-              </span>
-
-              {img?.data_url ? (
-                <>
-                  <img
-                    src={img.data_url}
-                    alt={img.filename || `Condo ${num}`}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                  {/* Remove button to clear this slot */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemoveCondoSlot(num - 1);
-                      setActiveCondoSlot(num - 1);
-                      setShowFolderPicker(true);
-                    }}
-                    title="Remove this photo"
-                    style={{
-                      position: 'absolute',
-                      top: '4px',
-                      right: '4px',
-                      width: '18px',
-                      height: '18px',
-                      borderRadius: '50%',
-                      backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                      backdropFilter: 'blur(3px)',
-                      border: 'none',
-                      color: '#FFFFFF',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      zIndex: 3,
-                    }}
-                  >
-                    <FiX size={10} />
-                  </button>
-                </>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
-                  <FiPlus size={16} style={{ color: 'var(--text-muted)' }} />
-                  <span style={{ fontSize: '0.5625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                    Pick #{num}
-                  </span>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-        </>
-      ) : (
-        <div
-          style={{
-            padding: '8px 12px',
-            borderRadius: '6px',
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
-            border: '1px dashed var(--border-color)',
-            fontSize: '0.625rem',
-            color: 'var(--text-muted)',
-            textAlign: 'center',
-          }}
-        >
-          Condo folder photos skipped — will not attach photos from folder.
-        </div>
-      )}
-    </div>
-  );
-
-  const renderEnhancedAttachedPhotosCard = () => {
-    const isEnhancedSrc = enhancedImagesSource === 'enhanced';
-    const sourceList = isEnhancedSrc ? availableEnhancedPhotos : availableSourcePhotos;
-    const effectiveAttachedPhotos = sourceList.slice(0, enhancedImagesCount);
-
-    return (
-      <div
-        style={{
-          borderRadius: '12px',
-          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-          border: '1px solid var(--border-color)',
-          padding: '0.875rem 1rem',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.65rem',
-          boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-            <div
-              style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '7px',
-                backgroundColor: 'rgba(139, 92, 246, 0.12)',
-                color: '#8B5CF6',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <FiZap size={14} />
-            </div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-                  Interior / Enhanced Photos
-                </span>
-                <span
-                  style={{
-                    fontSize: '0.53125rem',
-                    fontWeight: 700,
-                    padding: '1px 5px',
-                    borderRadius: '4px',
-                    backgroundColor: 'rgba(139, 92, 246, 0.12)',
-                    color: '#8B5CF6',
-                    border: '1px solid rgba(139, 92, 246, 0.25)',
-                  }}
-                >
-                  3rd in Chat
-                </span>
-              </div>
-              <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '1px' }}>
-                {isEnhancedSrc ? 'From Enhance IMG node' : 'From Get Images node'}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span
-              style={{
-                fontSize: '0.5625rem',
-                fontWeight: 600,
-                padding: '2px 7px',
-                borderRadius: '10px',
-                backgroundColor: useEnhancedImages ? 'rgba(139, 92, 246, 0.12)' : (isDark ? 'rgba(255,255,255,0.05)' : '#F1F5F9'),
-                color: useEnhancedImages ? '#8B5CF6' : 'var(--text-muted)',
-                border: '1px solid var(--border-color)',
-              }}
-            >
-              {useEnhancedImages ? `${effectiveAttachedPhotos.length} Attached` : 'Skipped'}
-            </span>
-            <ToggleSwitch
-              checked={useEnhancedImages}
-              onChange={(val) => {
-                setUseEnhancedImages(val);
-                updateConfig('useEnhancedImages', val);
-              }}
-              size="sm"
-              activeColor="#8B5CF6"
-            />
-          </div>
-        </div>
-
-        {useEnhancedImages ? (
-          <>
-            {/* Source Selector & Count Selector Row */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {/* Source Switcher */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-                <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-                  Photo Source:
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEnhancedImagesSource('enhanced');
-                      updateConfig('enhancedImagesSource', 'enhanced');
-                    }}
-                    style={{
-                      padding: '2px 7px',
-                      borderRadius: '5px',
-                      fontSize: '0.59375rem',
-                      fontWeight: isEnhancedSrc ? 700 : 500,
-                      backgroundColor: isEnhancedSrc
-                        ? 'rgba(139, 92, 246, 0.18)'
-                        : isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
-                      color: isEnhancedSrc ? '#8B5CF6' : 'var(--text-secondary)',
-                      border: isEnhancedSrc ? '1px solid rgba(139, 92, 246, 0.35)' : '1px solid var(--border-color)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    ✨ Enhanced ({availableEnhancedPhotos.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEnhancedImagesSource('get_images');
-                      updateConfig('enhancedImagesSource', 'get_images');
-                    }}
-                    style={{
-                      padding: '2px 7px',
-                      borderRadius: '5px',
-                      fontSize: '0.59375rem',
-                      fontWeight: !isEnhancedSrc ? 700 : 500,
-                      backgroundColor: !isEnhancedSrc
-                        ? 'rgba(139, 92, 246, 0.18)'
-                        : isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
-                      color: !isEnhancedSrc ? '#8B5CF6' : 'var(--text-secondary)',
-                      border: !isEnhancedSrc ? '1px solid rgba(139, 92, 246, 0.35)' : '1px solid var(--border-color)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    📷 Get Images ({availableSourcePhotos.length})
-                  </button>
-                </div>
-              </div>
-
-              {/* Count Selector Pills: 1 Photo, 3 Photos, 5 Photos, All */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-                <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-                  Attach to Chat:
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  {[
-                    { count: 1, label: '1 Photo' },
-                    { count: 3, label: '3 Photos' },
-                    { count: 5, label: '5 Photos' },
-                    { count: sourceList.length || 10, label: `All (${sourceList.length})` },
-                  ].map((opt) => {
-                    const isActive = enhancedImagesCount === opt.count;
-                    return (
-                      <button
-                        key={opt.count}
-                        type="button"
-                        onClick={() => {
-                          setEnhancedImagesCount(opt.count);
-                          updateConfig('enhancedImagesCount', opt.count);
-                        }}
-                        style={{
-                          padding: '2px 7px',
-                          borderRadius: '5px',
-                          fontSize: '0.59375rem',
-                          fontWeight: isActive ? 700 : 500,
-                          backgroundColor: isActive
-                            ? 'rgba(139, 92, 246, 0.2)'
-                            : isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
-                          color: isActive ? '#8B5CF6' : 'var(--text-secondary)',
-                          border: isActive ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid var(--border-color)',
-                          cursor: 'pointer',
-                          transition: 'all 0.12s ease',
-                        }}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Thumbnail Preview Strip */}
-            {effectiveAttachedPhotos.length > 0 ? (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  overflowX: 'auto',
-                  padding: '4px 2px',
-                }}
-              >
-                {effectiveAttachedPhotos.map((photo, i) => (
-                  <div
-                    key={photo.url || i}
-                    style={{
-                      position: 'relative',
-                      width: '46px',
-                      height: '46px',
-                      borderRadius: '6px',
-                      overflow: 'hidden',
-                      border: '1px solid rgba(139, 92, 246, 0.35)',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <img
-                      src={photo.url}
-                      alt={photo.filename || `Photo #${i + 1}`}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: '2px',
-                        left: '2px',
-                        backgroundColor: 'rgba(0,0,0,0.65)',
-                        color: '#FFFFFF',
-                        fontSize: '0.5rem',
-                        fontWeight: 700,
-                        padding: '1px 3px',
-                        borderRadius: '3px',
-                        lineHeight: 1,
-                      }}
-                    >
-                      #{photo.index || i + 1}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
-                  border: '1px dashed var(--border-color)',
-                  fontSize: '0.625rem',
-                  color: 'var(--text-muted)',
-                  textAlign: 'center',
-                }}
-              >
-                {isEnhancedSrc
-                  ? 'No enhanced photos available yet. Run Enhance IMG first or switch to "Get Images".'
-                  : 'No photos received from "Get Images" yet.'}
-              </div>
-            )}
-          </>
-        ) : (
-          <div
-            style={{
-              padding: '8px 12px',
-              borderRadius: '6px',
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
-              border: '1px dashed var(--border-color)',
-              fontSize: '0.625rem',
-              color: 'var(--text-muted)',
-              textAlign: 'center',
-            }}
-          >
-            Interior / Enhanced photos skipped — only reference & folder photos will attach.
-          </div>
-        )}
-      </div>
-    );
-  };
-
   const renderImagesToEnhanceCard = () => (
     <div
       style={{
@@ -4994,106 +4056,80 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             {/* ── NEW FLOW MODULES FOR HERO NODE ── */}
             {isHeroNode && (
               <>
-                {/* 1. Prompt Section */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: '0.02em', marginTop: '2px' }}>
+                {/* 1. Prompt Section (Boxless) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
+                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
                     Prompt
-                  </div>
+                  </label>
 
-                  {/* Connected Prompt Card */}
-                  <div
-                    style={{
-                      borderRadius: '12px',
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-                      border: '1px solid var(--border-color)',
-                      padding: '0.875rem 1rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.65rem',
-                      boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                        <div
-                          style={{
-                            width: '28px',
-                            height: '28px',
-                            borderRadius: '7px',
-                            backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                            color: '#3B82F6',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0,
-                          }}
-                        >
-                          <FiFileText size={14} />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <FiFileText size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                          Connected Prompt
                         </div>
-                        <div>
-                          <div style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                            Connected Prompt
-                          </div>
-                          <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                            AI prompt from canvas
-                          </div>
+                        <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                          AI prompt from canvas
                         </div>
-                      </div>
-
-                      {/* Canvas AI vs Custom pill switchers (Title casing: normal letters) */}
-                      <div
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
-                          padding: '2px',
-                          borderRadius: '6px',
-                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                        }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPromptSourceMode('upstream_ai');
-                            updateConfig('promptSourceMode', 'upstream_ai');
-                          }}
-                          style={{
-                            padding: '3px 10px',
-                            borderRadius: '4px',
-                            border: 'none',
-                            fontSize: '0.65625rem',
-                            fontWeight: 600,
-                            textTransform: 'none',
-                            backgroundColor: promptSourceMode === 'upstream_ai' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
-                            color: promptSourceMode === 'upstream_ai' ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Canvas AI
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPromptSourceMode('custom');
-                            updateConfig('promptSourceMode', 'custom');
-                          }}
-                          style={{
-                            padding: '3px 10px',
-                            borderRadius: '4px',
-                            border: 'none',
-                            fontSize: '0.65625rem',
-                            fontWeight: 600,
-                            textTransform: 'none',
-                            backgroundColor: promptSourceMode === 'custom' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
-                            color: promptSourceMode === 'custom' ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Custom
-                        </button>
                       </div>
                     </div>
 
+                    {/* Canvas AI vs Custom pill switchers */}
+                    <div
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
+                        padding: '2px',
+                        borderRadius: '6px',
+                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPromptSourceMode('upstream_ai');
+                          updateConfig('promptSourceMode', 'upstream_ai');
+                        }}
+                        style={{
+                          padding: '3px 10px',
+                          borderRadius: '4px',
+                          border: 'none',
+                          fontSize: '0.65625rem',
+                          fontWeight: 600,
+                          textTransform: 'none',
+                          backgroundColor: promptSourceMode === 'upstream_ai' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
+                          color: promptSourceMode === 'upstream_ai' ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Canvas AI
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPromptSourceMode('custom');
+                          updateConfig('promptSourceMode', 'custom');
+                        }}
+                        style={{
+                          padding: '3px 10px',
+                          borderRadius: '4px',
+                          border: 'none',
+                          fontSize: '0.65625rem',
+                          fontWeight: 600,
+                          textTransform: 'none',
+                          backgroundColor: promptSourceMode === 'custom' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
+                          color: promptSourceMode === 'custom' ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Custom
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {/* Upstream AI Model dropdown */}
                     {promptSourceMode === 'upstream_ai' && (
                       <Select
@@ -5107,6 +4143,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                           setSelectedUpstreamAiId(strVal);
                           updateMultiConfig({ selectedUpstreamAiId: strVal });
                         }}
+                        height="34px"
                       />
                     )}
 
@@ -5128,10 +4165,12 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                           padding: '6px 8px',
                           fontSize: '0.6875rem',
                           borderRadius: '6px',
-                          border: '1px solid var(--border-color)',
-                          backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : '#FFFFFF',
-                          color: 'var(--text-primary)',
+                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                          color: isDark ? '#F0F6FC' : '#0F172A',
                           resize: 'vertical',
+                          boxSizing: 'border-box',
+                          outline: 'none',
                         }}
                       />
                     )}
@@ -5148,9 +4187,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                           flex: 1,
                           height: '30px',
                           borderRadius: '6px',
-                          border: '1px solid var(--border-color)',
-                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
-                          color: 'var(--text-primary)',
+                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                          backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                          color: isDark ? '#F0F6FC' : '#0F172A',
                           fontSize: '0.6875rem',
                           fontWeight: 600,
                           display: 'flex',
@@ -5172,9 +4211,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                           height: '30px',
                           padding: '0 10px',
                           borderRadius: '6px',
-                          border: '1px solid var(--border-color)',
-                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
-                          color: isCopied ? '#10B981' : 'var(--text-secondary)',
+                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                          backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                          color: isCopied ? '#10B981' : (isDark ? '#8B949E' : '#64748B'),
                           fontSize: '0.6875rem',
                           fontWeight: 600,
                           display: 'flex',
@@ -5190,22 +4229,23 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   </div>
                 </div>
 
-                {/* 2. Attached Images Section */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '4px' }}>
+                {/* 2. Attached Images Section (Boxless) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: '4px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: '0.02em' }}>
+                    <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
                       Attached Images
                     </span>
-                    <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                    <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
                       {(useReferenceImage && referenceImage ? 1 : 0) + (useCondoImages ? attachmentSteps.filter((s: AttachmentStep) => s.enabled).reduce((a: number, b: AttachmentStep) => a + b.count, 0) : 0)} total photos
                     </span>
                   </div>
 
-                  {/* Reference Layout Card */}
+                  {/* Reference Layout (Boxless) */}
                   {renderReferenceImageCard()}
 
-                  {/* Condo Photos Multi-Group Manager */}
+                  {/* Condo Photos Multi-Group Manager (Boxless) */}
                   <AttachmentGroupsManager
+                    boxless={true}
                     steps={attachmentSteps}
                     onChange={handleAttachmentStepsChange}
                     isDark={isDark}

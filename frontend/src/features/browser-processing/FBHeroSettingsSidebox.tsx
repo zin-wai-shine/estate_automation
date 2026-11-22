@@ -893,106 +893,79 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
         {/* ── HERO MODE MODULES (New Flow) ── */}
         {isHero && (
           <>
-            {/* Section: Prompt */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: '0.02em', marginTop: '2px' }}>
+            {/* Section: Prompt (Boxless) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
+              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
                 Prompt
-              </div>
-
-              {/* Connected Prompt Card */}
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.625rem',
-                  padding: '0.875rem 1rem',
-                  borderRadius: '12px',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-                  border: '1px solid var(--border-color)',
-                  boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                    <div
-                      style={{
-                        width: '28px',
-                        height: '28px',
-                        borderRadius: '7px',
-                        backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                        color: '#3B82F6',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <FiFileText size={14} />
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FiFileText size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                      Connected Prompt
                     </div>
-                    <div>
-                      <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        Connected Prompt
-                      </div>
-                      <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                        AI prompt from canvas
-                      </div>
+                    <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                      AI prompt from canvas
                     </div>
-                  </div>
-
-                  {/* Canvas AI vs Custom pill switchers (Title casing: normal letters) */}
-                  <div
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
-                      padding: '2px',
-                      borderRadius: '6px',
-                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPromptSourceMode('upstream_ai');
-                        updateSettings({ promptSourceMode: 'upstream_ai' });
-                      }}
-                      style={{
-                        padding: '3px 10px',
-                        borderRadius: '4px',
-                        border: 'none',
-                        fontSize: '0.65625rem',
-                        fontWeight: 600,
-                        textTransform: 'none',
-                        backgroundColor: promptSourceMode === 'upstream_ai' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
-                        color: promptSourceMode === 'upstream_ai' ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Canvas AI
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPromptSourceMode('custom');
-                        updateSettings({ promptSourceMode: 'custom' });
-                      }}
-                      style={{
-                        padding: '3px 10px',
-                        borderRadius: '4px',
-                        border: 'none',
-                        fontSize: '0.65625rem',
-                        fontWeight: 600,
-                        textTransform: 'none',
-                        backgroundColor: promptSourceMode === 'custom' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
-                        color: promptSourceMode === 'custom' ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Custom
-                    </button>
                   </div>
                 </div>
 
+                {/* Canvas AI vs Custom pill switchers */}
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
+                    padding: '2px',
+                    borderRadius: '6px',
+                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPromptSourceMode('upstream_ai');
+                      updateSettings({ promptSourceMode: 'upstream_ai' });
+                    }}
+                    style={{
+                      padding: '3px 10px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      fontSize: '0.65625rem',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      backgroundColor: promptSourceMode === 'upstream_ai' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
+                      color: promptSourceMode === 'upstream_ai' ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Canvas AI
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPromptSourceMode('custom');
+                      updateSettings({ promptSourceMode: 'custom' });
+                    }}
+                    style={{
+                      padding: '3px 10px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      fontSize: '0.65625rem',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      backgroundColor: promptSourceMode === 'custom' ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
+                      color: promptSourceMode === 'custom' ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Custom
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {promptSourceMode === 'upstream_ai' ? (
                   <Select
                     value={selectedUpstreamAiId || effectiveUpstreamPrompts[0]?.id || ''}
@@ -1008,6 +981,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                           }))
                         : [{ label: 'BoltHaven-FB Hero Prompt (AI Model)', value: 'default' }]
                     }
+                    height="34px"
                   />
                 ) : (
                   <textarea
@@ -1023,16 +997,18 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                       padding: '6px 8px',
                       fontSize: '0.6875rem',
                       borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : '#FFFFFF',
-                      color: 'var(--text-primary)',
+                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                      backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                      color: isDark ? '#F0F6FC' : '#0F172A',
                       resize: 'vertical',
+                      boxSizing: 'border-box',
+                      outline: 'none',
                     }}
                   />
                 )}
 
                 {/* Staging mode (Direct 1 Tab vs 2-Stage) */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '6px', borderTop: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '4px' }}>
                   <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
                     Staging Flow:
                   </span>
@@ -1076,57 +1052,31 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
               </div>
             </div>
 
-            {/* Section: Attached Images */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '4px' }}>
+            {/* Section: Attached Images (Boxless) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: '4px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: '0.02em' }}>
+                <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
                   Attached Images
                 </span>
-                <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
                   {(useReferenceImage && referenceImageData ? 1 : 0) + (useCondoImages ? attachmentSteps.filter((s) => s.enabled).reduce((a, b) => a + b.count, 0) : 0)} total photos
                 </span>
               </div>
 
-              {/* Reference Layout Card */}
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.5rem',
-                  padding: '0.875rem 1rem',
-                  borderRadius: '12px',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-                  border: '1px solid var(--border-color)',
-                  boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
-                }}
-              >
+              {/* Reference Layout (Boxless) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                    <div
-                      style={{
-                        width: '28px',
-                        height: '28px',
-                        borderRadius: '7px',
-                        backgroundColor: 'rgba(236, 72, 153, 0.12)',
-                        color: '#EC4899',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <FiImage size={14} />
-                    </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FiImage size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
                     <div>
-                      <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
                         Reference Layout
                       </div>
-                      <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                      <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
                         Example design attached first to guide composition
                       </div>
                     </div>
                   </div>
-
                   <ToggleSwitch
                     checked={useReferenceImage}
                     onChange={(val) => {
@@ -1134,12 +1084,12 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                       updateSettings({ useReferenceImage: val });
                     }}
                     size="sm"
-                    activeColor="#3B82F6"
+                    activeColor="#2563EB"
                   />
                 </div>
 
                 {useReferenceImage && (
-                  <div style={{ marginTop: '2px' }}>
+                  <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {referenceImageData ? (
                       <div
                         style={{
@@ -1147,9 +1097,9 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                           alignItems: 'center',
                           justifyContent: 'space-between',
                           padding: '6px 10px',
-                          borderRadius: '8px',
-                          backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : '#F1F5F9',
-                          border: '1px solid var(--border-color)',
+                          borderRadius: '6px',
+                          backgroundColor: isDark ? '#161B22' : '#F8FAFC',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
@@ -1211,23 +1161,27 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                           }}
                           style={{
                             flex: 1,
+                            height: '32px',
                             fontSize: '0.6875rem',
-                            padding: '5px 8px',
-                            borderRadius: '6px',
+                            padding: '0 10px',
+                            borderRadius: '4px',
                             border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                            backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
                             color: isDark ? '#F0F6FC' : '#0F172A',
+                            outline: 'none',
+                            boxSizing: 'border-box',
                           }}
                         />
                         <button
                           type="button"
                           onClick={handleChooseFolder}
                           style={{
+                            height: '32px',
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: '4px',
-                            padding: '5px 9px',
-                            borderRadius: '6px',
+                            padding: '0 10px',
+                            borderRadius: '4px',
                             border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                             backgroundColor: isDark ? '#21262D' : '#F1F5F9',
                             color: isDark ? '#C9D1D9' : '#334155',
@@ -1241,11 +1195,12 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                         </button>
                         <label
                           style={{
+                            height: '32px',
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: '4px',
-                            padding: '5px 9px',
-                            borderRadius: '6px',
+                            padding: '0 10px',
+                            borderRadius: '4px',
                             border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
                             backgroundColor: isDark ? '#21262D' : '#F1F5F9',
                             color: isDark ? '#C9D1D9' : '#334155',
@@ -1264,8 +1219,9 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                 )}
               </div>
 
-              {/* Condo Photos Multi-Group Manager */}
+              {/* Condo Photos Multi-Group Manager (Boxless) */}
               <AttachmentGroupsManager
+                boxless={true}
                 steps={attachmentSteps}
                 onChange={handleAttachmentStepsChange}
                 isDark={isDark}
@@ -1282,7 +1238,6 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
             </div>
           </>
         )}
-
         {/* ── ENHANCE MODE MODULES (When in Enhance mode) ── */}
         {!isHero && (
           <>
