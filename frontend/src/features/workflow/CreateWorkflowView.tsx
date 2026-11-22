@@ -35,7 +35,7 @@ import { isWatermarkAIBox, isCropStudioBox, isTextFormatAIBox, isTextAIBox, isN8
 import { runN8NWorkflow } from '../../services/n8nService';
 import { createBatchImageQueue, startImageQueue, focusBrowserTabGroup, openBrowserProfile, fetchTabGroups, waitForBrowserTabsReady, startAutomation, stopAutomation, getAutomationStatus, fetchImageQueue } from '../browser-processing/browserAutomationService';
 import { resolvePromptForBrowserNode, getPersistedPromptKey } from '../browser-processing/browserPromptUtils';
-import { getPersistedReferenceImage, loadPersistedReferenceImageAsync } from '../browser-processing/referenceImageStorage';
+import { getPersistedReferenceImage, loadPersistedReferenceImageAsync, clearPersistedReferenceImage } from '../browser-processing/referenceImageStorage';
 import { extractCleanCondoNameFromAiText } from '../browser-processing/FBHeroSettingsSidebox';
 import { getSavedCropFormats, formatImageWithCropFormat, type CropStudioFormat } from '../watermark/cropFormats';
 import { loadActiveWatermarkConfig } from '../autopost/watermarkStorage';
@@ -990,6 +990,8 @@ export const CreateWorkflowView: React.FC = () => {
           ...editingFormat.config.trigger,
           manualContent: '',
           manualImages: [],
+          rawUrl: '',
+          extractedPost: undefined,
         },
         getContent: {
           ...editingFormat.config.getContent,
@@ -1000,9 +1002,24 @@ export const CreateWorkflowView: React.FC = () => {
           uploadedImages: [],
           imageSource: b.imageSource === 'upload' ? undefined : b.imageSource,
           selectedImageIndices: undefined,
+          browserCondoName: '',
+          browserMatchedFolder: '',
+          browserCondoImagesCount: 0,
+          condoImages: [],
+          condoPhotos: [],
+          referenceImage: '',
+          referenceImageData: '',
+          outputCopy: '',
+          lastResult: undefined,
+          generatedImages: [],
+          error: undefined,
+          condoNameAiBoxId: undefined,
         })),
       });
     }
+    try {
+      clearPersistedReferenceImage();
+    } catch {}
     if (editingFormat?.id) {
       try {
         localStorage.removeItem(getWorkflowRunStorageKey(editingFormat.id));
@@ -1025,6 +1042,8 @@ export const CreateWorkflowView: React.FC = () => {
          k.startsWith('bolthaven_format_uploads_') ||
          k.startsWith('bolthaven_canvas_enhanced_') ||
          k.startsWith('bolthaven_last_hero_image') ||
+         k.startsWith('bolthaven_ref_img_') ||
+         k.startsWith('bolthaven_condo_') ||
          k.startsWith('estate_facebook_import_'))
       ) {
         localStorage.removeItem(k);

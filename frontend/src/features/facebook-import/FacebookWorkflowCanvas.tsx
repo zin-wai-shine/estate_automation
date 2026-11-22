@@ -75,7 +75,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isCropStudioBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox, AI_ENGINE_MODEL_GROUPS, CONTENT_AI_MODEL_OPTIONS } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
 import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
-import { getPersistedReferenceImage } from '../browser-processing/referenceImageStorage';
+import { getPersistedReferenceImage, isReferenceImageExplicitlyDeleted } from '../browser-processing/referenceImageStorage';
 import { FBHeroSettingsSidebox, extractCleanCondoNameFromAiText } from '../browser-processing/FBHeroSettingsSidebox';
 import { GoogleSheetSettingsSidebox } from './GoogleSheetSettingsSidebox';
 import { PhotoCropSettingsSidebox } from './PhotoCropSettingsSidebox';
@@ -330,6 +330,10 @@ export interface DynamicAIBoxConfig {
   referenceImage?: string;
   condoNameAiBoxId?: string;
   browserCondoName?: string;
+  browserMatchedFolder?: string;
+  browserCondoImagesCount?: number;
+  condoImages?: any[];
+  condoPhotos?: any[];
   useCondoImages?: boolean;
   showImagesToEnhance?: boolean;
   downloadFolder?: string;
@@ -389,6 +393,8 @@ export interface FacebookWorkflowConfig {
     syncIntervalMinutes?: number;
     manualContent?: string;
     manualImages?: any[];
+    rawUrl?: string;
+    extractedPost?: any;
   };
   destination: DestinationNodeConfig;
   destinations?: DestinationNodeConfig[];
@@ -4332,11 +4338,14 @@ export const FacebookWorkflowCanvas = forwardRef<
             : prevBox && typeof prevBox.enabled === 'boolean'
               ? prevBox.enabled
               : b.enabled;
-        const persistedRef = b.referenceImage || prevBox?.referenceImage || (
-          (b.title?.toLowerCase().includes('hero') || b.browserGroupName?.toLowerCase().includes('hero'))
-            ? getPersistedReferenceImage(b.id)
-            : ''
-        );
+        const isExplicitlyNoRef = b.referenceImage === '' || isReferenceImageExplicitlyDeleted();
+        const persistedRef = isExplicitlyNoRef
+          ? ''
+          : (b.referenceImage || prevBox?.referenceImage || (
+              (b.title?.toLowerCase().includes('hero') || b.browserGroupName?.toLowerCase().includes('hero'))
+                ? getPersistedReferenceImage(b.id)
+                : ''
+            ));
         // PRESERVE LIVE USER POSITION IF AVAILABLE
         const userX = prevBox && typeof prevBox.x === 'number' ? prevBox.x : b.x;
         const userY = prevBox && typeof prevBox.y === 'number' ? prevBox.y : b.y;
@@ -4345,7 +4354,15 @@ export const FacebookWorkflowCanvas = forwardRef<
         if (b.enabled !== persistedEnabled) {
           nextBox = { ...nextBox, enabled: persistedEnabled };
         }
-        if (persistedRef && !nextBox.referenceImage) {
+        if (b.browserCondoName === '') {
+          nextBox.browserCondoName = '';
+          nextBox.browserMatchedFolder = '';
+          nextBox.browserCondoImagesCount = 0;
+          nextBox.condoImages = [];
+        }
+        if (isExplicitlyNoRef) {
+          nextBox.referenceImage = '';
+        } else if (persistedRef && !nextBox.referenceImage) {
           nextBox = {
             ...nextBox,
             referenceImage: persistedRef,
@@ -4664,6 +4681,63 @@ export const FacebookWorkflowCanvas = forwardRef<
       }
     };
   }, [triggerMacNotification]);
+
+  // Listen for global workflow cleared event (Clear Canvas Data & Results)
+  useEffect(() => {
+    const handleWorkflowCleared = () => {
+      setConfig((prev) => {
+        const nextBoxes = (prev.aiBoxes || []).map((b) => ({
+          ...b,
+          browserCondoName: '',
+          browserMatchedFolder: '',
+          browserCondoImagesCount: 0,
+          condoImages: [],
+          condoPhotos: [],
+          referenceImage: '',
+          referenceImageData: '',
+          uploadedImages: [],
+          imageSource: b.imageSource === 'upload' ? undefined : b.imageSource,
+          selectedImageIndices: undefined,
+          outputCopy: '',
+          lastResult: undefined,
+          generatedImages: [],
+          error: undefined,
+          condoNameAiBoxId: undefined,
+        }));
+        const nextTrigger = prev.trigger
+          ? {
+              ...prev.trigger,
+              manualContent: '',
+              manualImages: [],
+              rawUrl: '',
+              extractedPost: undefined,
+            }
+          : prev.trigger;
+        const nextGetContent = prev.getContent
+          ? {
+              ...prev.getContent,
+              manualContent: '',
+            }
+          : prev.getContent;
+        const nextCfg = {
+          ...prev,
+          trigger: nextTrigger,
+          getContent: nextGetContent,
+          aiBoxes: nextBoxes,
+        };
+        latestConfigRef.current = nextCfg;
+        return nextCfg;
+      });
+      setLocallyRunningNodeId(null);
+      setLocallyCompletedNodeIds([]);
+      setCompanionEnhancedMap({});
+    };
+
+    window.addEventListener('ea_workflow_cleared', handleWorkflowCleared);
+    return () => {
+      window.removeEventListener('ea_workflow_cleared', handleWorkflowCleared);
+    };
+  }, []);
   const [dontAskDeleteAgain, setDontAskDeleteAgain] = useState<boolean>(() => {
     try {
       return localStorage.getItem('ea_workflow_skip_delete_confirm') === 'true';
@@ -17938,12 +18012,13 @@ export const FacebookWorkflowCanvas = forwardRef<
                               ? (currentModalAIBox.title && currentModalAIBox.title !== 'Tab Group' ? currentModalAIBox.title : (currentModalAIBox.browserGroupName || currentModalAIBox.title || 'Tab Group'))
                               : currentModalAIBox.browserGroupName);
 
+                        const isExplicitlyNoRef = currentModalAIBox.referenceImage === '' || isReferenceImageExplicitlyDeleted();
                         const effectiveBoxConfig = {
                           ...currentModalAIBox,
-                          referenceImage:
-                            currentModalAIBox.referenceImage ||
-                            (isHeroTitle ? getPersistedReferenceImage(currentModalAIBox.id) : '') ||
-                            currentModalAIBox.referenceImage,
+                          referenceImage: isExplicitlyNoRef
+                            ? ''
+                            : (currentModalAIBox.referenceImage ||
+                              (isHeroTitle ? getPersistedReferenceImage(currentModalAIBox.id) : '')),
                           tabGroupMode: isEnhanceTitle ? 'enhance' : isHeroTitle ? 'generate' : currentModalAIBox.tabGroupMode,
                           processKind: isEnhanceTitle ? 'enhance_images' : isHeroTitle ? 'generate_image' : currentModalAIBox.processKind,
                           browserProfileId: currentModalAIBox.browserProfileId || connectedProfileBox?.browserProfileId,

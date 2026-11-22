@@ -1037,6 +1037,29 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     }
   };
 
+  // Listen for global workflow cleared event (Clear Canvas Data & Results)
+  useEffect(() => {
+    const handleWorkflowCleared = () => {
+      clearPersistedReferenceImage(boxConfig?.id);
+      setReferenceImage('');
+      setReferenceImageMode('photo_1');
+      setCondoSearchQuery('');
+      setMatchedCondoInfo(null);
+      lastScannedKeyRef.current = '';
+      updateMultiConfig({
+        browserCondoName: '',
+        browserMatchedFolder: '',
+        browserCondoImagesCount: 0,
+        condoImages: [],
+        referenceImage: '',
+      });
+    };
+    window.addEventListener('ea_workflow_cleared', handleWorkflowCleared);
+    return () => {
+      window.removeEventListener('ea_workflow_cleared', handleWorkflowCleared);
+    };
+  }, [boxConfig?.id]);
+
   useEffect(() => {
     let folder = boxConfig.targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '/Users/zinwaishine/Desktop/Condo Building';
     if (folder.includes('/Condo Building') && !folder.endsWith('/Condo Building')) {
@@ -1061,8 +1084,12 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     if (q) {
       setCondoSearchQuery(q);
       handleScanCondo(q, folder);
+    } else {
+      setCondoSearchQuery('');
+      setMatchedCondoInfo(null);
+      lastScannedKeyRef.current = '';
     }
-  }, [aiExtractedCondoName, propertyContext?.title, boxConfig.targetFolder]);
+  }, [aiExtractedCondoName, propertyContext?.title, boxConfig.targetFolder, boxConfig.browserCondoName, condoName]);
 
   // Synchronize state when boxConfig is updated from FBHeroSettingsSidebox
   useEffect(() => {
@@ -1071,7 +1098,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         setReferenceImage(boxConfig.referenceImage);
         setReferenceImageMode('custom_upload');
       }
-    } else if (boxConfig.referenceImage === '' && isReferenceImageExplicitlyDeleted()) {
+    } else if (boxConfig.referenceImage === '' || isReferenceImageExplicitlyDeleted()) {
       if (referenceImage !== '') {
         setReferenceImage('');
       }
@@ -4297,7 +4324,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {condoName}
+                    {condoName || boxConfig.title || 'FB Hero'}
                   </div>
                   <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '5px', marginTop: '1px' }}>
                     <span>Profile: {boxConfig.browserProfileName || 'Hsu'}</span>

@@ -31,6 +31,7 @@ import {
   loadPersistedReferenceImageAsync,
   savePersistedReferenceImage,
   clearPersistedReferenceImage,
+  isReferenceImageExplicitlyDeleted,
 } from './referenceImageStorage';
 import { fetchMemorizedTabs, clearMemorizedTabs, focusBrowserTabGroup, type MemorizedTabItem } from './browserAutomationService';
 
@@ -272,9 +273,10 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
     const resolvedPrompt = boxConfig.usePromptConfig !== false && boxConfig.showEnhancementPrompt !== false;
 
     setUseReferenceImage(resolvedRef);
-    const initialRefImg = boxConfig.referenceImage || getPersistedReferenceImage(boxConfig.id) || '';
+    const isExplicitlyNoRef = boxConfig.referenceImage === '' || isReferenceImageExplicitlyDeleted();
+    const initialRefImg = isExplicitlyNoRef ? '' : (boxConfig.referenceImage || getPersistedReferenceImage(boxConfig.id) || '');
     setReferenceImageData(initialRefImg);
-    if (!initialRefImg && isHero) {
+    if (!initialRefImg && isHero && !isExplicitlyNoRef) {
       loadPersistedReferenceImageAsync(boxConfig.id).then((persisted) => {
         if (persisted) {
           setReferenceImageData(persisted);
@@ -523,17 +525,44 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
     } catch (e) {}
   };
 
+  // Listen for global workflow cleared event (Clear Canvas Data & Results)
+  useEffect(() => {
+    const handleWorkflowCleared = () => {
+      clearPersistedReferenceImage(boxConfig?.id);
+      setReferenceImageData('');
+      setMatchedCondoInfo(null);
+      setCondoSearchQuery('');
+      lastScannedSettingsKeyRef.current = '';
+      updateSettings({
+        browserCondoName: '',
+        browserMatchedFolder: '',
+        browserCondoImagesCount: 0,
+        condoImages: [],
+        referenceImage: '',
+        referenceImageData: '',
+      });
+    };
+    window.addEventListener('ea_workflow_cleared', handleWorkflowCleared);
+    return () => {
+      window.removeEventListener('ea_workflow_cleared', handleWorkflowCleared);
+    };
+  }, [boxConfig?.id]);
+
   // Automatically scan when Target Folder or AI-extracted Condo Name changes
   useEffect(() => {
     if (targetFolder) {
       scanTotalFolders(targetFolder);
     }
     const q = aiExtractedCondoName || boxConfig.browserCondoName || propertyContext?.title || '';
-    if (q && q !== 'Featured Property Listing') {
+    if (q && q !== 'Featured Property Listing' && q !== 'Facebook Property Post') {
       setCondoSearchQuery(q);
       scanCondoDirectory(q, targetFolder);
+    } else {
+      setCondoSearchQuery('');
+      setMatchedCondoInfo(null);
+      lastScannedSettingsKeyRef.current = '';
     }
-  }, [aiExtractedCondoName, propertyContext?.title, targetFolder]);
+  }, [aiExtractedCondoName, propertyContext?.title, targetFolder, boxConfig.browserCondoName]);
 
   // ── Native macOS Folder Chooser ───────────────────────────────────────────
   const handleChooseFolder = async () => {
