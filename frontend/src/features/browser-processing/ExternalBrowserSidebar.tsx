@@ -2022,10 +2022,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       return receivedImages.slice(0, 1);
     }
     if (imageSourceMode === 'selected') {
-      const list = receivedImages.filter((img, i) =>
+      return receivedImages.filter((img, i) =>
         selectedImageIndices.includes(typeof img.index === 'number' && img.index > 0 ? img.index : i + 1)
       );
-      return list.length > 0 ? list : receivedImages;
     }
     if (imageSourceMode === 'custom_upload' && referenceImage) {
       return [{ url: referenceImage, index: 1, filename: 'Custom Uploaded Image' }];
@@ -2484,20 +2483,58 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           </div>
         </div>
 
-        <span
-          style={{
-            fontSize: '0.5625rem',
-            fontWeight: 700,
-            padding: '2px 8px',
-            borderRadius: '10px',
-            backgroundColor: activeImages.length > 0 ? 'rgba(16, 185, 129, 0.12)' : isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-            color: activeImages.length > 0 ? '#10B981' : 'var(--text-secondary)',
-            border: activeImages.length > 0 ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid var(--border-color)',
-            letterSpacing: '0.02em',
-          }}
-        >
-          {activeImages.length} of {receivedImages.length} Active
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {receivedImages.length > 1 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const allNums = receivedImages.map((p, i) => (typeof p.index === 'number' && p.index > 0 ? p.index : i + 1));
+                const allSelected = imageSourceMode !== 'selected' || selectedImageIndices.length === allNums.length;
+                const nextIndices = allSelected ? [] : allNums;
+                setSelectedImageIndices(nextIndices);
+                setImageSourceMode('selected');
+                updateMultiConfig({
+                  selectedImageIndices: nextIndices,
+                  imageSourceMode: 'selected',
+                });
+              }}
+              style={{
+                fontSize: '0.5625rem',
+                fontWeight: 600,
+                padding: '2px 7px',
+                borderRadius: '6px',
+                border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid #CBD5E1',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F1F5F9',
+                color: isDark ? '#94A3B8' : '#64748B',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F1F5F9';
+              }}
+            >
+              {(imageSourceMode !== 'selected' || selectedImageIndices.length === receivedImages.length) ? 'Deselect All' : 'Select All'}
+            </button>
+          )}
+          <span
+            style={{
+              fontSize: '0.5625rem',
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: '10px',
+              backgroundColor: activeImages.length > 0 ? 'rgba(16, 185, 129, 0.12)' : isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+              color: activeImages.length > 0 ? '#10B981' : 'var(--text-secondary)',
+              border: activeImages.length > 0 ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid var(--border-color)',
+              letterSpacing: '0.02em',
+            }}
+          >
+            {activeImages.length} of {receivedImages.length} Active
+          </span>
+        </div>
       </div>
 
       {receivedImages.length > 0 ? (
@@ -2517,25 +2554,51 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         >
           {receivedImages.map((img, idx) => {
             const photoNum = typeof img.index === 'number' && img.index > 0 ? img.index : idx + 1;
-            const isChecked = selectedImageIndices.includes(photoNum);
+            const allNums = receivedImages.map((p, i) => (typeof p.index === 'number' && p.index > 0 ? p.index : i + 1));
+            const isChecked = imageSourceMode === 'selected'
+              ? selectedImageIndices.includes(photoNum)
+              : true;
             return (
               <div
                 key={idx}
+                onClick={() => {
+                  const currentSelected = imageSourceMode === 'selected'
+                    ? selectedImageIndices
+                    : allNums;
+                  let nextIndices: number[];
+                  if (isChecked) {
+                    nextIndices = currentSelected.filter((n) => n !== photoNum);
+                  } else {
+                    nextIndices = [...currentSelected, photoNum].sort((a, b) => a - b);
+                  }
+                  setSelectedImageIndices(nextIndices);
+                  setImageSourceMode('selected');
+                  updateMultiConfig({
+                    selectedImageIndices: nextIndices,
+                    imageSourceMode: 'selected',
+                  });
+                }}
                 style={{
                   position: 'relative',
                   width: '100%',
                   height: '64px',
                   minHeight: '64px',
-                  borderRadius: '6px',
+                  borderRadius: '8px',
                   overflow: 'hidden',
-                  border: isChecked ? '2px solid #10B981' : isDark ? '1px solid #334155' : '1px solid #CBD5E1',
+                  border: isChecked
+                    ? (isDark ? '2px solid rgba(5, 150, 105, 0.95)' : '2px solid #059669')
+                    : (isDark ? '1px solid #334155' : '1px solid #CBD5E1'),
+                  boxShadow: isChecked
+                    ? (isDark ? '0 0 0 1px rgba(5, 150, 105, 0.3), 0 2px 8px rgba(5, 150, 105, 0.25)' : '0 0 0 1px rgba(5, 150, 105, 0.2), 0 2px 8px rgba(5, 150, 105, 0.2)')
+                    : 'none',
                   background: isDark ? '#1E293B' : '#E2E8F0',
-                  cursor: 'default',
+                  cursor: 'pointer',
                   opacity: isChecked ? 1 : 0.45,
                   transition: 'all 0.15s ease',
                   flexShrink: 0,
+                  userSelect: 'none',
                 }}
-                title={`Photo #${photoNum}`}
+                title={`Photo #${photoNum} — Click to ${isChecked ? 'unselect' : 'select'}`}
               >
                 <img
                   src={img.url}
@@ -2545,41 +2608,48 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     height: '100%',
                     objectFit: 'cover',
                     display: 'block',
+                    pointerEvents: 'none',
                   }}
                   loading="lazy"
                 />
-                <span
+                <div
                   style={{
                     position: 'absolute',
-                    top: '3px',
-                    left: '3px',
-                    background: isChecked ? '#10B981' : 'rgba(0,0,0,0.6)',
-                    color: '#fff',
-                    fontSize: '0.55rem',
-                    fontWeight: 800,
-                    width: '15px',
-                    height: '15px',
-                    borderRadius: '4px',
+                    top: '4px',
+                    right: '4px',
+                    width: '18px',
+                    height: '18px',
+                    borderRadius: '50%',
+                    backgroundColor: isChecked ? '#059669' : 'rgba(0, 0, 0, 0.45)',
+                    border: isChecked ? 'none' : '1px solid rgba(255, 255, 255, 0.4)',
+                    color: '#FFFFFF',
+                    fontSize: '10px',
+                    fontWeight: 700,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.4)',
+                    backdropFilter: 'blur(3px)',
+                    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                    transition: 'all 0.15s ease',
+                    pointerEvents: 'none',
                   }}
                 >
                   {isChecked ? '✓' : ''}
-                </span>
+                </div>
                 <span
                   style={{
                     position: 'absolute',
-                    bottom: '3px',
-                    right: '3px',
-                    background: 'rgba(0,0,0,0.75)',
+                    bottom: '4px',
+                    right: '4px',
+                    backgroundColor: isChecked ? 'rgba(5, 150, 105, 0.95)' : 'rgba(0, 0, 0, 0.75)',
                     color: '#fff',
-                    fontSize: '0.5rem',
+                    fontSize: '0.55rem',
                     fontWeight: 700,
-                    padding: '1px 4px',
-                    borderRadius: '3px',
+                    padding: '1px 5px',
+                    borderRadius: '4px',
                     backdropFilter: 'blur(2px)',
+                    boxShadow: isChecked ? '0 1px 3px rgba(0, 0, 0, 0.3)' : 'none',
+                    pointerEvents: 'none',
                   }}
                 >
                   #{photoNum}
