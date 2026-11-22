@@ -1586,7 +1586,7 @@
         if (promptArea.tagName === 'TEXTAREA') {
           promptArea.value = '';
         } else {
-          // Select ENTIRE ProseMirror editor contents (all paragraphs) and delete
+          // Select ENTIRE ProseMirror editor contents (all paragraphs) and delete via standard execCommand
           try {
             const sel = window.getSelection();
             const range = document.createRange();
@@ -1595,14 +1595,6 @@
             sel.addRange(range);
             document.execCommand('delete', false, null);
           } catch (e) {}
-
-          // Also remove all child nodes and leave single empty paragraph
-          while (promptArea.firstChild) {
-            promptArea.removeChild(promptArea.firstChild);
-          }
-          const p = document.createElement('p');
-          p.innerHTML = '<br>';
-          promptArea.appendChild(p);
         }
 
         promptArea.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'deleteContentBackward' }));
@@ -1709,7 +1701,6 @@
         return;
       }
       promptArea.focus();
-      // Select all contents of promptArea and delete
       try {
         const sel = window.getSelection();
         const range = document.createRange();
@@ -1719,23 +1710,6 @@
         document.execCommand('delete', false, null);
       } catch (e) {}
 
-      const allPs = Array.from(promptArea.querySelectorAll('p'));
-      if (allPs.length > 0) {
-        allPs.forEach((p, idx) => {
-          if (idx === 0) {
-            p.textContent = '';
-            p.innerHTML = '<br>';
-          } else {
-            p.remove();
-          }
-        });
-      } else {
-        Array.from(promptArea.childNodes).forEach((node) => {
-          if (node.nodeType === Node.TEXT_NODE) {
-            node.textContent = '';
-          }
-        });
-      }
       promptArea.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'deleteContentBackward' }));
       promptArea.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
       promptArea.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
@@ -2658,16 +2632,31 @@
       throw new Error('Job stopped by user');
     }
 
-    // 3. Clear prompt input and paste prompt text cleanly
+    // 3. Paste prompt text cleanly and verify insertion (MUST INCLUDE PROMPT EVERY TIME)
     const promptText = (job.resolved_prompt || 'Enhance the attached architectural photo').trim();
     console.log(`[BOLTHAVEN] Setting prompt text (${promptText.length} chars)...`);
 
     const liveInput = findPromptInput() || input;
-    clearPromptText(liveInput);
-    await new Promise((r) => setTimeout(r, 200));
+    await setPromptTextAsync(liveInput, promptText, 5000);
+    await new Promise((r) => setTimeout(r, 300));
 
-    await insertPromptCleanly(liveInput, promptText);
-    await new Promise((r) => setTimeout(r, 400));
+    // Mandatory prompt verification: verify prompt text is genuinely present in composer!
+    let composerText = getComposerText(liveInput);
+    if (!composerText || composerText.length < 10) {
+      console.warn(`[BOLTHAVEN] ⚠️ Prompt text not detected in composer (${composerText ? composerText.length : 0} chars). Retrying via MAIN world injection...`);
+      try {
+        await new Promise((res) => {
+          chrome.runtime.sendMessage({ action: 'INSERT_PROMPT_MAIN_WORLD', text: promptText }, () => res());
+        });
+      } catch (e) {}
+      await new Promise((r) => setTimeout(r, 1000));
+      composerText = getComposerText(liveInput);
+    }
+
+    if (!composerText || composerText.length < 10) {
+      throw new Error(`CRITICAL: Prompt text was not pasted into ChatGPT composer (${composerText ? composerText.length : 0} chars). Aborting send to guarantee prompt is always included.`);
+    }
+    console.log(`[BOLTHAVEN] ✓ Prompt verified inserted into ChatGPT (${composerText.length} chars)`);
 
     // Record pre-existing assistant turn count before sending
     const preAssistantCount = document.querySelectorAll(
