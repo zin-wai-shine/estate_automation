@@ -160,7 +160,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
   // Resolved workflow sources with fallbacks
   const activeSources = useMemo<WorkflowImageSource[]>(() => {
     if (workflowImageSources && workflowImageSources.length > 0) {
-      return workflowImageSources;
+      return workflowImageSources.filter((s) => !s.groupTitle || (!s.title?.toLowerCase().startsWith('external browser') && s.title !== s.groupTitle));
     }
     const defs: WorkflowImageSource[] = [];
     if (propertyImages && propertyImages.length > 0) {
@@ -848,11 +848,13 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                             {(() => {
                               const rootSources = activeSources.filter((s) => !s.groupTitle);
                               const groupedMap: Record<string, WorkflowImageSource[]> = {};
-                              activeSources.filter((s) => s.groupTitle).forEach((s) => {
-                                const g = s.groupTitle!;
-                                if (!groupedMap[g]) groupedMap[g] = [];
-                                groupedMap[g].push(s);
-                              });
+                              activeSources
+                                .filter((s) => s.groupTitle && s.title !== s.groupTitle && !s.title?.toLowerCase().startsWith('external browser'))
+                                .forEach((s) => {
+                                  const g = s.groupTitle!;
+                                  if (!groupedMap[g]) groupedMap[g] = [];
+                                  groupedMap[g].push(s);
+                                });
 
                               const renderSourceBtn = (src: WorkflowImageSource, isIndented = false) => {
                                 const isCurrent = src.id === selectedSource?.id;
