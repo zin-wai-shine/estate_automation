@@ -54,7 +54,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
   browserProfileName,
   discoveredTabGroups = [],
   upstreamAiBoxes = [],
-  condoName = 'Regent Home Bangna',
+  condoName = '',
   propertyImages = [],
   enhancedImages = [],
   onConnectTabGroup,
@@ -98,7 +98,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
       title: 'Group 1',
       count: 1,
       sourceType: 'folder',
-      folderName: condoName || 'Regent Home Bangna',
+      folderName: condoName || '',
       imageSelection: '',
       enabled: true,
     },
@@ -114,9 +114,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
   ]);
 
   const filteredCondoFolders = useMemo(() => {
-    if (!folderSearchFilter.trim()) return availableCondoFolders;
+    if (!folderSearchFilter.trim()) return [];
     const q = folderSearchFilter.toLowerCase();
-    return availableCondoFolders.filter((f) => f.toLowerCase().includes(q));
+    return availableCondoFolders.filter((f) => f.toLowerCase().includes(q)).slice(0, 25);
   }, [availableCondoFolders, folderSearchFilter]);
 
   const loadCondoFolders = async (dir: string = baseCondoDirectory) => {
@@ -174,7 +174,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
   const handleAddStep = () => {
     const nextIdx = attachmentSteps.length + 1;
     const newStepId = `group-${Date.now()}`;
-    const initialFolder = condoName || 'Regent Home Bangna';
+    const initialFolder = condoName || '';
     setAttachmentSteps((prev) => [
       ...prev,
       {
@@ -187,7 +187,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
         enabled: true,
       },
     ]);
-    fetchImagesForStep(newStepId, initialFolder);
+    if (initialFolder) {
+      fetchImagesForStep(newStepId, initialFolder);
+    }
   };
 
   const handleRemoveStep = (id: string) => {
@@ -1348,37 +1350,58 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                       }}
                                     >
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
-                                        <FiFolder size={12} style={{ color: '#58A6FF', flexShrink: 0 }} />
-                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                          {step.folderName || 'Select Condo Folder...'}
+                                        <FiFolder size={12} style={{ color: step.folderName ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B'), flexShrink: 0 }} />
+                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: step.folderName ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B') }}>
+                                          {step.folderName || 'Search condo folder (optional)...'}
                                         </span>
                                       </div>
-                                      <FiChevronDown size={12} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        {step.folderName && (
+                                          <span
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleUpdateStep(step.id, { folderName: '', folderImages: [] });
+                                            }}
+                                            title="Clear folder"
+                                            style={{
+                                              padding: '2px',
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              color: isDark ? '#8B949E' : '#64748B',
+                                            }}
+                                          >
+                                            <FiX size={11} />
+                                          </span>
+                                        )}
+                                        <FiChevronDown size={12} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                                      </div>
                                     </button>
 
-                                    <button
-                                      type="button"
-                                      title="Refresh folders from disk"
-                                      onClick={() => {
-                                        loadCondoFolders();
-                                        if (step.folderName) fetchImagesForStep(step.id, step.folderName);
-                                      }}
-                                      style={{
-                                        width: '28px',
-                                        height: '28px',
-                                        borderRadius: '4px',
-                                        border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                        backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                                        color: isDark ? '#8B949E' : '#64748B',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        cursor: 'pointer',
-                                        flexShrink: 0,
-                                      }}
-                                    >
-                                      <FiRefreshCw size={11} />
-                                    </button>
+                                    {step.folderName && (
+                                      <button
+                                        type="button"
+                                        title="Refresh folders from disk"
+                                        onClick={() => {
+                                          loadCondoFolders();
+                                          fetchImagesForStep(step.id, step.folderName);
+                                        }}
+                                        style={{
+                                          width: '28px',
+                                          height: '28px',
+                                          borderRadius: '4px',
+                                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                          backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                                          color: isDark ? '#8B949E' : '#64748B',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          cursor: 'pointer',
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        <FiRefreshCw size={11} />
+                                      </button>
+                                    )}
                                   </div>
 
                                   {/* Dropdown Menu */}
@@ -1423,7 +1446,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                             autoFocus
                                             value={folderSearchFilter}
                                             onChange={(e) => setFolderSearchFilter(e.target.value)}
-                                            placeholder="Search condo name..."
+                                            placeholder="Type condo name to search..."
                                             style={{
                                               flex: 1,
                                               border: 'none',
@@ -1444,7 +1467,11 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                             gap: '2px',
                                           }}
                                         >
-                                          {filteredCondoFolders.length === 0 ? (
+                                          {!folderSearchFilter.trim() ? (
+                                            <div style={{ padding: '8px', fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', textAlign: 'center' }}>
+                                              Type condo name to search folders...
+                                            </div>
+                                          ) : filteredCondoFolders.length === 0 ? (
                                             <div style={{ padding: '8px', fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', textAlign: 'center' }}>
                                               No matching condo folder found
                                             </div>
@@ -1459,6 +1486,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                                     handleUpdateStep(step.id, { folderName: fName });
                                                     fetchImagesForStep(step.id, fName);
                                                     setActiveFolderDropdownStepId(null);
+                                                    setFolderSearchFilter('');
                                                   }}
                                                   style={{
                                                     display: 'flex',
@@ -1491,7 +1519,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                   )}
                                 </div>
 
-                                {/* Photos Found & Thumbnails */}
+                                {/* Photos Found & Thumbnails, or Manual Selection */}
                                 {step.folderImages && step.folderImages.length > 0 ? (
                                   <div
                                     style={{
@@ -1589,36 +1617,81 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                     </div>
                                   </div>
                                 ) : (
-                                  <div
-                                    style={{
-                                      fontSize: '0.625rem',
-                                      color: isDark ? '#8B949E' : '#64748B',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'space-between',
-                                      padding: '2px 0',
-                                    }}
-                                  >
-                                    <span>
-                                      {step.folderName ? `No images found in "${step.folderName}"` : 'Select a condo folder to load photos'}
-                                    </span>
-                                    {step.folderName && (
-                                      <button
-                                        type="button"
-                                        onClick={() => fetchImagesForStep(step.id, step.folderName)}
+                                  /* Manual Mode when no condo folder selected yet */
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', width: '38px', flexShrink: 0 }}>
+                                        Image:
+                                      </span>
+                                      <input
+                                        type="text"
+                                        value={step.imageSelection || ''}
+                                        onChange={(e) => handleUpdateStep(step.id, { imageSelection: e.target.value })}
+                                        placeholder="Specific photo name (e.g. 1.png, 2.png) or choose manual..."
                                         style={{
-                                          background: 'transparent',
-                                          border: 'none',
-                                          color: '#58A6FF',
-                                          fontSize: '0.625rem',
-                                          cursor: 'pointer',
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          gap: '3px',
+                                          flex: 1,
+                                          height: '26px',
+                                          padding: '0 8px',
+                                          borderRadius: '4px',
+                                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                          color: isDark ? '#F0F6FC' : '#0F172A',
+                                          fontSize: '0.65625rem',
+                                          outline: 'none',
                                         }}
-                                      >
-                                        <FiRefreshCw size={10} /> Scan
-                                      </button>
+                                      />
+                                    </div>
+
+                                    {/* Manual selection from listing photos if available */}
+                                    {propertyImages.length > 0 && (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <span style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                          Select from listing photos ({propertyImages.length} available):
+                                        </span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflowX: 'auto', padding: '2px 0' }}>
+                                          {propertyImages.slice(0, 10).map((pImg, pIdx) => {
+                                            const isSel = pIdx < step.count;
+                                            return (
+                                              <div
+                                                key={pImg.url || pIdx}
+                                                onClick={() => handleUpdateStep(step.id, { count: pIdx + 1, imageSelection: pImg.filename || `Photo #${pIdx + 1}` })}
+                                                title={`Click to select up to photo #${pIdx + 1}`}
+                                                style={{
+                                                  width: '38px',
+                                                  height: '38px',
+                                                  borderRadius: '4px',
+                                                  border: isSel
+                                                    ? (isDark ? '1.5px solid #58A6FF' : '1.5px solid #2563EB')
+                                                    : (isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1'),
+                                                  opacity: isSel ? 1 : 0.45,
+                                                  overflow: 'hidden',
+                                                  position: 'relative',
+                                                  flexShrink: 0,
+                                                  cursor: 'pointer',
+                                                  backgroundColor: isDark ? '#161B22' : '#F1F5F9',
+                                                }}
+                                              >
+                                                <img src={pImg.url} alt={`Listing ${pIdx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                <span
+                                                  style={{
+                                                    position: 'absolute',
+                                                    bottom: 1,
+                                                    right: 1,
+                                                    backgroundColor: isSel ? 'rgba(37,99,235,0.85)' : 'rgba(0,0,0,0.65)',
+                                                    color: '#fff',
+                                                    fontSize: '7px',
+                                                    fontWeight: 600,
+                                                    padding: '1px 3px',
+                                                    borderRadius: '2px',
+                                                  }}
+                                                >
+                                                  {isSel ? `✓ #${pIdx + 1}` : `#${pIdx + 1}`}
+                                                </span>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
                                     )}
                                   </div>
                                 )}
