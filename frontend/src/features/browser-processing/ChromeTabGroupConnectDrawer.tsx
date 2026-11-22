@@ -74,13 +74,14 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
   const [showFolderImagePicker, setShowFolderImagePicker] = useState<boolean>(false);
   const refFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Condo Folders & Local Base Directory State
+  // Main Condo Photos Toggle & Local Base Directory State
+  const [useCondoImages, setUseCondoImages] = useState<boolean>(true);
   const [availableCondoFolders, setAvailableCondoFolders] = useState<string[]>([]);
   const [baseCondoDirectory, setBaseCondoDirectory] = useState<string>('/Users/zinwaishine/Desktop/Condo Building');
   const [activeFolderDropdownStepId, setActiveFolderDropdownStepId] = useState<string | null>(null);
   const [folderSearchFilter, setFolderSearchFilter] = useState<string>('');
 
-  // Dynamic Image Attachment Steps (Customizable sequence after Reference Image)
+  // Child Attachment Groups inside Condo Photos
   const [attachmentSteps, setAttachmentSteps] = useState<Array<{
     id: string;
     title: string;
@@ -93,8 +94,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
     enabled: boolean;
   }>>([
     {
-      id: 'step-condo',
-      title: 'Condo Photos',
+      id: 'group-1',
+      title: 'Group 1',
       count: 1,
       sourceType: 'folder',
       folderName: condoName || 'Regent Home Bangna',
@@ -102,8 +103,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
       enabled: true,
     },
     {
-      id: 'step-interior',
-      title: 'Interior Photos',
+      id: 'group-2',
+      title: 'Group 2',
       count: 4,
       sourceType: 'enhanced',
       folderName: 'Interior',
@@ -172,13 +173,13 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
 
   const handleAddStep = () => {
     const nextIdx = attachmentSteps.length + 1;
-    const newStepId = `step-${Date.now()}`;
+    const newStepId = `group-${Date.now()}`;
     const initialFolder = condoName || 'Regent Home Bangna';
     setAttachmentSteps((prev) => [
       ...prev,
       {
         id: newStepId,
-        title: `Image Source #${nextIdx}`,
+        title: `Group ${nextIdx}`,
         count: 1,
         sourceType: 'folder',
         folderName: initialFolder,
@@ -277,16 +278,17 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
   // Image calculations
   const effectiveRefPhotosCount = useReferenceImage ? 1 : 0;
   const totalStepPhotos = useMemo(() => {
+    if (!useCondoImages) return 0;
     return attachmentSteps
       .filter((s) => s.enabled)
       .reduce((sum, s) => sum + Math.min(10, Math.max(1, s.count)), 0);
-  }, [attachmentSteps]);
+  }, [attachmentSteps, useCondoImages]);
   const totalCompositePhotos = effectiveRefPhotosCount + totalStepPhotos;
 
   // Handle Create Flow Click
   const handleCreateAndConnectFlow = () => {
     const finalName = flowName.trim() || (tabGroupMode === 'generate' ? 'FB Hero' : 'Enhance IMG');
-    const enabledSteps = attachmentSteps.filter((s) => s.enabled);
+    const enabledSteps = (tabGroupMode === 'generate' && useCondoImages) ? attachmentSteps.filter((s) => s.enabled) : [];
     const primaryFolderStep = enabledSteps.find((s) => s.sourceType === 'folder');
     const primaryEnhancedStep = enabledSteps.find((s) => s.sourceType === 'enhanced');
 
@@ -302,10 +304,10 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
       referenceImage: referenceImageUrl || undefined,
       referenceImageName: referenceImageName || undefined,
       referenceFolderName: referenceFolderName || undefined,
-      imageAttachmentSteps: tabGroupMode === 'generate' ? enabledSteps : [],
+      imageAttachmentSteps: enabledSteps,
       totalAttachmentPhotos: tabGroupMode === 'generate' ? totalCompositePhotos : 0,
       // Backwards-compatible fields:
-      useCondoImages: tabGroupMode === 'generate' ? Boolean(primaryFolderStep) : false,
+      useCondoImages: tabGroupMode === 'generate' ? useCondoImages : false,
       condoImagesCount: tabGroupMode === 'generate' ? (primaryFolderStep ? primaryFolderStep.count : 0) : 0,
       condoFolderName: tabGroupMode === 'generate' ? (primaryFolderStep?.folderName || condoName || 'Regent Home Bangna') : undefined,
       useEnhancedImages: tabGroupMode === 'generate' ? Boolean(primaryEnhancedStep) : false,
@@ -1119,37 +1121,58 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     )}
                   </div>
 
-                  {/* Dynamic Image Attachment Steps (Customizable sequence after Reference Layout) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    {attachmentSteps.map((step, idx) => (
-                      <div
-                        key={step.id}
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '10px',
-                          paddingBottom: '1rem',
-                          borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9',
-                        }}
-                      >
-                        {/* Header: Icon + Step Badge + Title + Switch + Delete */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-                            <div style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }}>
-                              {step.sourceType === 'folder' ? (
-                                <FiFolder size={15} />
-                              ) : step.sourceType === 'upload' ? (
-                                <FiUpload size={15} />
-                              ) : (
-                                <FiLayers size={15} />
-                              )}
-                            </div>
-                            <div style={{ minWidth: 0, flex: 1 }}>
+                  {/* Item 2: Condo Photos (Main Title) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <FiFolder size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                        <div>
+                          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                            Condo Photos
+                          </div>
+                          <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                            Exterior & facility photos (10 max total)
+                          </div>
+                        </div>
+                      </div>
+                      <ToggleSwitch
+                        checked={useCondoImages}
+                        onChange={(val) => setUseCondoImages(val)}
+                        size="sm"
+                        activeColor="#2563EB"
+                      />
+                    </div>
+
+                    {useCondoImages && (
+                      <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {/* Child Groups inside Condo Photos */}
+                        {attachmentSteps.map((step, idx) => (
+                          <div
+                            key={step.id}
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '8px',
+                              paddingBottom: idx === attachmentSteps.length - 1 ? '4px' : '10px',
+                              borderBottom: idx === attachmentSteps.length - 1 ? 'none' : (isDark ? '1px dashed #21262D' : '1px dashed #E2E8F0'),
+                            }}
+                          >
+                            {/* Child Title Header: Group N (#2 in Chat) */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span
                                   style={{
-                                    fontSize: '0.625rem',
+                                    fontSize: '0.6875rem',
                                     fontWeight: 600,
+                                    color: isDark ? '#F0F6FC' : '#0F172A',
+                                  }}
+                                >
+                                  Group {idx + 1}
+                                </span>
+                                <span
+                                  style={{
+                                    fontSize: '0.59375rem',
+                                    fontWeight: 500,
                                     color: isDark ? '#58A6FF' : '#2563EB',
                                     backgroundColor: isDark ? 'rgba(88, 166, 255, 0.1)' : '#EFF6FF',
                                     padding: '1px 5px',
@@ -1158,66 +1181,32 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                 >
                                   #{idx + 2} in Chat
                                 </span>
-                                <input
-                                  type="text"
-                                  value={step.title}
-                                  onChange={(e) => handleUpdateStep(step.id, { title: e.target.value })}
+                              </div>
+
+                              {attachmentSteps.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveStep(step.id)}
+                                  title={`Remove Group ${idx + 1}`}
                                   style={{
-                                    fontSize: '0.8125rem',
-                                    fontWeight: 600,
-                                    color: isDark ? '#F0F6FC' : '#0F172A',
-                                    background: 'transparent',
-                                    border: 'none',
-                                    outline: 'none',
+                                    width: '22px',
+                                    height: '22px',
+                                    borderRadius: '4px',
+                                    backgroundColor: isDark ? 'rgba(248, 81, 73, 0.08)' : '#FEF2F2',
+                                    color: isDark ? '#F85149' : '#DC2626',
+                                    border: isDark ? '1px solid rgba(248, 81, 73, 0.25)' : '1px solid #FECACA',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
                                     padding: 0,
-                                    minWidth: '120px',
                                   }}
-                                />
-                              </div>
-                              <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                                {step.sourceType === 'folder'
-                                  ? 'Exterior & facility condo photos'
-                                  : step.sourceType === 'upload'
-                                  ? 'Manual uploaded images'
-                                  : 'Enhanced room photos'}
-                              </div>
+                                >
+                                  <FiTrash2 size={11} />
+                                </button>
+                              )}
                             </div>
-                          </div>
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                            {attachmentSteps.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveStep(step.id)}
-                                title="Delete this image source"
-                                style={{
-                                  width: '24px',
-                                  height: '24px',
-                                  borderRadius: '4px',
-                                  backgroundColor: isDark ? 'rgba(248, 81, 73, 0.08)' : '#FEF2F2',
-                                  color: isDark ? '#F85149' : '#DC2626',
-                                  border: isDark ? '1px solid rgba(248, 81, 73, 0.25)' : '1px solid #FECACA',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  padding: 0,
-                                }}
-                              >
-                                <FiTrash2 size={11} />
-                              </button>
-                            )}
-                            <ToggleSwitch
-                              checked={step.enabled}
-                              onChange={(val) => handleUpdateStep(step.id, { enabled: val })}
-                              size="sm"
-                              activeColor="#2563EB"
-                            />
-                          </div>
-                        </div>
-
-                        {step.enabled && (
-                          <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             {/* Unified Row: Source Selector + Count Stepper */}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
                               {/* Source Type Toggle */}
@@ -1330,20 +1319,10 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                               </div>
                             </div>
 
-                            {/* Row 3: Source Configuration */}
+                            {/* Group Content: Folder, Upload, or Enhanced */}
                             {step.sourceType === 'folder' && (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {/* Folder Selector */}
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', position: 'relative' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                                      Condo Folder:
-                                    </span>
-                                    <span style={{ fontSize: '0.59375rem', color: isDark ? '#6E7681' : '#94A3B8' }}>
-                                      {availableCondoFolders.length} folders in ~/Desktop/Condo Building
-                                    </span>
-                                  </div>
-
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <button
                                       type="button"
@@ -1412,7 +1391,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                       <div
                                         style={{
                                           position: 'absolute',
-                                          top: '52px',
+                                          top: '32px',
                                           left: 0,
                                           right: 0,
                                           zIndex: 50,
@@ -1512,7 +1491,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                   )}
                                 </div>
 
-                                {/* Photos Found & Thumbnails (clean, no container box background!) */}
+                                {/* Photos Found & Thumbnails */}
                                 {step.folderImages && step.folderImages.length > 0 ? (
                                   <div
                                     style={{
@@ -1527,8 +1506,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                         Found {step.folderImages.length} photo{step.folderImages.length > 1 ? 's' : ''} in {step.folderName}
                                       </span>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                        {Array.from({ length: Math.min(10, step.folderImages.length) }).map((_, idx) => {
-                                          const num = idx + 1;
+                                        {Array.from({ length: Math.min(10, step.folderImages.length) }).map((_, gIdx) => {
+                                          const num = gIdx + 1;
                                           const isSel = step.count === num;
                                           return (
                                             <button
@@ -1555,13 +1534,13 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
 
                                     {/* Real photo thumbnails grid */}
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', padding: '2px 0' }}>
-                                      {step.folderImages.map((img, idx) => {
-                                        const isSelected = idx < step.count;
+                                      {step.folderImages.map((img, tIdx) => {
+                                        const isSelected = tIdx < step.count;
                                         return (
                                           <div
-                                            key={img.filename || idx}
-                                            onClick={() => handleUpdateStep(step.id, { count: idx + 1 })}
-                                            title={`Click to select up to photo #${idx + 1} (${img.filename})`}
+                                            key={img.filename || tIdx}
+                                            onClick={() => handleUpdateStep(step.id, { count: tIdx + 1 })}
+                                            title={`Click to select up to photo #${tIdx + 1} (${img.filename})`}
                                             style={{
                                               width: '42px',
                                               height: '42px',
@@ -1602,7 +1581,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                                 borderRadius: '2px',
                                               }}
                                             >
-                                              {isSelected ? `✓ #${idx + 1}` : `#${idx + 1}`}
+                                              {isSelected ? `✓ #${tIdx + 1}` : `#${tIdx + 1}`}
                                             </span>
                                           </div>
                                         );
@@ -1702,41 +1681,41 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                               </div>
                             )}
                           </div>
-                        )}
-                      </div>
-                    ))}
+                        ))}
 
-                    {/* Add Image Source Button */}
-                    <button
-                      type="button"
-                      onClick={handleAddStep}
-                      style={{
-                        height: '32px',
-                        borderRadius: '5px',
-                        fontSize: '0.6875rem',
-                        fontWeight: 500,
-                        backgroundColor: 'transparent',
-                        border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
-                        color: isDark ? '#8B949E' : '#64748B',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        transition: 'all 0.12s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = isDark ? '#58A6FF' : '#2563EB';
-                        e.currentTarget.style.color = isDark ? '#58A6FF' : '#2563EB';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
-                        e.currentTarget.style.color = isDark ? '#8B949E' : '#64748B';
-                      }}
-                    >
-                      <FiPlus size={12} />
-                      <span>Add Image Source</span>
-                    </button>
+                        {/* Add Group Button */}
+                        <button
+                          type="button"
+                          onClick={handleAddStep}
+                          style={{
+                            height: '28px',
+                            borderRadius: '4px',
+                            fontSize: '0.65625rem',
+                            fontWeight: 500,
+                            backgroundColor: 'transparent',
+                            border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                            color: isDark ? '#8B949E' : '#64748B',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '5px',
+                            transition: 'all 0.12s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = isDark ? '#58A6FF' : '#2563EB';
+                            e.currentTarget.style.color = isDark ? '#58A6FF' : '#2563EB';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = isDark ? '#30363D' : '#CBD5E1';
+                            e.currentTarget.style.color = isDark ? '#8B949E' : '#64748B';
+                          }}
+                        >
+                          <FiPlus size={11} />
+                          <span>Add Group ({attachmentSteps.length + 1})</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Item 4: Connected Prompt */}
@@ -2160,7 +2139,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                       </div>
                     )}
 
-                    {attachmentSteps.filter((s) => s.enabled).map((step, idx) => (
+                    {useCondoImages && attachmentSteps.filter((s) => s.enabled).map((step, idx) => (
                       <div
                         key={step.id}
                         style={{
@@ -2184,14 +2163,14 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                           <FiLayers size={10} />
                         )}
                         <span>
-                          #{idx + 2}: {step.title} ({step.count} Photo{step.count > 1 ? 's' : ''})
+                          Group {idx + 1} ({step.count} Photo{step.count > 1 ? 's' : ''})
                         </span>
                       </div>
                     ))}
                   </div>
 
                   {/* Thumbnail Strip */}
-                  {(useReferenceImage || attachmentSteps.some((s) => s.enabled && s.count > 0)) && (
+                  {(useReferenceImage || (useCondoImages && attachmentSteps.some((s) => s.enabled && s.count > 0))) && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflowX: 'auto', padding: '2px 0' }}>
                       {useReferenceImage && (
                         <div
@@ -2217,10 +2196,10 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                         </div>
                       )}
 
-                      {attachmentSteps.filter((s) => s.enabled).map((step, sIdx) => {
+                      {useCondoImages && attachmentSteps.filter((s) => s.enabled).map((step, sIdx) => {
                         return Array.from({ length: Math.min(10, Math.max(1, step.count)) }).map((_, i) => {
                           const img = step.uploadedUrls?.[i] || (step.sourceType === 'enhanced' ? enhancedImages[i]?.url : (step.folderImages?.[i]?.data_url || propertyImages[i]?.url));
-                          const stepBadge = `S${sIdx + 1}-${i + 1}`;
+                          const stepBadge = `G${sIdx + 1}-${i + 1}`;
                           return (
                             <div
                               key={`${step.id}-${i}`}
