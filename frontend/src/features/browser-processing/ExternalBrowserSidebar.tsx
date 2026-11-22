@@ -25,6 +25,7 @@ import {
   FiUploadCloud,
   FiArrowLeft,
   FiImage,
+  FiEye,
   FiLoader,
   FiStar,
   FiZap,
@@ -5648,61 +5649,169 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
       {/* ── PINNED FOOTER RUN BUTTON (PORTALED TO TRUE SIDEBAR DRAWER FOOTER) ── */}
       {(() => {
+        // Resolve all attached photos in sequence to chat composer
+        const allAttachedChatPhotos: Array<{ url: string; label: string; index: number; groupName?: string }> = [];
+        let seq = 1;
+
+        // 1. Reference Photo (1st Attached)
+        const shouldAttachRef = useReferenceImage && boxConfig.useReferenceImage !== false;
+        const refUrl = shouldAttachRef
+          ? (activeReferenceImage?.url || referenceImage || boxConfig.referenceImage || (propertyContext?.images && propertyContext.images[0]?.url) || null)
+          : null;
+
+        if (refUrl) {
+          allAttachedChatPhotos.push({
+            url: refUrl,
+            label: 'Ref Layout (#1)',
+            index: seq++,
+            groupName: 'Reference Image',
+          });
+        }
+
+        // 2. Condo / Attached Group Photos (2nd Attached)
+        const shouldAttachCondo = useCondoImages && boxConfig.useCondoImages !== false;
+        if (shouldAttachCondo) {
+          const resolved = resolveAttachedPhotosFromSteps(
+            attachmentSteps,
+            effectiveWorkflowImageSources,
+            propertyContext?.images,
+            availableEnhancedPhotos
+          );
+          if (resolved && resolved.length > 0) {
+            resolved.forEach((p, idx) => {
+              allAttachedChatPhotos.push({
+                url: p.url || p.data_url || '',
+                label: p.filename || `Condo Photo #${idx + 1}`,
+                index: seq++,
+                groupName: `Group Photo #${idx + 1}`,
+              });
+            });
+          } else {
+            const selectedCondoImgs = condoSlots.filter(Boolean);
+            const targetCondoCount = typeof condoImagesCount === 'number' ? condoImagesCount : 3;
+            const fallbackList = selectedCondoImgs.length > 0
+              ? selectedCondoImgs.slice(0, targetCondoCount)
+              : (propertyContext?.images || []).slice(0, targetCondoCount);
+
+            fallbackList.forEach((img: any, i: number) => {
+              allAttachedChatPhotos.push({
+                url: typeof img === 'string' ? img : img.url || img.data_url || '',
+                label: img.filename || `Photo #${i + 1}`,
+                index: seq++,
+                groupName: `Photo #${i + 1}`,
+              });
+            });
+          }
+        }
+
+        // 3. For Enhance IMG nodes, fallback to activeImages from queue
+        if (!isHeroNode && allAttachedChatPhotos.length === 0 && activeImages.length > 0) {
+          activeImages.forEach((img, i) => {
+            allAttachedChatPhotos.push({
+              url: img.url,
+              label: img.filename || `Queue Photo #${i + 1}`,
+              index: seq++,
+              groupName: `Image #${i + 1}`,
+            });
+          });
+        }
+
         const runButtonContent = (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
-            <button
-              type="button"
-              disabled={isAutomating || isRunningTwoStage}
-              onClick={() => {
-                if (isHeroNode) {
-                  handleRunTwoStageTest();
-                } else {
-                  setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
-                  handleStartGroupAutomation();
-                }
-              }}
-              style={{
-                width: '100%',
-                height: '34px',
-                borderRadius: '6px',
-                border: '1px solid var(--accent-primary, #2563EB)',
-                backgroundColor: (isAutomating || isRunningTwoStage)
-                  ? 'rgba(37, 99, 235, 0.6)'
-                  : 'var(--accent-primary, #2563EB)',
-                color: '#FFFFFF',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                cursor: (isAutomating || isRunningTwoStage) ? 'not-allowed' : 'pointer',
-                boxShadow: 'none',
-                transition: 'all 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                if (!isAutomating && !isRunningTwoStage) {
-                  e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover, #1D4ED8)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isAutomating && !isRunningTwoStage) {
-                  e.currentTarget.style.backgroundColor = 'var(--accent-primary, #2563EB)';
-                }
-              }}
-            >
-              {isAutomating || isRunningTwoStage ? (
-                <>
-                  <FiLoader className="animate-spin" size={13} />
-                  <span>Running...</span>
-                </>
-              ) : (
-                <>
-                  <FiPlay size={12} />
-                  <span>Run</span>
-                </>
-              )}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
+              {/* Small Preview Button at Left */}
+              <button
+                type="button"
+                title="Preview Attached Images & Prompt in Chat"
+                onClick={() => {
+                  onCloseSettingsSidebox?.();
+                  setShowPromptViewSidebox(true);
+                }}
+                style={{
+                  height: '34px',
+                  width: '36px',
+                  minWidth: '36px',
+                  borderRadius: '6px',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid #CBD5E1',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                  color: isDark ? '#C9D1D9' : '#475569',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  boxShadow: 'none',
+                  flexShrink: 0,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9';
+                  e.currentTarget.style.color = 'var(--accent-primary, #2563EB)';
+                  e.currentTarget.style.borderColor = 'var(--accent-primary, #2563EB)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC';
+                  e.currentTarget.style.color = isDark ? '#C9D1D9' : '#475569';
+                  e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1';
+                }}
+              >
+                <FiEye size={15} />
+              </button>
+
+              {/* Main Run Button */}
+              <button
+                type="button"
+                disabled={isAutomating || isRunningTwoStage}
+                onClick={() => {
+                  if (isHeroNode) {
+                    handleRunTwoStageTest();
+                  } else {
+                    setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
+                    handleStartGroupAutomation();
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  height: '34px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--accent-primary, #2563EB)',
+                  backgroundColor: (isAutomating || isRunningTwoStage)
+                    ? 'rgba(37, 99, 235, 0.6)'
+                    : 'var(--accent-primary, #2563EB)',
+                  color: '#FFFFFF',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  cursor: (isAutomating || isRunningTwoStage) ? 'not-allowed' : 'pointer',
+                  boxShadow: 'none',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  if (!isAutomating && !isRunningTwoStage) {
+                    e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover, #1D4ED8)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isAutomating && !isRunningTwoStage) {
+                    e.currentTarget.style.backgroundColor = 'var(--accent-primary, #2563EB)';
+                  }
+                }}
+              >
+                {isAutomating || isRunningTwoStage ? (
+                  <>
+                    <FiLoader className="animate-spin" size={13} />
+                    <span>Running...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiPlay size={12} />
+                    <span>Run</span>
+                  </>
+                )}
+              </button>
+            </div>
 
             {/* Stop Automation Button */}
             {(isAutomating || isRunningTwoStage) && (
@@ -5739,124 +5848,369 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         );
       })()}
 
-      {/* ── PROMPT VIEW SIDEBOX (SLIDE-OVER PANEL LIKE SETTINGS) ── */}
-      {showPromptViewSidebox && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            bottom: 0,
-            right: '380px', // sits smoothly right alongside the 380px main sidebar inspector
-            width: '440px',
-            maxWidth: 'calc(100vw - 420px)',
-            backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-            borderLeft: '1px solid var(--border-color)',
-            borderRight: '1px solid var(--border-color)',
-            boxShadow: isDark ? '-12px 0 35px rgba(0, 0, 0, 0.75)' : '-6px 0 24px rgba(0, 0, 0, 0.08)',
-            zIndex: 169,
-            display: 'flex',
-            flexDirection: 'column',
-            animation: 'sidebarSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
-        >
-          {/* Top Header */}
+      {/* ── CHAT COMPOSER PREVIEW SIDEBOX (IMAGES & PROMPT PREVIEW) ── */}
+      {showPromptViewSidebox && (() => {
+        // Compute attached photos inside sidebox
+        const attachedPhotosList: Array<{ url: string; label: string; index: number }> = [];
+        let pSeq = 1;
+
+        const shouldAttachRef = useReferenceImage && boxConfig.useReferenceImage !== false;
+        const refUrl = shouldAttachRef
+          ? (activeReferenceImage?.url || referenceImage || boxConfig.referenceImage || (propertyContext?.images && propertyContext.images[0]?.url) || null)
+          : null;
+
+        if (refUrl) {
+          attachedPhotosList.push({
+            url: refUrl,
+            label: 'Ref Layout (#1)',
+            index: pSeq++,
+          });
+        }
+
+        const shouldAttachCondo = useCondoImages && boxConfig.useCondoImages !== false;
+        if (shouldAttachCondo) {
+          const resolved = resolveAttachedPhotosFromSteps(
+            attachmentSteps,
+            effectiveWorkflowImageSources,
+            propertyContext?.images,
+            availableEnhancedPhotos
+          );
+          if (resolved && resolved.length > 0) {
+            resolved.forEach((p, idx) => {
+              attachedPhotosList.push({
+                url: p.url || p.data_url || '',
+                label: p.filename || `Condo Photo #${idx + 1}`,
+                index: pSeq++,
+              });
+            });
+          } else {
+            const selectedCondoImgs = condoSlots.filter(Boolean);
+            const targetCondoCount = typeof condoImagesCount === 'number' ? condoImagesCount : 3;
+            const fallbackList = selectedCondoImgs.length > 0
+              ? selectedCondoImgs.slice(0, targetCondoCount)
+              : (propertyContext?.images || []).slice(0, targetCondoCount);
+
+            fallbackList.forEach((img: any, i: number) => {
+              attachedPhotosList.push({
+                url: typeof img === 'string' ? img : img.url || img.data_url || '',
+                label: img.filename || `Photo #${i + 1}`,
+                index: pSeq++,
+              });
+            });
+          }
+        }
+
+        if (!isHeroNode && attachedPhotosList.length === 0 && activeImages.length > 0) {
+          activeImages.forEach((img, i) => {
+            attachedPhotosList.push({
+              url: img.url,
+              label: img.filename || `Photo #${i + 1}`,
+              index: pSeq++,
+            });
+          });
+        }
+
+        return (
           <div
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '0.875rem 1.125rem',
-              borderBottom: 'none',
+              position: 'fixed',
+              top: 0,
+              bottom: 0,
+              right: '380px', // sits smoothly right alongside the 380px main sidebar inspector
+              width: '460px',
+              maxWidth: 'calc(100vw - 420px)',
               backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+              borderLeft: '1px solid var(--border-color)',
+              borderRight: '1px solid var(--border-color)',
+              boxShadow: isDark ? '-12px 0 35px rgba(0, 0, 0, 0.75)' : '-6px 0 24px rgba(0, 0, 0, 0.08)',
+              zIndex: 169,
+              display: 'flex',
+              flexDirection: 'column',
+              animation: 'sidebarSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-              <div
+            {/* Top Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.875rem 1.125rem',
+                borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                    color: '#3B82F6',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <FiEye size={16} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                    Chat Composer Preview
+                  </div>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    {boxConfig.browserGroupName || boxConfig.title || 'Chat Model'} · {attachedPhotosList.length} Photos Attached
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowPromptViewSidebox(false)}
+                title="Close Preview"
                 style={{
-                  width: '30px',
-                  height: '30px',
-                  borderRadius: '8px',
-                  backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                  color: '#3B82F6',
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+                  color: 'var(--text-secondary)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
+                  cursor: 'pointer',
                 }}
               >
-                <FiFileText size={15} />
-              </div>
-              <div>
-                <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
-                  Prompt Template Viewer
+                <FiX size={15} />
+              </button>
+            </div>
+
+            {/* Main Scrollable Body */}
+            <div
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '1rem 1.125rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1rem',
+              }}
+            >
+              {/* 1. Attached Photos in Chat Sequence */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    <FiImage size={13} style={{ color: '#10B981' }} />
+                    <span>Attached Images ({attachedPhotosList.length})</span>
+                  </label>
+                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                    Sequence in Chat Message
+                  </span>
                 </div>
-                <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {promptOptions.find((p) => String(p.id).toLowerCase() === selectedPromptKey.toLowerCase())?.name || 'Active Prompt Template'}
+
+                {attachedPhotosList.length > 0 ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      overflowX: 'auto',
+                      padding: '4px 2px 8px 2px',
+                    }}
+                  >
+                    {attachedPhotosList.map((photo) => (
+                      <div
+                        key={`${photo.index}-${photo.url}`}
+                        style={{
+                          width: '80px',
+                          flexShrink: 0,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '80px',
+                            height: '66px',
+                            borderRadius: '6px',
+                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                            overflow: 'hidden',
+                            position: 'relative',
+                            backgroundColor: isDark ? '#161B22' : '#F1F5F9',
+                          }}
+                        >
+                          {photo.url ? (
+                            <img
+                              src={photo.url}
+                              alt={photo.label}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
+                          ) : (
+                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+                              <FiImage size={16} />
+                            </div>
+                          )}
+                          <span
+                            style={{
+                              position: 'absolute',
+                              top: 3,
+                              left: 3,
+                              backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                              color: '#FFFFFF',
+                              fontSize: '0.59375rem',
+                              fontWeight: 700,
+                              padding: '1px 5px',
+                              borderRadius: '3px',
+                              letterSpacing: '0.2px',
+                            }}
+                          >
+                            #{photo.index}
+                          </span>
+                        </div>
+                        <div
+                          style={{
+                            fontSize: '0.625rem',
+                            color: 'var(--text-muted)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            textAlign: 'center',
+                          }}
+                          title={photo.label}
+                        >
+                          {photo.label}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      padding: '12px',
+                      borderRadius: '6px',
+                      border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                      fontSize: '0.6875rem',
+                      color: 'var(--text-muted)',
+                      fontStyle: 'italic',
+                      textAlign: 'center',
+                    }}
+                  >
+                    No images attached to this model box.
+                  </div>
+                )}
+              </div>
+
+              {/* 2. Chat Prompt Message Box */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    <FiFileText size={13} style={{ color: '#3B82F6' }} />
+                    <span>Chat Prompt Message</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleCopyPrompt}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: isCopied ? '#10B981' : 'var(--accent-primary, #3B82F6)',
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                    }}
+                  >
+                    {isCopied ? <FiCheck size={12} /> : <FiCopy size={12} />}
+                    <span>{isCopied ? 'Copied' : 'Copy Prompt'}</span>
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    borderRadius: '6px',
+                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                    backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                    padding: '10px 12px',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                    fontSize: '0.75rem',
+                    lineHeight: '1.65',
+                    color: 'var(--text-primary)',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    maxHeight: '400px',
+                    overflowY: 'auto',
+                  }}
+                >
+                  {resolvedPromptPreview || currentPromptText || 'No prompt content available.'}
                 </div>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowPromptViewSidebox(false)}
-              title="Close Prompt Viewer"
+            {/* Footer with Close and Run Shortcut */}
+            <div
               style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '6px',
-                border: '1px solid var(--border-color)',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
-                color: 'var(--text-secondary)',
+                padding: '0.75rem 1.125rem',
+                borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
+                justifyContent: 'space-between',
+                gap: '8px',
               }}
             >
-              <FiX size={15} />
-            </button>
-          </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowPromptViewSidebox(false)}
+                style={{ fontSize: '0.75rem', height: '34px', borderRadius: '6px' }}
+              >
+                Close
+              </Button>
 
-          {/* Body */}
-          {/* Main Scrollable Body with Direct Text */}
-          <div
-            style={{
-              flex: 1,
-              overflowY: 'auto',
-              padding: '1rem 1.25rem',
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-              fontSize: '0.75rem',
-              lineHeight: '1.65',
-              color: 'var(--text-primary)',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}
-          >
-            {resolvedPromptPreview || currentPromptText || 'No prompt content available.'}
+              <button
+                type="button"
+                disabled={isAutomating || isRunningTwoStage}
+                onClick={() => {
+                  setShowPromptViewSidebox(false);
+                  if (isHeroNode) {
+                    handleRunTwoStageTest();
+                  } else {
+                    setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
+                    handleStartGroupAutomation();
+                  }
+                }}
+                style={{
+                  height: '34px',
+                  padding: '0 16px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--accent-primary, #2563EB)',
+                  backgroundColor: (isAutomating || isRunningTwoStage)
+                    ? 'rgba(37, 99, 235, 0.6)'
+                    : 'var(--accent-primary, #2563EB)',
+                  color: '#FFFFFF',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  cursor: (isAutomating || isRunningTwoStage) ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <FiPlay size={12} />
+                <span>Run Now</span>
+              </button>
+            </div>
           </div>
-
-          {/* Footer */}
-          <div
-            style={{
-              padding: '0.75rem 1.125rem',
-              borderTop: 'none',
-              backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-            }}
-          >
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={handleCopyPrompt}
-              style={{ fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px' }}
-            >
-              {isCopied ? <FiCheck size={13} /> : <FiCopy size={13} />}
-              <span>{isCopied ? 'Copied' : 'Copy Prompt'}</span>
-            </Button>
-          </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

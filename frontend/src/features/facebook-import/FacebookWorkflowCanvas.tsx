@@ -19117,76 +19117,120 @@ export const FacebookWorkflowCanvas = forwardRef<
               >
                 {/* Fallback Run button for other non-ExternalBrowser runnable nodes */}
                 {(!isAIBox || (currentModalAIBox && !isExternalBrowserAIBox(currentModalAIBox) && currentModalAIBox.processType !== 'chrome_profile' && !isChromeTabGroupAIBox(currentModalAIBox) && !isGoogleSheetBox(currentModalAIBox))) && (isContent || isImages || (isAIBox && currentModalAIBox)) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isContent) onRunFromStep?.('get-content');
-                      else if (isImages) onRunFromStep?.('get-images');
-                      else if (isAIBox && currentModalAIBox) onRunFromStep?.(currentModalAIBox.id);
-                    }}
-                    disabled={Boolean(
-                      (isContent && getNodeExecutionStatus('get-content') === 'running') ||
-                      (isImages && getNodeExecutionStatus('get-images') === 'running') ||
-                      (isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
+                    {isAIBox && currentModalAIBox && (
+                      <button
+                        type="button"
+                        title="Preview Prompt"
+                        onClick={() => setViewingPromptTemplate({
+                          id: currentModalAIBox.id,
+                          name: currentModalAIBox.title || 'Prompt Template',
+                          templateText: currentModalAIBox.templateText || currentModalAIBox.customPrompt || 'No prompt available',
+                          boxId: currentModalAIBox.id,
+                          isEditable: false,
+                        })}
+                        style={{
+                          height: '34px',
+                          width: '36px',
+                          minWidth: '36px',
+                          borderRadius: '6px',
+                          border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid #CBD5E1',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                          color: isDark ? '#C9D1D9' : '#475569',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          boxShadow: 'none',
+                          flexShrink: 0,
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9';
+                          e.currentTarget.style.color = 'var(--accent-primary, #2563EB)';
+                          e.currentTarget.style.borderColor = 'var(--accent-primary, #2563EB)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC';
+                          e.currentTarget.style.color = isDark ? '#C9D1D9' : '#475569';
+                          e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1';
+                        }}
+                      >
+                        <FiEye size={15} />
+                      </button>
                     )}
-                    style={{
-                      width: '100%',
-                      height: '34px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--accent-primary, #2563EB)',
-                      backgroundColor: (
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isContent) onRunFromStep?.('get-content');
+                        else if (isImages) onRunFromStep?.('get-images');
+                        else if (isAIBox && currentModalAIBox) onRunFromStep?.(currentModalAIBox.id);
+                      }}
+                      disabled={Boolean(
                         (isContent && getNodeExecutionStatus('get-content') === 'running') ||
                         (isImages && getNodeExecutionStatus('get-images') === 'running') ||
                         (isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))
-                      ) ? 'rgba(37, 99, 235, 0.6)' : 'var(--accent-primary, #2563EB)',
-                      color: '#FFFFFF',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      cursor: (
-                        (isContent && getNodeExecutionStatus('get-content') === 'running') ||
+                      )}
+                      style={{
+                        flex: 1,
+                        height: '34px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--accent-primary, #2563EB)',
+                        backgroundColor: (
+                          (isContent && getNodeExecutionStatus('get-content') === 'running') ||
+                          (isImages && getNodeExecutionStatus('get-images') === 'running') ||
+                          (isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))
+                        ) ? 'rgba(37, 99, 235, 0.6)' : 'var(--accent-primary, #2563EB)',
+                        color: '#FFFFFF',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        cursor: (
+                          (isContent && getNodeExecutionStatus('get-content') === 'running') ||
+                          (isImages && getNodeExecutionStatus('get-images') === 'running') ||
+                          (isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))
+                        ) ? 'not-allowed' : 'pointer',
+                        boxShadow: 'none',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (
+                          !(isContent && getNodeExecutionStatus('get-content') === 'running') &&
+                          !(isImages && getNodeExecutionStatus('get-images') === 'running') &&
+                          !(isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))
+                        ) {
+                          e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover, #1D4ED8)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (
+                          !(isContent && getNodeExecutionStatus('get-content') === 'running') &&
+                          !(isImages && getNodeExecutionStatus('get-images') === 'running') &&
+                          !(isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))
+                        ) {
+                          e.currentTarget.style.backgroundColor = 'var(--accent-primary, #2563EB)';
+                        }
+                      }}
+                    >
+                      {((isContent && getNodeExecutionStatus('get-content') === 'running') ||
                         (isImages && getNodeExecutionStatus('get-images') === 'running') ||
-                        (isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))
-                      ) ? 'not-allowed' : 'pointer',
-                      boxShadow: 'none',
-                      transition: 'all 0.15s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (
-                        !(isContent && getNodeExecutionStatus('get-content') === 'running') &&
-                        !(isImages && getNodeExecutionStatus('get-images') === 'running') &&
-                        !(isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))
-                      ) {
-                        e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover, #1D4ED8)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (
-                        !(isContent && getNodeExecutionStatus('get-content') === 'running') &&
-                        !(isImages && getNodeExecutionStatus('get-images') === 'running') &&
-                        !(isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))
-                      ) {
-                        e.currentTarget.style.backgroundColor = 'var(--accent-primary, #2563EB)';
-                      }
-                    }}
-                  >
-                    {((isContent && getNodeExecutionStatus('get-content') === 'running') ||
-                      (isImages && getNodeExecutionStatus('get-images') === 'running') ||
-                      (isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))) ? (
-                      <>
-                        <FiLoader className="animate-spin" size={13} />
-                        <span>Running...</span>
-                      </>
-                    ) : (
-                      <>
-                        <FiPlay size={12} />
-                        <span>Run</span>
-                      </>
-                    )}
-                  </button>
+                        (isAIBox && currentModalAIBox && (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)))) ? (
+                        <>
+                          <FiLoader className="animate-spin" size={13} />
+                          <span>Running...</span>
+                        </>
+                      ) : (
+                        <>
+                          <FiPlay size={12} />
+                          <span>Run</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 )}
               </div>
             </aside>
