@@ -1,6 +1,6 @@
 import { CombineMediaSidebox, type CombineMediaAssetItem } from './CombineMediaSidebox';
 import { GoogleSheetDataViewerSidebox } from './GoogleSheetDataViewerSidebox';
-import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
@@ -3542,6 +3542,7 @@ export interface FacebookWorkflowCanvasRef {
   toggleGeneralSettings: () => void;
   getDeletedBoxesCount: () => number;
   openNodeDrawer: (nodeId: string) => void;
+  triggerNotification?: (title: string, message: string, type?: 'success' | 'danger' | 'info') => void;
 }
 
 export interface WorkflowExecutionState {
@@ -4623,6 +4624,46 @@ export const FacebookWorkflowCanvas = forwardRef<
   };
   const [selectRecoverIds, setSelectRecoverIds] = useState<Set<string>>(new Set());
   const [showResetLayoutConfirmModal, setShowResetLayoutConfirmModal] = useState<boolean>(false);
+
+  // macOS-style notification alert state & helper
+  interface MacNotification {
+    id: string;
+    title: string;
+    message: string;
+    type?: 'success' | 'danger' | 'info';
+  }
+  const [macNotification, setMacNotification] = useState<MacNotification | null>(null);
+  const macNotificationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerMacNotification = useCallback((title: string, message: string, type: 'success' | 'danger' | 'info' = 'success') => {
+    if (macNotificationTimerRef.current) {
+      clearTimeout(macNotificationTimerRef.current);
+    }
+    const id = `${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    setMacNotification({ id, title, message, type });
+    macNotificationTimerRef.current = setTimeout(() => {
+      setMacNotification(null);
+    }, 3800);
+  }, []);
+
+  useEffect(() => {
+    const handleCustomNotification = (e: any) => {
+      if (e?.detail) {
+        triggerMacNotification(
+          e.detail.title || 'Notification',
+          e.detail.message || '',
+          e.detail.type || 'success'
+        );
+      }
+    };
+    window.addEventListener('ea_show_mac_notification', handleCustomNotification);
+    return () => {
+      window.removeEventListener('ea_show_mac_notification', handleCustomNotification);
+      if (macNotificationTimerRef.current) {
+        clearTimeout(macNotificationTimerRef.current);
+      }
+    };
+  }, [triggerMacNotification]);
   const [dontAskDeleteAgain, setDontAskDeleteAgain] = useState<boolean>(() => {
     try {
       return localStorage.getItem('ea_workflow_skip_delete_confirm') === 'true';
@@ -4874,6 +4915,11 @@ export const FacebookWorkflowCanvas = forwardRef<
   const confirmDeleteConnection = () => {
     if (pendingDeleteConnection) {
       updateConfig({ ...config, connections: (config.connections || []).filter((c) => c.id !== pendingDeleteConnection.id) });
+      triggerMacNotification(
+        'Wire Disconnected',
+        `Connection between "${pendingDeleteConnection.fromTitle}" and "${pendingDeleteConnection.toTitle}" was removed.`,
+        'danger'
+      );
       setPendingDeleteConnection(null);
     }
   };
@@ -5828,10 +5874,16 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   // Deletion Confirmation Modal State
   interface DeleteConfirmTarget {
-    type: 'connection' | 'node' | 'sheet-row';
+    type: 'connection' | 'node' | 'sheet-row' | 'clear-history';
     title: string;
+    subtitle?: string;
     description: string;
+    calloutTitle?: string;
+    calloutDesc?: string;
     confirmText?: string;
+    notificationTitle?: string;
+    notificationMessage?: string;
+    notificationType?: 'success' | 'danger' | 'info';
     onConfirm: () => void;
   }
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<DeleteConfirmTarget | null>(null);
@@ -5890,8 +5942,14 @@ export const FacebookWorkflowCanvas = forwardRef<
     setDeleteConfirmTarget({
       type: 'sheet-row',
       title: 'Revert Row from Google Sheet?',
+      subtitle: `Reverse synced row from "${sheetName}"`,
       description: `Are you sure you want to delete the row previously added to "${sheetName}"? This will reverse the sync and delete that row from your Google Sheet.`,
+      calloutTitle: 'Sheet Data Reversible',
+      calloutDesc: 'You can re-add this row anytime by clicking Add Row again.',
       confirmText: 'Delete Row from Sheet',
+      notificationTitle: 'Row Reverted',
+      notificationMessage: `Synced row removed from Google Sheet "${sheetName}".`,
+      notificationType: 'info',
       onConfirm: async () => {
         setIsDeletingSheetRow(true);
         try {
@@ -6881,8 +6939,14 @@ export const FacebookWorkflowCanvas = forwardRef<
     setDeleteConfirmTarget({
       type: 'node',
       title: 'Delete "Get Content" Node?',
+      subtitle: 'Extract text & specs step',
       description: 'Are you sure you want to remove the Get Content node? You can recover it anytime from General Settings.',
+      calloutTitle: 'Workflow Preserved',
+      calloutDesc: 'Your prompt presets, browser configs, and other nodes remain completely intact.',
       confirmText: 'Confirm Delete',
+      notificationTitle: 'Node Deleted',
+      notificationMessage: '"Get Content" node was deleted and archived.',
+      notificationType: 'danger',
       onConfirm: () => {
         executeDeleteGetContent();
         setDeleteConfirmTarget(null);
@@ -6948,8 +7012,14 @@ export const FacebookWorkflowCanvas = forwardRef<
     setDeleteConfirmTarget({
       type: 'node',
       title: 'Delete "Get Images" Node?',
+      subtitle: 'Extract property images step',
       description: 'Are you sure you want to remove the Get Images node? You can recover it anytime from General Settings.',
+      calloutTitle: 'Workflow Preserved',
+      calloutDesc: 'Your format nodes, browser configs, and upstream links remain untouched.',
       confirmText: 'Confirm Delete',
+      notificationTitle: 'Node Deleted',
+      notificationMessage: '"Get Images" node was deleted and archived.',
+      notificationType: 'danger',
       onConfirm: () => {
         executeDeleteGetImages();
         setDeleteConfirmTarget(null);
@@ -6998,8 +7068,14 @@ export const FacebookWorkflowCanvas = forwardRef<
     setDeleteConfirmTarget({
       type: 'node',
       title: 'Delete "Extract Link" Node?',
+      subtitle: 'Workflow starting trigger',
       description: 'Are you sure you want to delete this trigger node? The workflow will return to the initial state.',
+      calloutTitle: 'Presets Preserved',
+      calloutDesc: 'Your configured format presets and templates will remain saved.',
       confirmText: 'Confirm Delete',
+      notificationTitle: 'Node Deleted',
+      notificationMessage: '"Extract Link" trigger node was removed from canvas.',
+      notificationType: 'danger',
       onConfirm: () => {
         executeDeleteTrigger();
         setDeleteConfirmTarget(null);
@@ -7275,8 +7351,14 @@ export const FacebookWorkflowCanvas = forwardRef<
     setDeleteConfirmTarget({
       type: 'node',
       title: `Delete "${nodeLabel}"?`,
+      subtitle: 'Output destination node',
       description: 'Are you sure you want to remove this output destination? You can restore it anytime.',
+      calloutTitle: 'Workflow Preserved',
+      calloutDesc: 'Your upstream content and formatted image results remain safe.',
       confirmText: 'Confirm Delete',
+      notificationTitle: 'Destination Deleted',
+      notificationMessage: `"${nodeLabel}" was removed from workflow destinations.`,
+      notificationType: 'danger',
       onConfirm: () => {
         const remainingDests = currentDests.filter((d) => d.id !== destId);
         const remainingConns = (config.connections || []).filter((c) => {
@@ -7711,8 +7793,14 @@ export const FacebookWorkflowCanvas = forwardRef<
     setDeleteConfirmTarget({
       type: 'node',
       title: 'Remove "Post Output" Node?',
+      subtitle: 'Final publish destination',
       description: 'Are you sure you want to remove the Output box? Your upstream content and media nodes will remain intact.',
+      calloutTitle: 'Workflow Preserved',
+      calloutDesc: 'All previous processing stages and generated outputs will be kept.',
       confirmText: 'Confirm Remove',
+      notificationTitle: 'Output Node Removed',
+      notificationMessage: '"Post Output" node was removed from canvas.',
+      notificationType: 'danger',
       onConfirm: () => {
         const remainingConns = (config.connections || []).filter(
           (c) => c.fromNodeId !== 'output' && c.toNodeId !== 'output'
@@ -7924,8 +8012,14 @@ export const FacebookWorkflowCanvas = forwardRef<
     setDeleteConfirmTarget({
       type: 'node',
       title: 'Delete Combine Box?',
+      subtitle: 'Merged output consolidator',
       description: 'Remove this Combine Box and all its wires. Upstream nodes stay intact.',
-      confirmText: 'Delete',
+      calloutTitle: 'Upstream Preserved',
+      calloutDesc: 'Your General AI and Photo Format nodes will remain untouched.',
+      confirmText: 'Confirm Delete',
+      notificationTitle: 'Combine Box Deleted',
+      notificationMessage: 'The Combine Box and its connected wires were removed.',
+      notificationType: 'danger',
       onConfirm: () => {
         const remainingBoxes = (config.combineBoxes || []).filter((b) => b.id !== boxId);
         const remainingConns = (config.connections || []).filter((c) => c.fromNodeId !== boxId && c.toNodeId !== boxId);
@@ -8043,8 +8137,14 @@ export const FacebookWorkflowCanvas = forwardRef<
       setDeleteConfirmTarget({
         type: 'connection',
         title: 'Disconnect "Get Content"?',
+        subtitle: 'Connection wire removal',
         description: 'Are you sure you want to disconnect and remove the Get Content step from this workflow?',
+        calloutTitle: 'Nodes Preserved',
+        calloutDesc: 'Trigger and downstream configurations will remain intact.',
         confirmText: 'Confirm Disconnect',
+        notificationTitle: 'Connection Removed',
+        notificationMessage: 'Connection wire to "Get Content" was disconnected.',
+        notificationType: 'danger',
         onConfirm: () => {
           executeDeleteGetContent();
           setDeleteConfirmTarget(null);
@@ -8056,8 +8156,14 @@ export const FacebookWorkflowCanvas = forwardRef<
       setDeleteConfirmTarget({
         type: 'connection',
         title: 'Disconnect "Get Images"?',
+        subtitle: 'Connection wire removal',
         description: 'Are you sure you want to disconnect and remove the Get Images step from this workflow?',
+        calloutTitle: 'Nodes Preserved',
+        calloutDesc: 'Trigger and image pipeline configurations will remain intact.',
         confirmText: 'Confirm Disconnect',
+        notificationTitle: 'Connection Removed',
+        notificationMessage: 'Connection wire to "Get Images" was disconnected.',
+        notificationType: 'danger',
         onConfirm: () => {
           executeDeleteGetImages();
           setDeleteConfirmTarget(null);
@@ -8090,6 +8196,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       ...config,
       connections: newConnections,
     });
+    triggerMacNotification('Wire Disconnected', 'Connection wire between nodes was removed.', 'danger');
   };
 
   // Add Dynamic Text AI Model Box (Gemini, OpenAI, Claude, LaoZhang)
@@ -8683,6 +8790,11 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (activeModalNode?.type === 'ai-box' && activeModalNode.boxId === id) {
       setActiveModalNode(null);
     }
+    triggerMacNotification(
+      'Node Deleted',
+      `"${box.title || (isWatermarkAIBox(box) ? 'Format Preset' : 'AI Node')}" was deleted and saved to history.`,
+      'danger'
+    );
   };
 
   // Delete Dynamic AI Box - asks confirmation before putting into Deleted Nodes
@@ -8690,11 +8802,18 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (e) e.stopPropagation();
     const box = config.aiBoxes.find((b) => b.id === id);
     const title = box?.title || (isWatermarkAIBox(box) ? 'Format Preset' : 'AI Node');
+    const isWatermark = isWatermarkAIBox(box);
     setDeleteConfirmTarget({
       type: 'node',
       title: `Delete "${title}"?`,
+      subtitle: isWatermark ? 'Format Preset Node' : 'Dynamic AI Node',
       description: `Are you sure you want to delete "${title}"? You can recover it anytime from General Settings.`,
+      calloutTitle: 'Workflow Preserved',
+      calloutDesc: 'You can restore this node anytime using the Recover button in the canvas toolbar.',
       confirmText: 'Confirm Delete',
+      notificationTitle: 'Node Deleted',
+      notificationMessage: `"${title}" was deleted and saved to history.`,
+      notificationType: 'danger',
       onConfirm: () => {
         confirmDeleteAIBox(id);
         setDeleteConfirmTarget(null);
@@ -8971,8 +9090,14 @@ export const FacebookWorkflowCanvas = forwardRef<
     setDeleteConfirmTarget({
       type: 'node',
       title: `Delete ${idsToDelete.size} selected nodes?`,
+      subtitle: 'Batch node removal',
       description: `Are you sure you want to delete these ${idsToDelete.size} selected nodes? You can restore content and AI nodes anytime from General Settings.`,
+      calloutTitle: 'Workflow Preserved',
+      calloutDesc: 'Remaining nodes and workflow structures will stay intact.',
       confirmText: `Delete ${idsToDelete.size} Nodes`,
+      notificationTitle: 'Nodes Deleted',
+      notificationMessage: `${idsToDelete.size} nodes were removed from the canvas.`,
+      notificationType: 'danger',
       onConfirm: () => {
         executeDeleteMultipleNodes(idsToDelete);
         setDeleteConfirmTarget(null);
@@ -9097,6 +9222,11 @@ export const FacebookWorkflowCanvas = forwardRef<
 
     updateConfig({ ...resetConfig, zoom, panOffset });
     setShowResetLayoutConfirmModal(false);
+    triggerMacNotification(
+      'Canvas Layout Reset',
+      'All workflow nodes were neatly aligned to the workflow grid.',
+      'info'
+    );
   };
 
   // Request Reset Layout with confirmation prompt
@@ -9120,6 +9250,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         handleToggleGeneralSettings(!isRecoverModalOpen);
       },
       getDeletedBoxesCount: () => deletedBoxes.length,
+      triggerNotification: (title, message, type) => triggerMacNotification(title, message, type),
       openNodeDrawer: (nodeId: string) => {
         setViewingPromptTemplate(null);
         if (nodeId === 'trigger') {
@@ -23365,14 +23496,12 @@ export const FacebookWorkflowCanvas = forwardRef<
       {pendingDeleteBox && (() => {
         const isWatermark = isWatermarkAIBox(pendingDeleteBox);
         const isImage = isImageAIBox(pendingDeleteBox, config.connections) && !isWatermark;
-        const modalTitle = isWatermark ? 'Delete Format Node' : isImage ? 'Delete Image Enhancer' : 'Delete AI Node';
+        const boxTitle = pendingDeleteBox.title || (isWatermark ? 'Format Preset' : 'AI Node');
         const modalSubtitle = isWatermark
-          ? `${pendingDeleteBox.subtitle || '1200×1200 (1:1)'} · ${pendingDeleteBox.enabled !== false ? 'Active' : 'Disabled'}`
+          ? `${pendingDeleteBox.subtitle || '1200×1200 (1:1)'} · Format Preset`
           : isImage
-            ? `${pendingDeleteBox.model || 'Runware AI'} · ${pendingDeleteBox.enabled !== false ? 'Active' : 'Disabled'}`
-            : `${getAIModelDisplayName(pendingDeleteBox.provider, pendingDeleteBox.model)} · ${pendingDeleteBox.enabled !== false ? 'Active' : 'Disabled'}`;
-
-
+            ? `${pendingDeleteBox.model || 'Runware AI'} · Image Enhancer`
+            : `${getAIModelDisplayName(pendingDeleteBox.provider, pendingDeleteBox.model)} · AI Processor`;
 
         return (
           <Modal
@@ -23381,31 +23510,38 @@ export const FacebookWorkflowCanvas = forwardRef<
             maxWidth="460px"
             zIndex={100200}
             title={
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', color: '#EF4444' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <div
                   style={{
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '50%',
-                    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.08)',
+                    border: isDark ? '1px solid rgba(239, 68, 68, 0.22)' : '1px solid rgba(239, 68, 68, 0.18)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    color: isDark ? '#F87171' : '#DC2626',
+                    flexShrink: 0,
+                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.05)',
                   }}
                 >
-                  <FiAlertTriangle size={16} />
+                  <FiTrash2 size={17} />
                 </div>
-                <span style={{ fontWeight: 600, fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
-                  {modalTitle}
-                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontWeight: 650, fontSize: '0.95rem', color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                    Delete "{boxTitle}"
+                  </span>
+                  <span style={{ fontSize: '0.735rem', color: isDark ? '#94A3B8' : '#64748B' }}>
+                    {modalSubtitle}
+                  </span>
+                </div>
               </div>
             }
           >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                {isWatermark
-                  ? 'Are you sure you want to delete this format preset node? It will be removed from your workflow pipeline.'
-                  : 'Are you sure you want to delete this AI node? It will be removed from your workflow pipeline.'}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '0.25rem 0' }}>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+                Are you sure you want to delete this {isWatermark ? 'format preset' : 'node'}? It will be removed from your workflow pipeline.
               </p>
 
               {/* Target Node Preview */}
@@ -23414,16 +23550,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.75rem',
-                  padding: '0.875rem',
-                  backgroundColor: 'var(--bg-main)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '0.5rem',
+                  padding: '0.75rem 0.875rem',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.07)' : '1px solid rgba(0, 0, 0, 0.06)',
+                  borderRadius: '8px',
                 }}
               >
                 <div
                   style={{
-                    width: '36px',
-                    height: '36px',
+                    width: '32px',
+                    height: '32px',
                     borderRadius: '8px',
                     backgroundColor: isWatermark
                       ? 'rgba(139, 92, 246, 0.15)'
@@ -23439,61 +23575,128 @@ export const FacebookWorkflowCanvas = forwardRef<
                     flexShrink: 0,
                   }}
                 >
-                  {renderAIBoxIcon(pendingDeleteBox, 20)}
+                  {renderAIBoxIcon(pendingDeleteBox, 18)}
                 </div>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div
                     style={{
                       fontWeight: 600,
-                      fontSize: '0.875rem',
+                      fontSize: '0.8125rem',
                       color: 'var(--text-primary)',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                     }}
                   >
-                    {pendingDeleteBox.title || (isWatermark ? 'Format Preset' : 'Dynamic AI Box')}
+                    {boxTitle}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                     {modalSubtitle}
                   </div>
                 </div>
               </div>
 
+              {/* Callout Card */}
               <div
                 style={{
-                  fontSize: '0.75rem',
-                  color: isDark ? '#60A5FA' : '#2563EB',
-                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.08)',
-                  padding: '0.5rem 0.75rem',
-                  borderRadius: '0.375rem',
-                  border: '1px solid rgba(59, 130, 246, 0.2)',
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
+                  alignItems: 'flex-start',
+                  gap: '0.625rem',
+                  padding: '0.75rem 0.875rem',
+                  borderRadius: '8px',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.07)' : '1px solid rgba(0, 0, 0, 0.06)',
                 }}
               >
-                <FiRotateCcw size={13} />
-                <span>You can restore this node anytime using the <strong>Recover</strong> button.</span>
+                <div
+                  style={{
+                    width: '18px',
+                    height: '18px',
+                    borderRadius: '50%',
+                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.12)',
+                    border: isDark ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(16, 185, 129, 0.25)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: isDark ? '#34D399' : '#059669',
+                    flexShrink: 0,
+                    marginTop: '1px',
+                  }}
+                >
+                  <FiCheck size={11} strokeWidth={3} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '0.775rem', fontWeight: 600, color: isDark ? '#E2E8F0' : '#1E293B' }}>
+                    Workflow Preserved
+                  </span>
+                  <span style={{ fontSize: '0.735rem', color: isDark ? '#94A3B8' : '#64748B', lineHeight: 1.45 }}>
+                    You can restore this node anytime using the <strong>Recover</strong> button in the canvas toolbar.
+                  </span>
+                </div>
               </div>
 
               {/* Modal Actions */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
-                <Button variant="outline" size="sm" onClick={() => setPendingDeleteBox(null)}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={() => confirmDeleteAIBox(pendingDeleteBox.id)}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  gap: '0.625rem',
+                  paddingTop: '0.875rem',
+                  borderTop: '1px solid var(--border-color)',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setPendingDeleteBox(null)}
                   style={{
-                    backgroundColor: '#EF4444',
-                    borderColor: '#EF4444',
-                    color: '#FFFFFF',
+                    height: '34px',
+                    padding: '0 14px',
+                    borderRadius: '7px',
+                    fontSize: '0.8125rem',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F8FAFC',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #E2E8F0',
+                    color: isDark ? '#E2E8F0' : '#475569',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    outline: 'none',
+                    transition: 'all 0.15s ease',
                   }}
                 >
-                  Delete Node
-                </Button>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = pendingDeleteBox.id;
+                    setPendingDeleteBox(null);
+                    confirmDeleteAIBox(id);
+                  }}
+                  style={{
+                    height: '34px',
+                    padding: '0 14px',
+                    borderRadius: '7px',
+                    fontSize: '0.8125rem',
+                    fontWeight: 550,
+                    cursor: 'pointer',
+                    backgroundColor: '#DC2626',
+                    border: '1px solid rgba(220, 38, 38, 0.8)',
+                    color: '#FFFFFF',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.25)',
+                    outline: 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <FiTrash2 size={13} />
+                  <span>Confirm Delete</span>
+                </button>
               </div>
             </div>
           </Modal>
@@ -23510,28 +23713,37 @@ export const FacebookWorkflowCanvas = forwardRef<
           maxWidth="460px"
           zIndex={100200}
           title={
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', color: '#EF4444' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <div
                 style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '50%',
-                  backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.08)',
+                  border: isDark ? '1px solid rgba(239, 68, 68, 0.22)' : '1px solid rgba(239, 68, 68, 0.18)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
+                  color: isDark ? '#F87171' : '#DC2626',
+                  flexShrink: 0,
+                  boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.05)',
                 }}
               >
-                <FiAlertTriangle size={16} />
+                <FiTrash2 size={17} />
               </div>
-              <span style={{ fontWeight: 600, fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
-                Delete Connection
-              </span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontWeight: 650, fontSize: '0.95rem', color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                  Delete Connection Wire
+                </span>
+                <span style={{ fontSize: '0.735rem', color: isDark ? '#94A3B8' : '#64748B' }}>
+                  Disconnect path between nodes
+                </span>
+              </div>
             </div>
           }
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '0.25rem 0' }}>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
               Are you sure you want to delete this connection wire? The nodes will be disconnected.
             </p>
 
@@ -23541,15 +23753,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '0.875rem',
-                backgroundColor: 'var(--bg-main)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '0.5rem',
+                padding: '0.75rem 0.875rem',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.07)' : '1px solid rgba(0, 0, 0, 0.06)',
+                borderRadius: '8px',
                 gap: '0.75rem',
               }}
             >
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>From</div>
+                <div style={{ fontSize: '0.6875rem', color: isDark ? '#94A3B8' : '#64748B' }}>From</div>
                 <div
                   style={{
                     fontWeight: 600,
@@ -23567,7 +23779,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <FiArrowRight size={16} />
               </div>
               <div style={{ minWidth: 0, flex: 1, textAlign: 'right' }}>
-                <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>To</div>
+                <div style={{ fontSize: '0.6875rem', color: isDark ? '#94A3B8' : '#64748B' }}>To</div>
                 <div
                   style={{
                     fontWeight: 600,
@@ -23583,23 +23795,103 @@ export const FacebookWorkflowCanvas = forwardRef<
               </div>
             </div>
 
-            {/* Modal Actions */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
-              <Button variant="outline" size="sm" onClick={() => setPendingDeleteConnection(null)}>
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={confirmDeleteConnection}
+            {/* Callout Card */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.625rem',
+                padding: '0.75rem 0.875rem',
+                borderRadius: '8px',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.07)' : '1px solid rgba(0, 0, 0, 0.06)',
+              }}
+            >
+              <div
                 style={{
-                  backgroundColor: '#EF4444',
-                  borderColor: '#EF4444',
-                  color: '#FFFFFF',
+                  width: '18px',
+                  height: '18px',
+                  borderRadius: '50%',
+                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.12)',
+                  border: isDark ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(16, 185, 129, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: isDark ? '#34D399' : '#059669',
+                  flexShrink: 0,
+                  marginTop: '1px',
                 }}
               >
-                Delete Connection
-              </Button>
+                <FiCheck size={11} strokeWidth={3} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontSize: '0.775rem', fontWeight: 600, color: isDark ? '#E2E8F0' : '#1E293B' }}>
+                  Nodes Preserved
+                </span>
+                <span style={{ fontSize: '0.735rem', color: isDark ? '#94A3B8' : '#64748B', lineHeight: 1.45 }}>
+                  Your nodes and their configured settings remain completely untouched.
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '0.625rem',
+                paddingTop: '0.875rem',
+                borderTop: '1px solid var(--border-color)',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setPendingDeleteConnection(null)}
+                style={{
+                  height: '34px',
+                  padding: '0 14px',
+                  borderRadius: '7px',
+                  fontSize: '0.8125rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F8FAFC',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #E2E8F0',
+                  color: isDark ? '#E2E8F0' : '#475569',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  outline: 'none',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteConnection}
+                style={{
+                  height: '34px',
+                  padding: '0 14px',
+                  borderRadius: '7px',
+                  fontSize: '0.8125rem',
+                  fontWeight: 550,
+                  cursor: 'pointer',
+                  backgroundColor: '#DC2626',
+                  border: '1px solid rgba(220, 38, 38, 0.8)',
+                  color: '#FFFFFF',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.25)',
+                  outline: 'none',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <FiTrash2 size={13} />
+                <span>Confirm Disconnect</span>
+              </button>
             </div>
           </div>
         </Modal>
@@ -23615,71 +23907,136 @@ export const FacebookWorkflowCanvas = forwardRef<
           maxWidth="460px"
           zIndex={100200}
           title={
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <div
                 style={{
-                  width: '30px',
-                  height: '30px',
-                  borderRadius: '50%',
-                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(37, 99, 235, 0.12)',
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
+                  border: isDark ? '1px solid rgba(59, 130, 246, 0.22)' : '1px solid rgba(59, 130, 246, 0.18)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   color: isDark ? '#60A5FA' : '#2563EB',
+                  flexShrink: 0,
+                  boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.05)',
                 }}
               >
-                <FiCrosshair size={16} />
+                <FiCrosshair size={17} />
               </div>
-              <span style={{ fontWeight: 600, fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
-                Reset Canvas Layout?
-              </span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontWeight: 650, fontSize: '0.95rem', color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                  Reset Canvas Layout
+                </span>
+                <span style={{ fontSize: '0.735rem', color: isDark ? '#94A3B8' : '#64748B' }}>
+                  Auto-align workflow nodes into a clean grid
+                </span>
+              </div>
             </div>
           }
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '0.25rem 0' }}>
-            <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
               Are you sure you want to reset the layout? This will automatically realign all workflow nodes and format boxes into clean, balanced grid positions.
             </p>
 
             <div
               style={{
-                fontSize: '0.75rem',
-                color: isDark ? '#10B981' : '#059669',
-                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.08)',
-                padding: '0.625rem 0.75rem',
-                borderRadius: '0.5rem',
-                border: isDark ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(16, 185, 129, 0.2)',
                 display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
+                alignItems: 'flex-start',
+                gap: '0.625rem',
+                padding: '0.75rem 0.875rem',
+                borderRadius: '8px',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.07)' : '1px solid rgba(0, 0, 0, 0.06)',
               }}
             >
-              <FiCheckCircle size={15} style={{ flexShrink: 0 }} />
-              <span>All existing wires, prompt links, and configurations will be preserved untouched.</span>
+              <div
+                style={{
+                  width: '18px',
+                  height: '18px',
+                  borderRadius: '50%',
+                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.12)',
+                  border: isDark ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(16, 185, 129, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: isDark ? '#34D399' : '#059669',
+                  flexShrink: 0,
+                  marginTop: '1px',
+                }}
+              >
+                <FiCheck size={11} strokeWidth={3} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontSize: '0.775rem', fontWeight: 600, color: isDark ? '#E2E8F0' : '#1E293B' }}>
+                  Connections & Data Preserved
+                </span>
+                <span style={{ fontSize: '0.735rem', color: isDark ? '#94A3B8' : '#64748B', lineHeight: 1.45 }}>
+                  All existing wires, prompt links, and configurations will be preserved untouched.
+                </span>
+              </div>
             </div>
 
             {/* Modal Actions */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
-              <Button
-                variant="outline"
-                size="sm"
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '0.625rem',
+                paddingTop: '0.875rem',
+                borderTop: '1px solid var(--border-color)',
+              }}
+            >
+              <button
+                type="button"
                 onClick={() => setShowResetLayoutConfirmModal(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleExecuteResetLayout}
-                leftIcon={<FiCrosshair size={13} />}
                 style={{
-                  backgroundColor: 'var(--accent-primary, #3B82F6)',
-                  borderColor: 'var(--accent-primary, #3B82F6)',
-                  color: '#FFFFFF',
+                  height: '34px',
+                  padding: '0 14px',
+                  borderRadius: '7px',
+                  fontSize: '0.8125rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F8FAFC',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #E2E8F0',
+                  color: isDark ? '#E2E8F0' : '#475569',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  outline: 'none',
+                  transition: 'all 0.15s ease',
                 }}
               >
-                Confirm Reset
-              </Button>
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteResetLayout}
+                style={{
+                  height: '34px',
+                  padding: '0 14px',
+                  borderRadius: '7px',
+                  fontSize: '0.8125rem',
+                  fontWeight: 550,
+                  cursor: 'pointer',
+                  backgroundColor: '#2563EB',
+                  border: '1px solid rgba(37, 99, 235, 0.8)',
+                  color: '#FFFFFF',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.25)',
+                  outline: 'none',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <FiCrosshair size={13} />
+                <span>Confirm Reset</span>
+              </button>
             </div>
           </div>
         </Modal>
@@ -24858,13 +25215,26 @@ export const FacebookWorkflowCanvas = forwardRef<
                   <button
                     type="button"
                     onClick={() => {
-                      if (window.confirm('Clear all deleted node history?')) {
-                        setDeletedBoxes([]);
-                        setSelectRecoverIds(new Set());
-                        try {
-                          localStorage.removeItem(LOCAL_STORAGE_DELETED_KEY);
-                        } catch { }
-                      }
+                      setDeleteConfirmTarget({
+                        type: 'clear-history',
+                        title: 'Clear Recovery History?',
+                        subtitle: 'Empty all archived and deleted nodes',
+                        description: 'Are you sure you want to clear all deleted node history? Once removed, these previously deleted nodes cannot be recovered.',
+                        calloutTitle: 'Active Nodes Preserved',
+                        calloutDesc: 'Your currently visible workflow canvas nodes will remain completely untouched.',
+                        confirmText: 'Clear History',
+                        notificationTitle: 'Recovery History Cleared',
+                        notificationMessage: 'All archived nodes have been permanently deleted from recovery history.',
+                        notificationType: 'danger',
+                        onConfirm: () => {
+                          setDeletedBoxes([]);
+                          setSelectRecoverIds(new Set());
+                          try {
+                            localStorage.removeItem(LOCAL_STORAGE_DELETED_KEY);
+                          } catch { }
+                          setDeleteConfirmTarget(null);
+                        },
+                      });
                     }}
                     style={{
                       background: 'none',
@@ -25216,128 +25586,357 @@ export const FacebookWorkflowCanvas = forwardRef<
         </div>
       )}
 
-      {/* CONFIRMATION DIALOG / BOX FOR DELETIONS */}
-      {deleteConfirmTarget && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 400,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: 'rgba(0, 0, 0, 0.65)',
-            backdropFilter: 'blur(3px)',
-            animation: 'fadeIn 0.15s ease-out',
-          }}
-          onClick={() => setDeleteConfirmTarget(null)}
-        >
-          <div
-            style={{
-              width: '90%',
-              maxWidth: '380px',
-              padding: '1.25rem',
-              borderRadius: '12px',
-              backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
-              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-              boxShadow: isDark
-                ? '0 20px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05)'
-                : '0 20px 40px rgba(0, 0, 0, 0.18)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.875rem',
-              animation: 'scaleIn 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
-            }}
-            onClick={(e) => e.stopPropagation()}
+      {/* ======================================================== */}
+      {/* STANDARDIZED CONFIRMATION MODAL FOR DELETIONS & REVERTS  */}
+      {/* ======================================================== */}
+      {deleteConfirmTarget && (() => {
+        const isSheetRow = deleteConfirmTarget.type === 'sheet-row';
+        const isHistory = deleteConfirmTarget.type === 'clear-history';
+        const isConn = deleteConfirmTarget.type === 'connection';
+        const defaultSubtitle = isSheetRow
+          ? 'Reverse synced row from connected Google Sheet'
+          : isHistory
+            ? 'Permanently clear archived nodes'
+            : isConn
+              ? 'Disconnect wire between nodes'
+              : 'Remove node while keeping recovery history intact';
+
+        const defaultCalloutTitle = isSheetRow
+          ? 'Sheet Data Reversible'
+          : isHistory
+            ? 'Active Canvas Untouched'
+            : isConn
+              ? 'Nodes Preserved'
+              : 'Workflow Preserved';
+
+        const defaultCalloutDesc = isSheetRow
+          ? 'You can re-add this row anytime by clicking Add Row again.'
+          : isHistory
+            ? 'Your active workflow nodes and connections will remain untouched.'
+            : isConn
+              ? 'Your node configurations and settings remain completely intact.'
+              : 'You can restore removed nodes anytime from the Recover History menu.';
+
+        return (
+          <Modal
+            isOpen={Boolean(deleteConfirmTarget)}
+            onClose={() => setDeleteConfirmTarget(null)}
+            maxWidth="460px"
+            zIndex={100200}
+            title={
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    backgroundColor: isSheetRow
+                      ? (isDark ? 'rgba(234, 179, 8, 0.12)' : 'rgba(234, 179, 8, 0.08)')
+                      : (isDark ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.08)'),
+                    border: isSheetRow
+                      ? (isDark ? '1px solid rgba(234, 179, 8, 0.22)' : '1px solid rgba(234, 179, 8, 0.18)')
+                      : (isDark ? '1px solid rgba(239, 68, 68, 0.22)' : '1px solid rgba(239, 68, 68, 0.18)'),
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: isSheetRow
+                      ? (isDark ? '#FACC15' : '#D97706')
+                      : (isDark ? '#F87171' : '#DC2626'),
+                    flexShrink: 0,
+                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+                  }}
+                >
+                  {isSheetRow ? <FiRotateCcw size={17} /> : <FiTrash2 size={17} />}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontWeight: 650, fontSize: '0.95rem', color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                    {deleteConfirmTarget.title}
+                  </span>
+                  <span style={{ fontSize: '0.735rem', color: isDark ? '#94A3B8' : '#64748B' }}>
+                    {deleteConfirmTarget.subtitle || defaultSubtitle}
+                  </span>
+                </div>
+              </div>
+            }
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '0.25rem 0' }}>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+                {deleteConfirmTarget.description}
+              </p>
+
+              {/* Callout Card */}
               <div
                 style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '10px',
-                  backgroundColor: deleteConfirmTarget.type === 'sheet-row' ? 'rgba(239, 68, 68, 0.18)' : 'rgba(239, 68, 68, 0.15)',
-                  border: deleteConfirmTarget.type === 'sheet-row' ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid rgba(239, 68, 68, 0.25)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.625rem',
+                  padding: '0.75rem 0.875rem',
+                  borderRadius: '8px',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.07)' : '1px solid rgba(0, 0, 0, 0.06)',
+                }}
+              >
+                <div
+                  style={{
+                    width: '18px',
+                    height: '18px',
+                    borderRadius: '50%',
+                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.12)',
+                    border: isDark ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(16, 185, 129, 0.25)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: isDark ? '#34D399' : '#059669',
+                    flexShrink: 0,
+                    marginTop: '1px',
+                  }}
+                >
+                  <FiCheck size={11} strokeWidth={3} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '0.775rem', fontWeight: 600, color: isDark ? '#E2E8F0' : '#1E293B' }}>
+                    {deleteConfirmTarget.calloutTitle || defaultCalloutTitle}
+                  </span>
+                  <span style={{ fontSize: '0.735rem', color: isDark ? '#94A3B8' : '#64748B', lineHeight: 1.45 }}>
+                    {deleteConfirmTarget.calloutDesc || defaultCalloutDesc}
+                  </span>
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  gap: '0.625rem',
+                  paddingTop: '0.875rem',
+                  borderTop: '1px solid var(--border-color)',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmTarget(null)}
+                  style={{
+                    height: '34px',
+                    padding: '0 14px',
+                    borderRadius: '7px',
+                    fontSize: '0.8125rem',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F8FAFC',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #E2E8F0',
+                    color: isDark ? '#E2E8F0' : '#475569',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    outline: 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeletingSheetRow}
+                  onClick={() => {
+                    const target = deleteConfirmTarget;
+                    target.onConfirm();
+                    triggerMacNotification(
+                      target.notificationTitle || (isSheetRow ? 'Row Reverted' : isConn ? 'Connection Removed' : 'Node Deleted'),
+                      target.notificationMessage || (isSheetRow ? 'Row was removed from Google Sheet.' : isConn ? 'Wire connection has been disconnected.' : `"${target.title.replace(/^Delete\s*"?|"+\??$/g, '')}" was removed and saved to history.`),
+                      target.notificationType || (isSheetRow ? 'info' : 'danger')
+                    );
+                  }}
+                  style={{
+                    height: '34px',
+                    padding: '0 14px',
+                    borderRadius: '7px',
+                    fontSize: '0.8125rem',
+                    fontWeight: 550,
+                    cursor: isDeletingSheetRow ? 'not-allowed' : 'pointer',
+                    opacity: isDeletingSheetRow ? 0.7 : 1,
+                    backgroundColor: isSheetRow ? '#D97706' : '#DC2626',
+                    border: isSheetRow ? '1px solid rgba(217, 119, 6, 0.8)' : '1px solid rgba(220, 38, 38, 0.8)',
+                    color: '#FFFFFF',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.25)',
+                    outline: 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {isSheetRow ? <FiRotateCcw size={13} /> : <FiTrash2 size={13} />}
+                  <span>{deleteConfirmTarget.confirmText || (isSheetRow ? 'Revert Row' : 'Confirm Delete')}</span>
+                </button>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
+
+      {/* ======================================================== */}
+      {/* MACOS-STYLE NOTIFICATION ALERT BANNER ("MAC NOTE/NOKE")  */}
+      {/* ======================================================== */}
+      {typeof document !== 'undefined' && macNotification && createPortal(
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            top: '20px',
+            right: '24px',
+            zIndex: 9999999,
+            width: '350px',
+            maxWidth: 'calc(100vw - 32px)',
+            backgroundColor: isDark ? 'rgba(28, 33, 40, 0.82)' : 'rgba(255, 255, 255, 0.88)',
+            backdropFilter: 'blur(28px) saturate(190%)',
+            WebkitBackdropFilter: 'blur(28px) saturate(190%)',
+            border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(0, 0, 0, 0.1)',
+            borderRadius: '16px',
+            boxShadow: isDark
+              ? '0 20px 45px rgba(0, 0, 0, 0.5), 0 4px 14px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
+              : '0 20px 45px rgba(0, 0, 0, 0.14), 0 4px 14px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.7)',
+            padding: '11px 14px 13px 14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+            animation: 'macNotificationSlideIn 0.32s cubic-bezier(0.16, 1, 0.3, 1)',
+            userSelect: 'none',
+            cursor: 'default',
+          }}
+        >
+          <style>{`
+            @keyframes macNotificationSlideIn {
+              0% {
+                opacity: 0;
+                transform: translate3d(40px, -6px, 0) scale(0.95);
+              }
+              70% {
+                opacity: 1;
+                transform: translate3d(-2px, 0, 0) scale(1.008);
+              }
+              100% {
+                opacity: 1;
+                transform: translate3d(0, 0, 0) scale(1);
+              }
+            }
+          `}</style>
+
+          {/* macOS App Bar */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+              <div
+                style={{
+                  width: '20px',
+                  height: '20px',
+                  borderRadius: '5px',
+                  background: 'linear-gradient(135deg, #0284C7 0%, #2563EB 50%, #4F46E5 100%)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: '#EF4444',
-                  flexShrink: 0,
-                }}
-              >
-                {deleteConfirmTarget.type === 'sheet-row' ? <FiRotateCcw size={18} /> : <FiTrash2 size={18} />}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {deleteConfirmTarget.title}
-                </div>
-                <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Confirmation required
-                </div>
-              </div>
-            </div>
-
-            <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              {deleteConfirmTarget.description}
-            </p>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '0.25rem' }}>
-              <button
-                type="button"
-                onClick={() => setDeleteConfirmTarget(null)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '6px',
-                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC';
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  deleteConfirmTarget.onConfirm();
-                }}
-                style={{
-                  padding: '6px 16px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  backgroundColor: '#EF4444',
                   color: '#FFFFFF',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 6px rgba(239, 68, 68, 0.35)',
+                  fontSize: '9px',
+                  fontWeight: 800,
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
+                }}
+              >
+                BH
+              </div>
+              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: isDark ? '#94A3B8' : '#64748B', letterSpacing: '0.01em' }}>
+                BoltHaven
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.68rem', color: isDark ? '#64748B' : '#94A3B8' }}>
+                now
+              </span>
+              <button
+                type="button"
+                onClick={() => setMacNotification(null)}
+                style={{
+                  width: '18px',
+                  height: '18px',
+                  borderRadius: '50%',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                  border: 'none',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '5px',
+                  justifyContent: 'center',
+                  color: isDark ? '#94A3B8' : '#64748B',
+                  cursor: 'pointer',
+                  padding: 0,
                   transition: 'all 0.15s ease',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#DC2626';
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(0, 0, 0, 0.12)';
+                  e.currentTarget.style.color = isDark ? '#FFFFFF' : '#1E293B';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#EF4444';
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+                  e.currentTarget.style.color = isDark ? '#94A3B8' : '#64748B';
                 }}
+                aria-label="Dismiss notification"
               >
-                {deleteConfirmTarget.type === 'sheet-row' ? <FiRotateCcw size={12} /> : <FiTrash2 size={12} />}
-                <span>{deleteConfirmTarget.confirmText || 'Confirm Delete'}</span>
+                <FiX size={11} strokeWidth={2.5} />
               </button>
             </div>
           </div>
-        </div>
+
+          {/* macOS Message Content */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                backgroundColor:
+                  macNotification.type === 'danger'
+                    ? (isDark ? 'rgba(239, 68, 68, 0.16)' : 'rgba(239, 68, 68, 0.12)')
+                    : macNotification.type === 'info'
+                      ? (isDark ? 'rgba(59, 130, 246, 0.16)' : 'rgba(59, 130, 246, 0.12)')
+                      : (isDark ? 'rgba(16, 185, 129, 0.16)' : 'rgba(16, 185, 129, 0.12)'),
+                border:
+                  macNotification.type === 'danger'
+                    ? (isDark ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(239, 68, 68, 0.25)')
+                    : macNotification.type === 'info'
+                      ? (isDark ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(59, 130, 246, 0.25)')
+                      : (isDark ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(16, 185, 129, 0.25)'),
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color:
+                  macNotification.type === 'danger'
+                    ? '#EF4444'
+                    : macNotification.type === 'info'
+                      ? '#3B82F6'
+                      : '#10B981',
+                flexShrink: 0,
+                marginTop: '1px',
+              }}
+            >
+              {macNotification.type === 'danger' ? (
+                <FiTrash2 size={16} />
+              ) : macNotification.type === 'info' ? (
+                <FiCrosshair size={16} />
+              ) : (
+                <FiCheck size={16} strokeWidth={2.5} />
+              )}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.84rem', fontWeight: 650, color: isDark ? '#F1F5F9' : '#0F172A', lineHeight: 1.3 }}>
+                {macNotification.title}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: isDark ? '#CBD5E1' : '#475569', lineHeight: 1.45, wordBreak: 'break-word' }}>
+                {macNotification.message}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Lightbox Image Preview Modal - Exact Match to Second Image */}

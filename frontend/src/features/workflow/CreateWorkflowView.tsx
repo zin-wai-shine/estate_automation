@@ -6265,6 +6265,17 @@ export const CreateWorkflowView: React.FC = () => {
                 onClick={() => {
                   handleClearRunData();
                   setShowClearConfirmModal(false);
+                  try {
+                    window.dispatchEvent(
+                      new CustomEvent('ea_show_mac_notification', {
+                        detail: {
+                          title: 'Canvas Data Cleared',
+                          message: 'All extracted content, photos, and AI results have been cleared.',
+                          type: 'danger',
+                        },
+                      })
+                    );
+                  } catch { }
                 }}
                 style={{
                   height: '34px',
