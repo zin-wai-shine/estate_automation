@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   FiLayers,
   FiX,
@@ -15,6 +15,10 @@ import {
   FiPaperclip,
   FiArrowUp,
   FiCpu,
+  FiUpload,
+  FiTrash2,
+  FiChevronDown,
+  FiChevronUp,
 } from 'react-icons/fi';
 import { Select } from '../../components/ui/Select';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
@@ -62,11 +66,38 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
   // Generate Mode Settings
   const [useReferenceImage, setUseReferenceImage] = useState<boolean>(true);
   const [referenceImageUrl, setReferenceImageUrl] = useState<string>('');
+  const [referenceImageName, setReferenceImageName] = useState<string>('');
+  const [referenceFolderName, setReferenceFolderName] = useState<string>('Reference Layout');
+  const [showFolderImagePicker, setShowFolderImagePicker] = useState<boolean>(false);
+  const refFileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [useCondoImages, setUseCondoImages] = useState<boolean>(true);
   const [condoImagesCount, setCondoImagesCount] = useState<number>(3);
+  const [condoFolderName, setCondoFolderName] = useState<string>(condoName || 'Condo Building');
   const [useEnhancedImages, setUseEnhancedImages] = useState<boolean>(true);
   const [enhancedImagesSource, setEnhancedImagesSource] = useState<'enhanced' | 'get_images'>('enhanced');
   const [enhancedImagesCount, setEnhancedImagesCount] = useState<number>(5);
+
+  // File upload and removal handlers
+  const handleReferenceImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (!dataUrl) return;
+      setReferenceImageUrl(dataUrl);
+      setReferenceImageName(file.name);
+      setShowFolderImagePicker(false);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleRemoveReferenceImage = () => {
+    setReferenceImageUrl('');
+    setReferenceImageName('');
+  };
 
   // Prompt Link
   const [selectedPromptSource, setSelectedPromptSource] = useState<'upstream_ai' | 'custom'>('upstream_ai');
@@ -129,8 +160,11 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
       stagingMode: tabGroupMode === 'generate' ? 'direct_tab2' : undefined,
       useReferenceImage: tabGroupMode === 'generate' ? useReferenceImage : false,
       referenceImage: referenceImageUrl || undefined,
+      referenceImageName: referenceImageName || undefined,
+      referenceFolderName: referenceFolderName || undefined,
       useCondoImages: tabGroupMode === 'generate' ? useCondoImages : false,
-      condoImagesCount: tabGroupMode === 'generate' ? condoImagesCount : 0,
+      condoImagesCount: tabGroupMode === 'generate' ? Math.min(10, Math.max(1, condoImagesCount)) : 0,
+      condoFolderName: condoFolderName || undefined,
       useEnhancedImages: tabGroupMode === 'generate' ? useEnhancedImages : false,
       enhancedImagesSource: tabGroupMode === 'generate' ? enhancedImagesSource : 'enhanced',
       enhancedImagesCount: tabGroupMode === 'generate' ? enhancedImagesCount : 5,
@@ -606,7 +640,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                             Reference Layout
                           </div>
                           <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                            Example design to guide composition
+                            Example design attached first to guide composition
                           </div>
                         </div>
                       </div>
@@ -619,45 +653,303 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     </div>
 
                     {useReferenceImage && (
-                      <div style={{ paddingLeft: '23px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {/* Hidden native file input */}
                         <input
-                          type="text"
-                          value={referenceImageUrl}
-                          onChange={(e) => setReferenceImageUrl(e.target.value)}
-                          placeholder="Paste reference image URL or leave blank..."
-                          style={{
-                            flex: 1,
-                            height: '32px',
-                            padding: '0 10px',
-                            borderRadius: '4px',
-                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                            color: isDark ? '#F0F6FC' : '#0F172A',
-                            fontSize: '0.6875rem',
-                            outline: 'none',
-                          }}
+                          type="file"
+                          ref={refFileInputRef}
+                          accept="image/*"
+                          onChange={handleReferenceImageUpload}
+                          style={{ display: 'none' }}
                         />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const sample = propertyImages[0]?.url || '';
-                            if (sample) setReferenceImageUrl(sample);
-                          }}
-                          style={{
-                            height: '32px',
-                            padding: '0 12px',
-                            borderRadius: '4px',
-                            fontSize: '0.6875rem',
-                            fontWeight: 500,
-                            backgroundColor: isDark ? '#21262D' : '#E2E8F0',
-                            color: isDark ? '#E6EDF3' : '#334155',
-                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          Use #1
-                        </button>
+
+                        {referenceImageUrl ? (
+                          /* Attached Preview Bar */
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '6px 10px',
+                              borderRadius: '6px',
+                              backgroundColor: isDark ? '#161B22' : '#F8FAFC',
+                              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                              gap: '10px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                              <img
+                                src={referenceImageUrl}
+                                alt="Reference"
+                                style={{
+                                  width: '36px',
+                                  height: '36px',
+                                  borderRadius: '4px',
+                                  objectFit: 'cover',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  flexShrink: 0,
+                                }}
+                              />
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div
+                                  style={{
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    color: isDark ? '#F0F6FC' : '#0F172A',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {referenceImageName || 'Active Reference Photo'}
+                                </div>
+                                <div style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                  Will attach 1st in ChatGPT
+                                </div>
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                              <button
+                                type="button"
+                                onClick={() => refFileInputRef.current?.click()}
+                                style={{
+                                  padding: '4px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.65625rem',
+                                  fontWeight: 500,
+                                  backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                                  color: isDark ? '#E6EDF3' : '#334155',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                              >
+                                <FiUpload size={11} />
+                                <span>Change</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setShowFolderImagePicker(!showFolderImagePicker)}
+                                style={{
+                                  padding: '4px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.65625rem',
+                                  fontWeight: 500,
+                                  backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                                  color: isDark ? '#E6EDF3' : '#334155',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                              >
+                                <FiFolder size={11} />
+                                <span>Folder</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleRemoveReferenceImage}
+                                style={{
+                                  padding: '4px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.65625rem',
+                                  fontWeight: 500,
+                                  backgroundColor: 'transparent',
+                                  color: isDark ? '#F85149' : '#DC2626',
+                                  border: isDark ? '1px solid rgba(248, 81, 73, 0.3)' : '1px solid #FECACA',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                              >
+                                <FiTrash2 size={11} />
+                                <span>Remove</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* No Reference Image Selected Yet */
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button
+                              type="button"
+                              onClick={() => refFileInputRef.current?.click()}
+                              style={{
+                                height: '32px',
+                                padding: '0 12px',
+                                borderRadius: '4px',
+                                fontSize: '0.6875rem',
+                                fontWeight: 500,
+                                backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                                color: isDark ? '#E6EDF3' : '#334155',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              <FiUpload size={12} />
+                              <span>Upload</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setShowFolderImagePicker(!showFolderImagePicker)}
+                              style={{
+                                height: '32px',
+                                padding: '0 12px',
+                                borderRadius: '4px',
+                                fontSize: '0.6875rem',
+                                fontWeight: 500,
+                                backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                                color: isDark ? '#E6EDF3' : '#334155',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              <FiFolder size={12} />
+                              <span>Choose Image</span>
+                            </button>
+
+                            <input
+                              type="text"
+                              value={referenceImageUrl}
+                              onChange={(e) => {
+                                setReferenceImageUrl(e.target.value);
+                                setReferenceImageName('URL Image');
+                              }}
+                              placeholder="or paste image URL..."
+                              style={{
+                                flex: 1,
+                                height: '32px',
+                                padding: '0 10px',
+                                borderRadius: '4px',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                color: isDark ? '#F0F6FC' : '#0F172A',
+                                fontSize: '0.6875rem',
+                                outline: 'none',
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {/* Collapsible Folder & Image Picker Drawer */}
+                        {showFolderImagePicker && (
+                          <div
+                            style={{
+                              padding: '10px',
+                              borderRadius: '6px',
+                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              backgroundColor: isDark ? '#161B22' : '#F8FAFC',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '8px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                                Choose Image from Folder
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setShowFolderImagePicker(false)}
+                                style={{
+                                  border: 'none',
+                                  background: 'none',
+                                  color: isDark ? '#8B949E' : '#64748B',
+                                  cursor: 'pointer',
+                                  padding: '2px',
+                                }}
+                              >
+                                <FiX size={12} />
+                              </button>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Folder:</span>
+                              <input
+                                type="text"
+                                value={referenceFolderName}
+                                onChange={(e) => setReferenceFolderName(e.target.value)}
+                                placeholder="e.g. Reference Layout"
+                                style={{
+                                  flex: 1,
+                                  height: '26px',
+                                  padding: '0 8px',
+                                  borderRadius: '4px',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                  color: isDark ? '#F0F6FC' : '#0F172A',
+                                  fontSize: '0.65625rem',
+                                  outline: 'none',
+                                }}
+                              />
+                            </div>
+
+                            {propertyImages.length > 0 ? (
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', maxHeight: '140px', overflowY: 'auto' }}>
+                                {propertyImages.map((img, i) => {
+                                  const isSelected = referenceImageUrl === img.url;
+                                  return (
+                                    <button
+                                      key={`ref-pick-${i}`}
+                                      type="button"
+                                      onClick={() => {
+                                        setReferenceImageUrl(img.url);
+                                        setReferenceImageName(img.filename || `Photo #${img.index || i + 1}`);
+                                        setShowFolderImagePicker(false);
+                                      }}
+                                      style={{
+                                        padding: 0,
+                                        borderRadius: '4px',
+                                        border: isSelected
+                                          ? (isDark ? '2px solid #58A6FF' : '2px solid #2563EB')
+                                          : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                        overflow: 'hidden',
+                                        position: 'relative',
+                                        aspectRatio: '1',
+                                        cursor: 'pointer',
+                                        backgroundColor: '#1E293B',
+                                      }}
+                                    >
+                                      <img src={img.url} alt={`Option ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                      <span
+                                        style={{
+                                          position: 'absolute',
+                                          bottom: 2,
+                                          right: 2,
+                                          backgroundColor: 'rgba(0,0,0,0.75)',
+                                          color: '#fff',
+                                          fontSize: '8px',
+                                          padding: '1px 3px',
+                                          borderRadius: '2px',
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        #{img.index || i + 1}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', textAlign: 'center', padding: '10px 0' }}>
+                                No images in folder yet. Click Upload to attach from your computer.
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -672,7 +964,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                             Condo Photos
                           </div>
                           <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                            Exterior & facility photos
+                            Exterior & facility photos (10 max)
                           </div>
                         </div>
                       </div>
@@ -685,41 +977,100 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     </div>
 
                     {useCondoImages && (
-                      <div style={{ paddingLeft: '23px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>Attach:</span>
+                      <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                          {/* Manual Number Input */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>Count:</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={10}
+                              value={condoImagesCount}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                if (isNaN(val)) {
+                                  setCondoImagesCount(1);
+                                } else {
+                                  setCondoImagesCount(Math.min(10, Math.max(1, val)));
+                                }
+                              }}
+                              style={{
+                                width: '48px',
+                                height: '28px',
+                                textAlign: 'center',
+                                borderRadius: '4px',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                color: isDark ? '#F0F6FC' : '#0F172A',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                outline: 'none',
+                              }}
+                            />
+                            <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>(Max 10)</span>
+                          </div>
+
+                          {/* Quick Presets */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            {[
+                              { count: 1, label: '1 Photo' },
+                              { count: 2, label: '2 Photos' },
+                              { count: 3, label: '3 Photos' },
+                              { count: 5, label: '5 Photos' },
+                              { count: 10, label: '10 (Max)' },
+                            ].map((opt) => {
+                              const isSel = condoImagesCount === opt.count;
+                              return (
+                                <button
+                                  key={opt.count}
+                                  type="button"
+                                  onClick={() => setCondoImagesCount(opt.count)}
+                                  style={{
+                                    padding: '3px 8px',
+                                    borderRadius: '4px',
+                                    fontSize: '0.65625rem',
+                                    fontWeight: isSel ? 600 : 400,
+                                    backgroundColor: isSel
+                                      ? (isDark ? '#21262D' : '#E2E8F0')
+                                      : 'transparent',
+                                    color: isSel
+                                      ? (isDark ? '#F0F6FC' : '#0F172A')
+                                      : (isDark ? '#8B949E' : '#64748B'),
+                                    border: isSel
+                                      ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
+                                      : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                    cursor: 'pointer',
+                                    transition: 'all 0.12s ease',
+                                  }}
+                                >
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Manual Folder Input */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          {[
-                            { count: 1, label: '1 Photo' },
-                            { count: 2, label: '2 Photos' },
-                            { count: 3, label: '3 Photos' },
-                          ].map((opt) => {
-                            const isSel = condoImagesCount === opt.count;
-                            return (
-                              <button
-                                key={opt.count}
-                                type="button"
-                                onClick={() => setCondoImagesCount(opt.count)}
-                                style={{
-                                  padding: '4px 12px',
-                                  borderRadius: '4px',
-                                  fontSize: '0.65625rem',
-                                  fontWeight: isSel ? 600 : 400,
-                                  backgroundColor: isSel
-                                    ? (isDark ? '#21262D' : '#E2E8F0')
-                                    : 'transparent',
-                                  color: isSel
-                                    ? (isDark ? '#F0F6FC' : '#0F172A')
-                                    : (isDark ? '#8B949E' : '#64748B'),
-                                  border: isSel
-                                    ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                                    : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                {opt.label}
-                              </button>
-                            );
-                          })}
+                          <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Folder:</span>
+                          <input
+                            type="text"
+                            value={condoFolderName}
+                            onChange={(e) => setCondoFolderName(e.target.value)}
+                            placeholder="Condo folder name..."
+                            style={{
+                              flex: 1,
+                              height: '26px',
+                              padding: '0 8px',
+                              borderRadius: '4px',
+                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                              color: isDark ? '#F0F6FC' : '#0F172A',
+                              fontSize: '0.65625rem',
+                              outline: 'none',
+                            }}
+                          />
                         </div>
                       </div>
                     )}
@@ -1299,7 +1650,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                   </div>
 
                   {/* Thumbnail Strip */}
-                  {((useCondoImages && propertyImages.length > 0) || (useEnhancedImages && (enhancedImages.length > 0 || propertyImages.length > 0))) && (
+                  {((useReferenceImage && referenceImageUrl) || (useCondoImages && (propertyImages.length > 0 || condoImagesCount > 0)) || (useEnhancedImages && (enhancedImages.length > 0 || propertyImages.length > 0))) && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflowX: 'auto', padding: '2px 0' }}>
                       {useReferenceImage && (
                         <div
@@ -1322,24 +1673,33 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                           <span style={{ position: 'absolute', bottom: 1, right: 1, backgroundColor: 'rgba(0,0,0,0.7)', color: '#fff', fontSize: '7px', padding: '1px 2px', borderRadius: '2px' }}>#1</span>
                         </div>
                       )}
-                      {useCondoImages && propertyImages.slice(0, condoImagesCount).map((img, i) => (
-                        <div
-                          key={`condo-${i}`}
-                          style={{
-                            width: '38px',
-                            height: '38px',
-                            borderRadius: '4px',
-                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                            overflow: 'hidden',
-                            flexShrink: 0,
-                            position: 'relative',
-                            backgroundColor: '#1E293B',
-                          }}
-                        >
-                          <img src={img.url} alt={`Condo ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          <span style={{ position: 'absolute', bottom: 1, right: 1, backgroundColor: 'rgba(0,0,0,0.7)', color: '#fff', fontSize: '7px', padding: '1px 2px', borderRadius: '2px' }}>C{i + 1}</span>
-                        </div>
-                      ))}
+                      {useCondoImages && Array.from({ length: Math.min(10, Math.max(1, condoImagesCount)) }).map((_, i) => {
+                        const img = propertyImages[i];
+                        return (
+                          <div
+                            key={`condo-${i}`}
+                            style={{
+                              width: '38px',
+                              height: '38px',
+                              borderRadius: '4px',
+                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              overflow: 'hidden',
+                              flexShrink: 0,
+                              position: 'relative',
+                              backgroundColor: '#1E293B',
+                            }}
+                          >
+                            {img?.url ? (
+                              <img src={img.url} alt={`Condo ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B949E', fontSize: '9px' }}>
+                                C{i + 1}
+                              </div>
+                            )}
+                            <span style={{ position: 'absolute', bottom: 1, right: 1, backgroundColor: 'rgba(0,0,0,0.7)', color: '#fff', fontSize: '7px', padding: '1px 2px', borderRadius: '2px' }}>C{i + 1}</span>
+                          </div>
+                        );
+                      })}
                       {useEnhancedImages && (enhancedImagesSource === 'enhanced' && enhancedImages.length > 0 ? enhancedImages : propertyImages)
                         .slice(0, enhancedImagesCount)
                         .map((img, i) => (
