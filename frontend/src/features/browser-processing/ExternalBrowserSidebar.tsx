@@ -657,6 +657,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         localStorage.removeItem('bolthaven_last_hero_image');
       }
     } catch (e) {}
+    try {
+      window.dispatchEvent(new CustomEvent('ea_hero_image_updated', { detail: img }));
+    } catch (_) {}
   };
 
   // Auto-fetch latest downloaded Hero image on mount or when sidebar is opened

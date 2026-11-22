@@ -3638,6 +3638,48 @@ export const FacebookWorkflowCanvas = forwardRef<
     return { ...companionEnhancedMap, ...enhancedPhotos };
   }, [enhancedPhotos, companionEnhancedMap]);
 
+  // Live hero image generated/downloaded by FB Hero node
+  const [heroImage, setHeroImage] = useState<{ url: string; fileName?: string; condoName?: string } | null>(() => {
+    try {
+      const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.url) return parsed;
+      }
+    } catch (_) {}
+    return null;
+  });
+
+  useEffect(() => {
+    const handleHeroUpdated = (e: any) => {
+      if (e?.detail) {
+        setHeroImage(e.detail);
+      } else {
+        try {
+          const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
+          if (saved) {
+            setHeroImage(JSON.parse(saved));
+          } else {
+            setHeroImage(null);
+          }
+        } catch (_) {
+          setHeroImage(null);
+        }
+      }
+    };
+    const handleCleared = () => {
+      setHeroImage(null);
+    };
+    window.addEventListener('ea_hero_image_updated', handleHeroUpdated);
+    window.addEventListener('storage', handleHeroUpdated);
+    window.addEventListener('ea_workflow_cleared', handleCleared);
+    return () => {
+      window.removeEventListener('ea_hero_image_updated', handleHeroUpdated);
+      window.removeEventListener('storage', handleHeroUpdated);
+      window.removeEventListener('ea_workflow_cleared', handleCleared);
+    };
+  }, []);
+
   useEffect(() => {
     let timer: any = null;
     const checkBrowserAutomationStatus = async () => {
@@ -3783,14 +3825,23 @@ export const FacebookWorkflowCanvas = forwardRef<
           return 'idle';
         }
 
-        // If connected from Hero node or imageSource === 'generate', ensure hero image actually exists!
-        const isUpstreamHero = (config.connections || []).some((c: any) => {
-          if (c.toNodeId === targetBox.id) {
-            const upBox = (config.aiBoxes || []).find((b) => b.id === c.fromNodeId);
-            return upBox && (upBox.title?.toLowerCase().includes('hero') || upBox.browserGroupName?.toLowerCase().includes('hero') || (upBox as any).tabGroupMode === 'generate');
-          }
-          return false;
-        }) || targetBox.imageSource === 'generate';
+        // If connected from Hero node, hero preset, or imageSource === 'generate', ensure hero image actually exists!
+        const isHeroCropBox =
+          targetBox.imageSource === 'generate' ||
+          targetBox.title?.toLowerCase().includes('hero') ||
+          targetBox.templateText?.toLowerCase().includes('hero') ||
+          targetBox.cropFormatId === 'format-grid-2split' ||
+          (config.connections || []).some((c: any) => {
+            if (c.toNodeId === targetBox.id) {
+              const upBox = (config.aiBoxes || []).find((b) => b.id === c.fromNodeId);
+              return upBox && (
+                upBox.title?.toLowerCase().includes('hero') ||
+                upBox.browserGroupName?.toLowerCase().includes('hero') ||
+                (upBox as any).tabGroupMode === 'generate'
+              );
+            }
+            return false;
+          });
 
         let hasHeroPhoto = false;
         try {
@@ -3801,7 +3852,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           }
         } catch (_) {}
 
-        if (isUpstreamHero && !hasHeroPhoto) {
+        if (isHeroCropBox && !hasHeroPhoto) {
           return 'idle';
         }
 
@@ -4739,8 +4790,26 @@ export const FacebookWorkflowCanvas = forwardRef<
         });
 
         const isFromEnhance = cropBox.imageSource === 'enhance' || isConnectedFromEnhance;
+        const isHeroCropBox =
+          cropBox.imageSource === 'generate' ||
+          cropBox.title?.toLowerCase().includes('hero') ||
+          cropBox.templateText?.toLowerCase().includes('hero') ||
+          cropBox.cropFormatId === 'format-grid-2split' ||
+          effectiveFmt?.name?.toLowerCase().includes('hero') ||
+          effectiveFmt?.id === 'format-grid-2split' ||
+          (config.connections || []).some((c: any) => {
+            if (c.toNodeId === cropBox.id) {
+              const upBox = (config.aiBoxes || []).find((b) => b.id === c.fromNodeId);
+              return upBox && (
+                upBox.title?.toLowerCase().includes('hero') ||
+                upBox.browserGroupName?.toLowerCase().includes('hero') ||
+                (upBox as any).tabGroupMode === 'generate'
+              );
+            }
+            return false;
+          });
 
-        if (cropBox.imageSource === 'generate') {
+        if (isHeroCropBox) {
           try {
             const savedHero = localStorage.getItem('bolthaven_last_hero_image');
             if (savedHero) {
@@ -4748,6 +4817,7 @@ export const FacebookWorkflowCanvas = forwardRef<
               if (parsed?.url) sourcePhotos.push({ url: parsed.url, photoIndex: 0, isEnhanced: false });
             }
           } catch (e) { }
+          // If hero has NOT been generated yet, do NOT fallback to raw post images or enhance photos!
         } else if (isFromEnhance) {
           const hasEnhanced = Object.keys(allEnhancedPhotos || {}).length > 0;
           if (hasEnhanced) {
@@ -18209,6 +18279,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     images={effectiveImages}
                     watermarkedPhotos={watermarkedPhotos}
                     enhancedPhotos={allEnhancedPhotos}
+                    heroImage={heroImage}
                     workflowBoxes={config.aiBoxes}
                     connections={config.connections}
                     onOpenLightbox={handleOpenLightbox}
@@ -18264,6 +18335,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 connections={config.connections}
                 enhancedPhotos={allEnhancedPhotos}
                 watermarkedPhotos={watermarkedPhotos}
+                heroImage={heroImage}
                 listingCode={executionState?.listingCode || previewSampleCode}
               />
             </>

@@ -33,7 +33,7 @@ export interface PhotoCropSettingsSideboxProps {
   enhancedPhotos?: Record<number, string>;
   watermarkedPhotos?: Record<number, string>;
   listingCode?: string;
-  heroImage?: { url: string; fileName?: string; condoName?: string };
+  heroImage?: { url: string; fileName?: string; condoName?: string } | null;
 }
 
 export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> = ({
@@ -109,44 +109,15 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     setNodeTitle((box.title || 'Crop & Cut').replace(/^Format:\s*/i, ''));
   }, [box.id, box.cropFormatId, box.title, box.templateId, box.templateText]);
 
-  // Detect if this box is connected from an upstream Enhance node
-  const isUpstreamEnhance = useMemo(() => {
-    return (connections || []).some((c: any) => {
-      if (c.toNodeId !== box.id) return false;
-      if (c.fromNodeId === 'get-images' || c.fromNodeId === 'get-content') return false;
-      const upBox = (workflowBoxes || []).find((b) => b.id === c.fromNodeId);
-      if (!upBox) return false;
-      const t = (upBox.title || '').toLowerCase();
-      const st = (upBox.subtitle || '').toLowerCase();
-      const g = (upBox.browserGroupName || '').toLowerCase();
-      const pk = (upBox.processKind || '').toLowerCase();
-      const tm = (upBox.tabGroupMode || '').toLowerCase();
-      const pt = (upBox.processType || '').toLowerCase();
-      return (
-        tm === 'enhance' ||
-        pk === 'enhance_images' ||
-        t.includes('enhance') ||
-        st.includes('enhance') ||
-        g.includes('enhance') ||
-        pt === 'image_enhance' ||
-        upBox.provider === 'runware_ai' ||
-        upBox.id?.includes('enhance')
-      );
-    });
-  }, [connections, workflowBoxes, box.id]);
-
-  // Image source: 'get_images' | 'enhance' | 'generate' | 'all'
-  const [imageSource, setImageSource] = useState<'get_images' | 'enhance' | 'generate' | 'all'>(() => {
-    if (box.imageSource) return box.imageSource as any;
-    if (isUpstreamEnhance) return 'enhance';
-    return 'get_images';
-  });
-
-  useEffect(() => {
-    if (box.imageSource && box.imageSource !== imageSource) {
-      setImageSource(box.imageSource as any);
-    }
-  }, [box.imageSource]);
+  const currentFormat = useMemo(() => {
+    return (
+      savedFormats.find((f) => f.id === selectedFormatId) ||
+      savedFormats.find((f) => f.id === box.cropFormatId || f.id === box.templateId) ||
+      savedFormats.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
+      savedFormats.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
+      savedFormats[0]
+    );
+  }, [savedFormats, selectedFormatId, box.cropFormatId, box.templateId, box.templateText, box.title]);
 
   // Resolve generator / hero node title
   const heroNode = useMemo(() => {
@@ -184,10 +155,143 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     return 'Enhance Image';
   }, [enhanceNode]);
 
+  // Detect if this crop box is configured or wired for FB Hero
+  const isHeroCropNode = useMemo(() => {
+    const boxTitle = (box.title || '').toLowerCase();
+    const template = (box.templateText || '').toLowerCase();
+    const source = box.imageSource;
+    const cropFmtId = (box.cropFormatId || box.templateId || '').toLowerCase();
+    const formatName = (currentFormat?.name || '').toLowerCase();
+    const currentFmtId = (currentFormat?.id || '').toLowerCase();
+
+    const matchesHero =
+      source === 'generate' ||
+      boxTitle.includes('hero') ||
+      template.includes('hero') ||
+      cropFmtId.includes('hero') ||
+      cropFmtId === 'format-grid-2split' ||
+      formatName.includes('hero') ||
+      currentFmtId === 'format-grid-2split';
+
+    if (matchesHero) return true;
+
+    return connections.some((c: any) => {
+      if (c.toNodeId !== box.id) return false;
+      if (c.fromNodeId === 'get-images' || c.fromNodeId === 'get-content') return false;
+      const upBox = workflowBoxes.find((b: any) => b.id === c.fromNodeId);
+      if (!upBox) return false;
+      const t = (upBox.title || '').toLowerCase();
+      const g = (upBox.browserGroupName || '').toLowerCase();
+      return (
+        upBox.tabGroupMode === 'generate' ||
+        upBox.processKind === 'generate_image' ||
+        t.includes('hero') ||
+        g.includes('hero')
+      );
+    });
+  }, [box.title, box.templateText, box.imageSource, box.cropFormatId, box.templateId, currentFormat, connections, workflowBoxes, box.id]);
+
+  // Live hero image from prop, localStorage or event
+  const [liveHeroImage, setLiveHeroImage] = useState<{ url: string; fileName?: string; condoName?: string } | null>(() => {
+    if (heroImage && heroImage.url) return heroImage;
+    try {
+      const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.url) return parsed;
+      }
+    } catch (_) {}
+    return null;
+  });
+
+  useEffect(() => {
+    if (heroImage && heroImage.url) {
+      setLiveHeroImage(heroImage);
+    }
+  }, [heroImage]);
+
+  useEffect(() => {
+    const handleHeroUpdated = (e: any) => {
+      if (e?.detail) {
+        setLiveHeroImage(e.detail);
+      } else {
+        try {
+          const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
+          if (saved) {
+            setLiveHeroImage(JSON.parse(saved));
+          } else {
+            setLiveHeroImage(null);
+          }
+        } catch (_) {
+          setLiveHeroImage(null);
+        }
+      }
+    };
+    const handleCleared = () => {
+      setLiveHeroImage(null);
+    };
+    window.addEventListener('ea_hero_image_updated', handleHeroUpdated);
+    window.addEventListener('storage', handleHeroUpdated);
+    window.addEventListener('ea_workflow_cleared', handleCleared);
+    return () => {
+      window.removeEventListener('ea_hero_image_updated', handleHeroUpdated);
+      window.removeEventListener('storage', handleHeroUpdated);
+      window.removeEventListener('ea_workflow_cleared', handleCleared);
+    };
+  }, []);
+
   const effectiveHeroImage = useMemo(() => {
+    if (liveHeroImage && liveHeroImage.url) return liveHeroImage;
     if (heroImage && heroImage.url) return heroImage;
     return null;
-  }, [heroImage]);
+  }, [liveHeroImage, heroImage]);
+
+  // Detect if this box is connected from an upstream Enhance node
+  const isUpstreamEnhance = useMemo(() => {
+    return (connections || []).some((c: any) => {
+      if (c.toNodeId !== box.id) return false;
+      if (c.fromNodeId === 'get-images' || c.fromNodeId === 'get-content') return false;
+      const upBox = (workflowBoxes || []).find((b) => b.id === c.fromNodeId);
+      if (!upBox) return false;
+      const t = (upBox.title || '').toLowerCase();
+      const st = (upBox.subtitle || '').toLowerCase();
+      const g = (upBox.browserGroupName || '').toLowerCase();
+      const pk = (upBox.processKind || '').toLowerCase();
+      const tm = (upBox.tabGroupMode || '').toLowerCase();
+      const pt = (upBox.processType || '').toLowerCase();
+      return (
+        tm === 'enhance' ||
+        pk === 'enhance_images' ||
+        t.includes('enhance') ||
+        st.includes('enhance') ||
+        g.includes('enhance') ||
+        pt === 'image_enhance' ||
+        upBox.provider === 'runware_ai' ||
+        upBox.id?.includes('enhance')
+      );
+    });
+  }, [connections, workflowBoxes, box.id]);
+
+  // Image source: 'get_images' | 'enhance' | 'generate' | 'all'
+  const [imageSource, setImageSource] = useState<'get_images' | 'enhance' | 'generate' | 'all'>(() => {
+    if (box.imageSource) return box.imageSource as any;
+    if (isHeroCropNode) return 'generate';
+    if (isUpstreamEnhance) return 'enhance';
+    return 'get_images';
+  });
+
+  useEffect(() => {
+    if (box.imageSource && box.imageSource !== imageSource) {
+      setImageSource(box.imageSource as any);
+    }
+  }, [box.imageSource]);
+
+  useEffect(() => {
+    if (isHeroCropNode && imageSource !== 'generate') {
+      setImageSource('generate');
+      onUpdateBox(box.id, { imageSource: 'generate' });
+    }
+  }, [isHeroCropNode]);
 
   // Source list calculation
   const currentSourceList = useMemo(() => {
@@ -200,6 +304,23 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
       label: string;
       isEnhanced?: boolean;
     }> = [];
+
+    // 0. Hero / Generator Crop Node: strictly waiting or using generated hero image
+    if (isHeroCropNode || imageSource === 'generate') {
+      if (effectiveHeroImage && effectiveHeroImage.url) {
+        return [{
+          id: 'hero-1',
+          index: 1,
+          displayNumber: 1,
+          url: effectiveHeroImage.url,
+          source: 'generate' as const,
+          label: effectiveHeroImage.condoName ? `${effectiveHeroImage.condoName} Hero` : `${heroLabel} (1 Photo)`,
+        }];
+      }
+      // If hero image has NOT been generated yet:
+      // Strictly wait for FB Hero image! Do NOT load get_images, do NOT load enhance photos!
+      return [];
+    }
 
     // When upstream is an Enhance node, merge with the first step's photos!
     if (isUpstreamEnhance || imageSource === 'enhance') {
@@ -260,11 +381,11 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     }
 
     // 3. Generate Image
-    if (!isUpstreamEnhance && (imageSource === 'generate' || imageSource === 'all')) {
+    if (!isUpstreamEnhance && (imageSource as any) === 'all') {
       if (effectiveHeroImage && effectiveHeroImage.url) {
         rawList.push({
           id: 'hero-1',
-          index: imageSource === 'generate' ? 1 : 999,
+          index: 999,
           displayNumber: 1,
           url: effectiveHeroImage.url,
           source: 'generate',
@@ -274,7 +395,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     }
 
     return rawList;
-  }, [imageSource, isUpstreamEnhance, images, enhancedPhotos, effectiveHeroImage, heroLabel, watermarkedPhotos]);
+  }, [isHeroCropNode, imageSource, isUpstreamEnhance, images, enhancedPhotos, effectiveHeroImage, heroLabel, watermarkedPhotos]);
 
   const [selectedIndices, setSelectedIndices] = useState<number[]>(() => {
     if (Array.isArray(box.selectedImageIndices) && box.selectedImageIndices.length > 0) {
@@ -307,16 +428,6 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     }));
   }, [savedFormats]);
 
-  const currentFormat = useMemo(() => {
-    return (
-      savedFormats.find((f) => f.id === selectedFormatId) ||
-      savedFormats.find((f) => f.id === box.cropFormatId || f.id === box.templateId) ||
-      savedFormats.find((f) => box.templateText && f.name.toLowerCase() === box.templateText.toLowerCase()) ||
-      savedFormats.find((f) => box.title && f.name && box.title.toLowerCase().includes(f.name.toLowerCase())) ||
-      savedFormats[0]
-    );
-  }, [savedFormats, selectedFormatId, box.cropFormatId, box.templateId, box.templateText, box.title]);
-
   const sourceOptions = useMemo<SelectOption[]>(() => {
     const opts: SelectOption[] = [];
     const hasIncomingHero = connections.some(
@@ -326,11 +437,11 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
       (c) => c.toNodeId === box.id && (c.fromNodeId.includes('enhance') || workflowBoxes.some((b) => b.id === c.fromNodeId && (b.title?.toLowerCase().includes('enhance') || b.browserGroupName?.toLowerCase().includes('enhance'))))
     );
 
-    if (hasIncomingHero || heroNode) {
+    if (hasIncomingHero || heroNode || isHeroCropNode) {
       const heroCount = (effectiveHeroImage && effectiveHeroImage.url) ? 1 : 0;
       opts.push({
         value: 'generate',
-        label: `${heroLabel} (${heroCount} Photo${heroCount === 1 ? '' : 's'})`,
+        label: `${heroLabel} (${heroCount > 0 ? `${heroCount} Photo` : 'Waiting for Hero'})`,
       });
     }
     if (isUpstreamEnhance || hasIncomingEnhance || enhanceNode) {
@@ -349,7 +460,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
       label: 'All Available Media',
     });
     return opts;
-  }, [connections, box.id, workflowBoxes, heroNode, enhanceNode, heroLabel, enhanceLabel, images.length, enhancedPhotos, isUpstreamEnhance]);
+  }, [connections, box.id, workflowBoxes, heroNode, enhanceNode, isHeroCropNode, heroLabel, enhanceLabel, images.length, enhancedPhotos, isUpstreamEnhance, effectiveHeroImage]);
 
   const handleSelectFormat = (format: CropStudioFormat) => {
     setSelectedFormatId(format.id);
