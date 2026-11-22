@@ -131,6 +131,7 @@ interface AttachmentGroupsManagerProps {
   hideToggle?: boolean;
   hideAddGroup?: boolean;
   hideDeleteGroup?: boolean;
+  isMainBox?: boolean;
 }
 
 export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = ({
@@ -149,6 +150,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
   hideToggle = false,
   hideAddGroup = false,
   hideDeleteGroup = false,
+  isMainBox = false,
 }) => {
   const [availableCondoFolders, setAvailableCondoFolders] = useState<string[]>([]);
   const [baseCondoDirectory, setBaseCondoDirectory] = useState<string>('/Users/zinwaishine/Desktop/Condo Building');
@@ -229,6 +231,25 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
     loadCondoFolders();
   }, []);
 
+  // In main box, auto-sync folderName with condoName
+  useEffect(() => {
+    if (!isMainBox || !condoName) return;
+    const trimmedCondo = condoName.trim();
+    if (!trimmedCondo) return;
+    let changed = false;
+    const next = steps.map((s) => {
+      if (s.sourceType === 'folder' && s.folderName !== trimmedCondo) {
+        changed = true;
+        fetchImagesForStep(s.id, trimmedCondo);
+        return { ...s, folderName: trimmedCondo };
+      }
+      return s;
+    });
+    if (changed) {
+      onChange(next);
+    }
+  }, [isMainBox, condoName]);
+
   useEffect(() => {
     steps.forEach((s) => {
       if (s.sourceType === 'folder' && s.folderName && (!s.folderImages || s.folderImages.length === 0)) {
@@ -278,6 +299,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
   };
 
   const renderCountStepper = (s: AttachmentStep) => {
+    if (isMainBox) return null;
     const otherGroupsCount = steps
       .filter((other) => other.id !== s.id && other.enabled)
       .reduce((acc, other) => acc + other.count, 0);
@@ -493,39 +515,54 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                   </span>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    {/* Source Selector Tabs */}
-                    <div
-                      style={{
-                        display: 'inline-flex',
-                        padding: '1px',
-                        borderRadius: '4px',
-                        backgroundColor: isDark ? '#0D1117' : '#E2E8F0',
-                      }}
-                    >
-                      {(['folder', 'upload', 'workflow'] as const).map((st) => {
-                        const isCurrent = step.sourceType === st;
-                        const label = st === 'folder' ? 'Folder' : st === 'upload' ? 'Upload' : 'Workflow';
-                        return (
-                          <button
-                            key={st}
-                            type="button"
-                            onClick={() => handleUpdateStep(step.id, { sourceType: st })}
-                            style={{
-                              padding: '2px 8px',
-                              borderRadius: '3px',
-                              border: 'none',
-                              fontSize: '0.625rem',
-                              fontWeight: isCurrent ? 600 : 400,
-                              backgroundColor: isCurrent ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
-                              color: isCurrent ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
-                              cursor: 'pointer',
-                            }}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    {/* Source Selector Tabs / Badge */}
+                    {isMainBox ? (
+                      <span
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '0.625rem',
+                          fontWeight: 600,
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#E2E8F0',
+                          color: isDark ? '#C9D1D9' : '#334155',
+                        }}
+                      >
+                        {step.sourceType === 'folder' ? 'Folder' : step.sourceType === 'upload' ? 'Upload' : 'Workflow'}
+                      </span>
+                    ) : (
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          padding: '1px',
+                          borderRadius: '4px',
+                          backgroundColor: isDark ? '#0D1117' : '#E2E8F0',
+                        }}
+                      >
+                        {(['folder', 'upload', 'workflow'] as const).map((st) => {
+                          const isCurrent = step.sourceType === st;
+                          const label = st === 'folder' ? 'Folder' : st === 'upload' ? 'Upload' : 'Workflow';
+                          return (
+                            <button
+                              key={st}
+                              type="button"
+                              onClick={() => handleUpdateStep(step.id, { sourceType: st })}
+                              style={{
+                                padding: '2px 8px',
+                                borderRadius: '3px',
+                                border: 'none',
+                                fontSize: '0.625rem',
+                                fontWeight: isCurrent ? 600 : 400,
+                                backgroundColor: isCurrent ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
+                                color: isCurrent ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
 
                     {!hideDeleteGroup && steps.length > 1 && (
                       <button
@@ -549,107 +586,139 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                 {step.sourceType === 'folder' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <div style={{ position: 'relative', flex: 1 }}>
-                        <button
-                          type="button"
-                          onClick={() => setActiveFolderDropdownStepId(activeFolderDropdownStepId === step.id ? null : step.id)}
+                      {isMainBox ? (
+                        <div
                           style={{
-                            width: '100%',
+                            flex: 1,
                             height: '26px',
                             padding: '0 8px',
                             borderRadius: '4px',
-                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                            border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                             backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
                             color: isDark ? '#F0F6FC' : '#0F172A',
                             fontSize: '0.65625rem',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'space-between',
-                            cursor: 'pointer',
+                            gap: '6px',
+                            overflow: 'hidden',
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
-                            <FiFolder size={11} style={{ color: '#58A6FF', flexShrink: 0 }} />
-                            <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                              {step.folderName || 'Select folder...'}
-                            </span>
-                          </div>
-                          <FiChevronDown size={11} style={{ color: isDark ? '#8B949E' : '#64748B' }} />
-                        </button>
+                          <FiFolder size={11} style={{ color: '#58A6FF', flexShrink: 0 }} />
+                          <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', fontWeight: 500 }}>
+                            {condoName || step.folderName || 'Condo Building'}
+                          </span>
+                        </div>
+                      ) : (
+                        <div style={{ position: 'relative', flex: 1 }}>
+                          <button
+                            type="button"
+                            onClick={() => setActiveFolderDropdownStepId(activeFolderDropdownStepId === step.id ? null : step.id)}
+                            style={{
+                              width: '100%',
+                              height: '26px',
+                              padding: '0 8px',
+                              borderRadius: '4px',
+                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                              color: isDark ? '#F0F6FC' : '#0F172A',
+                              fontSize: '0.65625rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                              <FiFolder size={11} style={{ color: '#58A6FF', flexShrink: 0 }} />
+                              <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                                {step.folderName || 'Select folder...'}
+                              </span>
+                            </div>
+                            <FiChevronDown size={11} style={{ color: isDark ? '#8B949E' : '#64748B' }} />
+                          </button>
 
-                        {activeFolderDropdownStepId === step.id && (
-                          <>
-                            <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setActiveFolderDropdownStepId(null)} />
-                            <div
-                              style={{
-                                position: 'absolute',
-                                top: '29px',
-                                left: 0,
-                                right: 0,
-                                zIndex: 50,
-                                maxHeight: '160px',
-                                overflowY: 'auto',
-                                borderRadius: '4px',
-                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                                boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-                                padding: '4px',
-                              }}
-                            >
-                              <input
-                                type="text"
-                                placeholder="Search folders..."
-                                value={folderSearchFilter}
-                                onChange={(e) => setFolderSearchFilter(e.target.value)}
+                          {activeFolderDropdownStepId === step.id && (
+                            <>
+                              <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setActiveFolderDropdownStepId(null)} />
+                              <div
                                 style={{
-                                  width: '100%',
-                                  height: '24px',
-                                  padding: '0 6px',
-                                  borderRadius: '3px',
-                                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
-                                  color: isDark ? '#F0F6FC' : '#0F172A',
-                                  fontSize: '0.625rem',
-                                  marginBottom: '4px',
-                                  outline: 'none',
+                                  position: 'absolute',
+                                  top: '29px',
+                                  left: 0,
+                                  right: 0,
+                                  zIndex: 50,
+                                  maxHeight: '160px',
+                                  overflowY: 'auto',
+                                  borderRadius: '4px',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                  boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                                  padding: '4px',
                                 }}
-                              />
-                              {(filteredCondoFolders.length > 0 ? filteredCondoFolders : availableCondoFolders.slice(0, 20)).map((f) => (
-                                <button
-                                  key={f}
-                                  type="button"
-                                  onClick={() => {
-                                    handleUpdateStep(step.id, { folderName: f });
-                                    fetchImagesForStep(step.id, f);
-                                    setActiveFolderDropdownStepId(null);
-                                  }}
+                              >
+                                <input
+                                  type="text"
+                                  placeholder="Search folders..."
+                                  value={folderSearchFilter}
+                                  onChange={(e) => setFolderSearchFilter(e.target.value)}
                                   style={{
                                     width: '100%',
                                     height: '24px',
                                     padding: '0 6px',
                                     borderRadius: '3px',
-                                    border: 'none',
-                                    backgroundColor: step.folderName === f ? (isDark ? '#21262D' : '#E2E8F0') : 'transparent',
+                                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                    backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
                                     color: isDark ? '#F0F6FC' : '#0F172A',
                                     fontSize: '0.625rem',
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
+                                    marginBottom: '4px',
+                                    outline: 'none',
                                   }}
-                                >
-                                  {f}
-                                </button>
-                              ))}
-                            </div>
-                          </>
-                        )}
-                      </div>
+                                />
+                                {(filteredCondoFolders.length > 0 ? filteredCondoFolders : availableCondoFolders.slice(0, 20)).map((f) => (
+                                  <button
+                                    key={f}
+                                    type="button"
+                                    onClick={() => {
+                                      handleUpdateStep(step.id, { folderName: f });
+                                      fetchImagesForStep(step.id, f);
+                                      setActiveFolderDropdownStepId(null);
+                                    }}
+                                    style={{
+                                      width: '100%',
+                                      height: '24px',
+                                      padding: '0 6px',
+                                      borderRadius: '3px',
+                                      border: 'none',
+                                      backgroundColor: step.folderName === f ? (isDark ? '#21262D' : '#E2E8F0') : 'transparent',
+                                      color: isDark ? '#F0F6FC' : '#0F172A',
+                                      fontSize: '0.625rem',
+                                      textAlign: 'left',
+                                      cursor: 'pointer',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    {f}
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
 
                       <button
                         type="button"
-                        onClick={() => loadCondoFolders()}
+                        onClick={() => {
+                          const target = (condoName || step.folderName || '').trim();
+                          if (target) {
+                            fetchImagesForStep(step.id, target);
+                          } else {
+                            loadCondoFolders();
+                          }
+                        }}
+                        title="Reload folder photos"
                         style={{
                           height: '26px',
                           padding: '0 8px',
@@ -666,7 +735,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                        Found {step.folderImages?.length || 0} photos in {step.folderName || 'folder'}
+                        Found {step.folderImages?.length || 0} photos in {condoName || step.folderName || 'folder'}
                       </span>
                       {renderCountStepper(step)}
                     </div>
@@ -780,16 +849,14 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                 {(step.sourceType === 'workflow' || step.sourceType === 'enhanced') && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {/* Workflow Source Selector */}
-                    <div style={{ position: 'relative' }}>
-                      <button
-                        type="button"
-                        onClick={() => setActiveWorkflowDropdownStepId(activeWorkflowDropdownStepId === step.id ? null : step.id)}
+                    {isMainBox ? (
+                      <div
                         style={{
                           width: '100%',
                           height: '26px',
                           padding: '0 8px',
                           borderRadius: '4px',
-                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                          border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                           backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
                           color: isDark ? '#F0F6FC' : '#0F172A',
                           fontSize: '0.65625rem',
@@ -797,7 +864,6 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          cursor: 'pointer',
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
@@ -806,143 +872,184 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                             {selectedSource?.title || 'Select workflow source...'}
                           </span>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span
-                            style={{
-                              fontSize: '0.5625rem',
-                              padding: '1px 5px',
-                              borderRadius: '8px',
-                              backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                              color: isDark ? '#8B949E' : '#64748B',
-                              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                            }}
-                          >
-                            {sourceImages.length} photo{sourceImages.length !== 1 ? 's' : ''}
-                          </span>
-                          <FiChevronDown size={11} style={{ color: isDark ? '#8B949E' : '#64748B' }} />
-                        </div>
-                      </button>
+                        <span
+                          style={{
+                            fontSize: '0.5625rem',
+                            padding: '1px 5px',
+                            borderRadius: '8px',
+                            backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                            color: isDark ? '#8B949E' : '#64748B',
+                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          }}
+                        >
+                          {sourceImages.length} photo{sourceImages.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    ) : (
+                      <div style={{ position: 'relative' }}>
+                        <button
+                          type="button"
+                          onClick={() => setActiveWorkflowDropdownStepId(activeWorkflowDropdownStepId === step.id ? null : step.id)}
+                          style={{
+                            width: '100%',
+                            height: '26px',
+                            padding: '0 8px',
+                            borderRadius: '4px',
+                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                            backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                            color: isDark ? '#F0F6FC' : '#0F172A',
+                            fontSize: '0.65625rem',
+                            fontWeight: 500,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                            <FiLayers size={11} style={{ color: '#58A6FF', flexShrink: 0 }} />
+                            <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {selectedSource?.title || 'Select workflow source...'}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span
+                              style={{
+                                fontSize: '0.5625rem',
+                                padding: '1px 5px',
+                                borderRadius: '8px',
+                                backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                                color: isDark ? '#8B949E' : '#64748B',
+                                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                              }}
+                            >
+                              {sourceImages.length} photo{sourceImages.length !== 1 ? 's' : ''}
+                            </span>
+                            <FiChevronDown size={11} style={{ color: isDark ? '#8B949E' : '#64748B' }} />
+                          </div>
+                        </button>
 
-                      {activeWorkflowDropdownStepId === step.id && (
-                        <>
-                          <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setActiveWorkflowDropdownStepId(null)} />
-                          <div
-                            style={{
-                              position: 'absolute',
-                              top: '29px',
-                              left: 0,
-                              right: 0,
-                              zIndex: 50,
-                              maxHeight: '170px',
-                              overflowY: 'auto',
-                              borderRadius: '5px',
-                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                              boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-                              padding: '4px',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '2px',
-                            }}
-                          >
-                            {(() => {
-                              const rootSources = activeSources.filter((s) => !s.groupTitle);
-                              const groupedMap: Record<string, WorkflowImageSource[]> = {};
-                              activeSources
-                                .filter((s) => s.groupTitle && s.title !== s.groupTitle && !s.title?.toLowerCase().startsWith('external browser'))
-                                .forEach((s) => {
-                                  const g = s.groupTitle!;
-                                  if (!groupedMap[g]) groupedMap[g] = [];
-                                  groupedMap[g].push(s);
-                                });
+                        {activeWorkflowDropdownStepId === step.id && (
+                          <>
+                            <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setActiveWorkflowDropdownStepId(null)} />
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: '29px',
+                                left: 0,
+                                right: 0,
+                                zIndex: 50,
+                                maxHeight: '170px',
+                                overflowY: 'auto',
+                                borderRadius: '5px',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+                                padding: '4px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '2px',
+                              }}
+                            >
+                              {(() => {
+                                const rootSources = activeSources.filter((s) => !s.groupTitle);
+                                const groupedMap: Record<string, WorkflowImageSource[]> = {};
+                                activeSources
+                                  .filter((s) => s.groupTitle && s.title !== s.groupTitle && !s.title?.toLowerCase().startsWith('external browser'))
+                                  .forEach((s) => {
+                                    const g = s.groupTitle!;
+                                    if (!groupedMap[g]) groupedMap[g] = [];
+                                    groupedMap[g].push(s);
+                                  });
 
-                              const renderSourceBtn = (src: WorkflowImageSource, isIndented = false) => {
-                                const isCurrent = src.id === selectedSource?.id;
-                                const count = src.images?.length ?? src.count ?? 0;
+                                const renderSourceBtn = (src: WorkflowImageSource, isIndented = false) => {
+                                  const isCurrent = src.id === selectedSource?.id;
+                                  const count = src.images?.length ?? src.count ?? 0;
+                                  return (
+                                    <button
+                                      key={src.id}
+                                      type="button"
+                                      onClick={() => {
+                                        handleUpdateStep(step.id, { workflowSourceId: src.id });
+                                        setActiveWorkflowDropdownStepId(null);
+                                      }}
+                                      style={{
+                                        width: '100%',
+                                        height: '25px',
+                                        padding: isIndented ? '0 8px 0 18px' : '0 8px',
+                                        borderRadius: '3px',
+                                        border: 'none',
+                                        backgroundColor: isCurrent ? (isDark ? '#21262D' : '#E2E8F0') : 'transparent',
+                                        color: isCurrent ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#C9D1D9' : '#334155'),
+                                        fontSize: '0.65625rem',
+                                        fontWeight: isCurrent ? 600 : 400,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                        <FiLayers size={11} style={{ color: isCurrent ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B') }} />
+                                        <span>{src.title}</span>
+                                      </div>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <span style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                          {count} photo{count !== 1 ? 's' : ''}
+                                        </span>
+                                        {isCurrent && <FiCheck size={11} style={{ color: '#58A6FF' }} />}
+                                      </div>
+                                    </button>
+                                  );
+                                };
+
                                 return (
-                                  <button
-                                    key={src.id}
-                                    type="button"
-                                    onClick={() => {
-                                      handleUpdateStep(step.id, { workflowSourceId: src.id });
-                                      setActiveWorkflowDropdownStepId(null);
-                                    }}
-                                    style={{
-                                      width: '100%',
-                                      height: '25px',
-                                      padding: isIndented ? '0 8px 0 18px' : '0 8px',
-                                      borderRadius: '3px',
-                                      border: 'none',
-                                      backgroundColor: isCurrent ? (isDark ? '#21262D' : '#E2E8F0') : 'transparent',
-                                      color: isCurrent ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#C9D1D9' : '#334155'),
-                                      fontSize: '0.65625rem',
-                                      fontWeight: isCurrent ? 600 : 400,
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'space-between',
-                                      cursor: 'pointer',
-                                    }}
-                                  >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                                      <FiLayers size={11} style={{ color: isCurrent ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B') }} />
-                                      <span>{src.title}</span>
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                                        {count} photo{count !== 1 ? 's' : ''}
-                                      </span>
-                                      {isCurrent && <FiCheck size={11} style={{ color: '#58A6FF' }} />}
-                                    </div>
-                                  </button>
-                                );
-                              };
-
-                              return (
-                                <>
-                                  {rootSources.map((src) => renderSourceBtn(src, false))}
-                                  {Object.entries(groupedMap).map(([groupTitle, items]) => (
-                                    <div key={`group-${groupTitle}`} style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                                      <div
-                                        style={{
-                                          padding: '5px 8px 3px 8px',
-                                          marginTop: '3px',
-                                          marginBottom: '1px',
-                                          borderTop: isDark ? '1px solid #21262D' : '1px solid #F1F5F9',
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'space-between',
-                                        }}
-                                      >
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                          <FiMonitor size={11} style={{ color: '#06B6D4' }} />
-                                          <span style={{ fontSize: '0.625rem', fontWeight: 600, color: isDark ? '#E6EDF3' : '#1E293B' }}>
-                                            {groupTitle}
-                                          </span>
-                                        </div>
-                                        <span
+                                  <>
+                                    {rootSources.map((src) => renderSourceBtn(src, false))}
+                                    {Object.entries(groupedMap).map(([groupTitle, items]) => (
+                                      <div key={`group-${groupTitle}`} style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                        <div
                                           style={{
-                                            fontSize: '0.5rem',
-                                            fontWeight: 600,
-                                            padding: '1px 4px',
-                                            borderRadius: '3px',
-                                            backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                                            color: isDark ? '#8B949E' : '#64748B',
-                                            textTransform: 'uppercase',
+                                            padding: '5px 8px 3px 8px',
+                                            marginTop: '3px',
+                                            marginBottom: '1px',
+                                            borderTop: isDark ? '1px solid #21262D' : '1px solid #F1F5F9',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
                                           }}
                                         >
-                                          Main Box
-                                        </span>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <FiMonitor size={11} style={{ color: '#06B6D4' }} />
+                                            <span style={{ fontSize: '0.625rem', fontWeight: 600, color: isDark ? '#E6EDF3' : '#1E293B' }}>
+                                              {groupTitle}
+                                            </span>
+                                          </div>
+                                          <span
+                                            style={{
+                                              fontSize: '0.5rem',
+                                              fontWeight: 600,
+                                              padding: '1px 4px',
+                                              borderRadius: '3px',
+                                              backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                                              color: isDark ? '#8B949E' : '#64748B',
+                                              textTransform: 'uppercase',
+                                            }}
+                                          >
+                                            Main Box
+                                          </span>
+                                        </div>
+                                        {items.map((src) => renderSourceBtn(src, true))}
                                       </div>
-                                      {items.map((src) => renderSourceBtn(src, true))}
-                                    </div>
-                                  ))}
-                                </>
-                              );
-                            })()}
-                          </div>
-                        </>
-                      )}
-                    </div>
+                                    ))}
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
 
                     {/* Sub-bar with count & Manual Choose button */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>

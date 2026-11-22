@@ -2404,143 +2404,22 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       </div>
 
       {referenceImage ? (
-          <div style={{ paddingLeft: '23px' }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.75rem',
-                padding: '0.5rem 0.65rem',
-                borderRadius: '8px',
-                backgroundColor: isDark ? '#161B22' : '#F8FAFC',
-                border: '1px solid rgba(236, 72, 153, 0.25)',
-              }}
-            >
-              <img
-                src={referenceImage}
-                alt="Reference"
-                style={{
-                  width: '52px',
-                  height: '52px',
-                  borderRadius: '6px',
-                  objectFit: 'cover',
-                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                  flexShrink: 0,
-                }}
-              />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  Active Reference Photo
-                </div>
-                <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B', marginTop: '2px' }}>
-                  Will attach first into chat
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
-                  <label
-                    style={{
-                      fontSize: '0.5625rem',
-                      fontWeight: 600,
-                      color: isDark ? '#E6EDF3' : '#334155',
-                      cursor: 'pointer',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                    }}
-                  >
-                    Change
-                    <input type="file" accept="image/*" onChange={handleReferenceImageFile} style={{ display: 'none' }} />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await clearPersistedReferenceImage(boxConfig.id);
-                      setReferenceImage('');
-                      updateConfig('referenceImage', '');
-                    }}
-                    style={{
-                      fontSize: '0.5625rem',
-                      fontWeight: 600,
-                      color: isDark ? '#F85149' : '#EF4444',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <input
-                type="text"
-                placeholder="Paste reference image URL or path..."
-                value={referenceImage}
-                onChange={(e) => {
-                  setReferenceImage(e.target.value);
-                  updateConfig('referenceImage', e.target.value);
-                }}
-                style={{
-                  flex: 1,
-                  height: '32px',
-                  fontSize: '0.6875rem',
-                  padding: '0 10px',
-                  borderRadius: '4px',
-                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                  backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                  color: isDark ? '#F0F6FC' : '#0F172A',
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                }}
-              />
-              <button
-                type="button"
-                onClick={handleChooseFolder}
-                style={{
-                  height: '32px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '0 10px',
-                  borderRadius: '4px',
-                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                  backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                  color: isDark ? '#C9D1D9' : '#334155',
-                  fontSize: '0.65625rem',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                }}
-              >
-                <FiFolder size={12} />
-                <span>Folder</span>
-              </button>
-              <label
-                style={{
-                  height: '32px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '0 10px',
-                  borderRadius: '4px',
-                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                  backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                  color: isDark ? '#C9D1D9' : '#334155',
-                  fontSize: '0.65625rem',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                }}
-              >
-                <FiUploadCloud size={12} />
-                <span>Upload</span>
-                <input type="file" accept="image/*" onChange={handleReferenceImageFile} style={{ display: 'none' }} />
-              </label>
-            </div>
-          </div>
-        )}
+        <div style={{ paddingLeft: '23px', display: 'flex', alignItems: 'center' }}>
+          <img
+            src={referenceImage}
+            alt="Reference Layout"
+            style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: '6px',
+              objectFit: 'cover',
+              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+              flexShrink: 0,
+            }}
+          />
+        </div>
+      ) : null}
     </div>
   );
   const renderImagesToEnhanceCard = () => (
@@ -3978,22 +3857,32 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   </div>
 
                   <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {/* Upstream AI Model dropdown */}
-                    {promptSourceMode === 'upstream_ai' && (
-                      <Select
-                        options={effectiveUpstreamPrompts.length > 0 ? effectiveUpstreamPrompts.map((p) => ({
-                          value: p.id,
-                          label: `${p.title} (AI Model)`,
-                        })) : [{ value: 'default', label: 'BoltHaven-FB Hero Prompt (AI Model)' }]}
-                        value={selectedUpstreamAiId || effectiveUpstreamPrompts[0]?.id || ''}
-                        onChange={(val) => {
-                          const strVal = String(val);
-                          setSelectedUpstreamAiId(strVal);
-                          updateMultiConfig({ selectedUpstreamAiId: strVal });
-                        }}
-                        height="34px"
-                      />
-                    )}
+                    {/* Upstream AI Model display (Clean, Read-only / Disabled display in Main Box) */}
+                    {promptSourceMode === 'upstream_ai' && (() => {
+                      const selectedPromptOption = effectiveUpstreamPrompts.find((p) => p.id === selectedUpstreamAiId) || effectiveUpstreamPrompts[0];
+                      const displayPromptName = selectedPromptOption ? `${selectedPromptOption.title} (AI Model)` : 'BoltHaven-FB Hero Prompt (AI Model)';
+                      return (
+                        <div
+                          style={{
+                            height: '34px',
+                            borderRadius: '6px',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                            border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                            padding: '0 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            fontSize: '0.8125rem',
+                            fontWeight: 500,
+                            color: isDark ? '#C9D1D9' : '#334155',
+                            userSelect: 'none',
+                          }}
+                        >
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {displayPromptName}
+                          </span>
+                        </div>
+                      );
+                    })()}
 
                     {/* Custom Prompt Mode */}
                     {promptSourceMode === 'custom' && (
@@ -4099,6 +3988,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                         hideToggle={true}
                         hideAddGroup={true}
                         hideDeleteGroup={true}
+                        isMainBox={true}
                         steps={attachmentSteps}
                         onChange={handleAttachmentStepsChange}
                         isDark={isDark}
@@ -4107,7 +3997,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                         workflowImageSources={workflowImageSources}
                         propertyImages={propertyContext?.images}
                         enhancedImages={availableEnhancedPhotos}
-                        condoName={condoSearchQuery || condoName}
+                        condoName={
+                          (condoName || condoSearchQuery || aiExtractedCondoName || matchedCondoInfo?.matched_folder || boxConfig.browserCondoName || boxConfig.condoFolderName || '').trim()
+                        }
                       />
                     )}
                   </div>
