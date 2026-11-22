@@ -1218,7 +1218,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     </div>
 
                     {useCondoImages && (
-                      <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {/* Child Groups inside Condo Photos */}
                         {attachmentSteps.map((step, idx) => (
                           <div
@@ -1226,9 +1226,12 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                             style={{
                               display: 'flex',
                               flexDirection: 'column',
-                              gap: '8px',
-                              paddingBottom: idx === attachmentSteps.length - 1 ? '4px' : '10px',
-                              borderBottom: idx === attachmentSteps.length - 1 ? 'none' : (isDark ? '1px dashed #21262D' : '1px dashed #E2E8F0'),
+                              gap: '10px',
+                              padding: '10px 12px',
+                              borderRadius: '6px',
+                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.02)',
+                              border: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid rgba(0, 0, 0, 0.06)',
+                              transition: 'all 0.12s ease',
                             }}
                           >
                             {/* Child Title Header: Group N (#2 in Chat) */}
@@ -1263,17 +1266,26 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                   onClick={() => handleRemoveStep(step.id)}
                                   title={`Remove Group ${idx + 1}`}
                                   style={{
-                                    width: '22px',
-                                    height: '22px',
+                                    width: '20px',
+                                    height: '20px',
                                     borderRadius: '4px',
-                                    backgroundColor: isDark ? 'rgba(248, 81, 73, 0.08)' : '#FEF2F2',
-                                    color: isDark ? '#F85149' : '#DC2626',
-                                    border: isDark ? '1px solid rgba(248, 81, 73, 0.25)' : '1px solid #FECACA',
+                                    backgroundColor: 'transparent',
+                                    color: isDark ? '#8B949E' : '#94A3B8',
+                                    border: 'none',
                                     cursor: 'pointer',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     padding: 0,
+                                    transition: 'all 0.12s ease',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.color = isDark ? '#F85149' : '#DC2626';
+                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(248, 81, 73, 0.1)' : '#FEF2F2';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.color = isDark ? '#8B949E' : '#94A3B8';
+                                    e.currentTarget.style.backgroundColor = 'transparent';
                                   }}
                                 >
                                   <FiTrash2 size={11} />
@@ -1281,10 +1293,20 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                               )}
                             </div>
 
-                            {/* Unified Row: Source Selector + Count Stepper */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
-                              {/* Source Type Toggle */}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            {/* Streamlined Row: Segmented Source Selector + Compact Count Stepper */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                              {/* Sleek Segmented Control */}
+                              <div
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : '#E2E8F0',
+                                  borderRadius: '5px',
+                                  padding: '2px',
+                                  gap: '2px',
+                                  border: isDark ? '1px solid rgba(255, 255, 255, 0.04)' : '1px solid rgba(0, 0, 0, 0.04)',
+                                }}
+                              >
                                 {(['folder', 'upload', 'enhanced'] as const).map((st) => {
                                   const isSel = step.sourceType === st;
                                   return (
@@ -1294,18 +1316,17 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                       onClick={() => handleUpdateStep(step.id, { sourceType: st })}
                                       style={{
                                         padding: '2px 8px',
-                                        borderRadius: '4px',
-                                        fontSize: '0.65625rem',
-                                        fontWeight: isSel ? 600 : 400,
+                                        borderRadius: '3px',
+                                        fontSize: '0.625rem',
+                                        fontWeight: isSel ? 600 : 500,
                                         backgroundColor: isSel
-                                          ? (isDark ? '#21262D' : '#E2E8F0')
+                                          ? (isDark ? '#21262D' : '#FFFFFF')
                                           : 'transparent',
                                         color: isSel
                                           ? (isDark ? '#F0F6FC' : '#0F172A')
                                           : (isDark ? '#8B949E' : '#64748B'),
-                                        border: isSel
-                                          ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                                          : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                        border: 'none',
+                                        boxShadow: isSel ? (isDark ? '0 1px 2px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.08)') : 'none',
                                         cursor: 'pointer',
                                         textTransform: 'capitalize',
                                         transition: 'all 0.12s ease',
@@ -1317,77 +1338,88 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                 })}
                               </div>
 
-                              {/* Stepper with - / + buttons and number input */}
+                              {/* Compact Count Stepper */}
                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <span style={{ fontSize: '0.65625rem', color: isDark ? '#8B949E' : '#64748B' }}>Count:</span>
-                                <button
-                                  type="button"
-                                  disabled={step.count <= 1}
-                                  onClick={() => handleUpdateStep(step.id, { count: Math.max(1, step.count - 1) })}
-                                  title="Decrease photo count"
+                                <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Count:</span>
+                                <div
                                   style={{
-                                    width: '22px',
-                                    height: '22px',
-                                    borderRadius: '4px',
-                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                    backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                                    color: isDark ? '#F0F6FC' : '#0F172A',
-                                    cursor: step.count <= 1 ? 'not-allowed' : 'pointer',
-                                    opacity: step.count <= 1 ? 0.35 : 1,
-                                    display: 'flex',
+                                    display: 'inline-flex',
                                     alignItems: 'center',
-                                    justifyContent: 'center',
-                                    padding: 0,
+                                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : '#E2E8F0',
+                                    borderRadius: '4px',
+                                    padding: '1px',
+                                    border: isDark ? '1px solid rgba(255, 255, 255, 0.04)' : '1px solid rgba(0, 0, 0, 0.04)',
                                   }}
                                 >
-                                  <FiMinus size={10} />
-                                </button>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={10}
-                                  value={step.count}
-                                  onChange={(e) => {
-                                    const val = parseInt(e.target.value, 10);
-                                    handleUpdateStep(step.id, { count: isNaN(val) ? 1 : Math.min(10, Math.max(1, val)) });
-                                  }}
-                                  style={{
-                                    width: '30px',
-                                    height: '22px',
-                                    textAlign: 'center',
-                                    borderRadius: '4px',
-                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                    backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                                    color: isDark ? '#F0F6FC' : '#0F172A',
-                                    fontSize: '0.6875rem',
-                                    fontWeight: 600,
-                                    outline: 'none',
-                                    padding: 0,
-                                  }}
-                                />
-                                <button
-                                  type="button"
-                                  disabled={step.count >= 10}
-                                  onClick={() => handleUpdateStep(step.id, { count: Math.min(10, step.count + 1) })}
-                                  title="Increase photo count"
-                                  style={{
-                                    width: '22px',
-                                    height: '22px',
-                                    borderRadius: '4px',
-                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                    backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                                    color: isDark ? '#F0F6FC' : '#0F172A',
-                                    cursor: step.count >= 10 ? 'not-allowed' : 'pointer',
-                                    opacity: step.count >= 10 ? 0.35 : 1,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    padding: 0,
-                                  }}
-                                >
-                                  <FiPlus size={10} />
-                                </button>
-                                <span style={{ fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                                  <button
+                                    type="button"
+                                    disabled={step.count <= 1}
+                                    onClick={() => handleUpdateStep(step.id, { count: Math.max(1, step.count - 1) })}
+                                    title="Decrease photo count"
+                                    style={{
+                                      width: '18px',
+                                      height: '18px',
+                                      borderRadius: '3px',
+                                      border: 'none',
+                                      backgroundColor: 'transparent',
+                                      color: isDark ? '#C9D1D9' : '#334155',
+                                      cursor: step.count <= 1 ? 'not-allowed' : 'pointer',
+                                      opacity: step.count <= 1 ? 0.3 : 1,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      padding: 0,
+                                    }}
+                                  >
+                                    <FiMinus size={9} />
+                                  </button>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={10}
+                                    value={step.count}
+                                    onChange={(e) => {
+                                      const val = parseInt(e.target.value, 10);
+                                      handleUpdateStep(step.id, { count: isNaN(val) ? 1 : Math.min(10, Math.max(1, val)) });
+                                    }}
+                                    style={{
+                                      width: '24px',
+                                      height: '18px',
+                                      textAlign: 'center',
+                                      borderRadius: '2px',
+                                      border: 'none',
+                                      backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                      color: isDark ? '#F0F6FC' : '#0F172A',
+                                      fontSize: '0.65625rem',
+                                      fontWeight: 600,
+                                      outline: 'none',
+                                      padding: 0,
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={step.count >= 10}
+                                    onClick={() => handleUpdateStep(step.id, { count: Math.min(10, step.count + 1) })}
+                                    title="Increase photo count"
+                                    style={{
+                                      width: '18px',
+                                      height: '18px',
+                                      borderRadius: '3px',
+                                      border: 'none',
+                                      backgroundColor: 'transparent',
+                                      color: isDark ? '#C9D1D9' : '#334155',
+                                      cursor: step.count >= 10 ? 'not-allowed' : 'pointer',
+                                      opacity: step.count >= 10 ? 0.3 : 1,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      padding: 0,
+                                    }}
+                                  >
+                                    <FiPlus size={9} />
+                                  </button>
+                                </div>
+                                <span style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
                                   (Max 10)
                                 </span>
                               </div>
@@ -1605,31 +1637,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                       <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
                                         Found {step.folderImages.length} photo{step.folderImages.length > 1 ? 's' : ''} in {step.folderName}
                                       </span>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                        {Array.from({ length: Math.min(10, step.folderImages.length) }).map((_, gIdx) => {
-                                          const num = gIdx + 1;
-                                          const isSel = step.count === num;
-                                          return (
-                                            <button
-                                              key={num}
-                                              type="button"
-                                              onClick={() => handleUpdateStep(step.id, { count: num })}
-                                              style={{
-                                                padding: '1px 6px',
-                                                borderRadius: '3px',
-                                                fontSize: '0.59375rem',
-                                                fontWeight: isSel ? 600 : 400,
-                                                backgroundColor: isSel ? (isDark ? '#21262D' : '#E2E8F0') : 'transparent',
-                                                color: isSel ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
-                                                border: isSel ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8') : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                                                cursor: 'pointer',
-                                              }}
-                                            >
-                                              {num === (step.folderImages?.length || 0) ? `All (${num})` : num}
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
+                                      <span style={{ fontSize: '0.59375rem', fontWeight: 500, color: isDark ? '#58A6FF' : '#2563EB' }}>
+                                        Attaching {Math.min(step.count, step.folderImages.length)} photo{Math.min(step.count, step.folderImages.length) > 1 ? 's' : ''}
+                                      </span>
                                     </div>
 
                                     {/* Real photo thumbnails grid */}
