@@ -2285,15 +2285,18 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           persistCanvasImage(processingFilePath, filename);
           console.log(`[COMPANION] ✓ Saved generated image to disk & persistent storage:\n  - ${downloadFilePath} (${buffer.length} bytes)\n  - ${processingFilePath}\n  - ${canvasCacheFilePath}\n  - ${backendStorageFilePath}`);
 
-          // Update twoStageState so UI instantly marks step as completed
-          twoStageState = {
-            ...twoStageState,
-            is_running: false,
-            step: 'completed',
-            result_url: imageUrl,
-            downloaded_file: filename,
-            updated_at: new Date().toISOString(),
-          };
+          // ONLY update twoStageState if this is an actual Hero image download, NOT a normal Enhance photo!
+          const isHeroDownload = filename.toLowerCase().startsWith('fb_hero') || filename.toLowerCase().includes('hero') || (twoStageState && twoStageState.is_running && twoStageState.step === 'downloading_image');
+          if (isHeroDownload) {
+            twoStageState = {
+              ...twoStageState,
+              is_running: false,
+              step: 'completed',
+              result_url: imageUrl,
+              downloaded_file: filename,
+              updated_at: new Date().toISOString(),
+            };
+          }
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({
@@ -2980,12 +2983,25 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       // GET request
       const reqCondo = (url.searchParams.get('condo') || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
       if (twoStageState && twoStageState.downloaded_file) {
-        const safeName = path.basename(twoStageState.downloaded_file);
-        const downloadsDir = path.join(os.homedir(), 'Downloads');
-        const targetPath = path.join(downloadsDir, safeName);
-        if (fs.existsSync(targetPath)) {
-          twoStageState.downloaded_file_path = targetPath;
-          twoStageState.downloaded_image_url = `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(safeName)}`;
+        const fileLower = (twoStageState.downloaded_file || '').toLowerCase();
+        // Strictly verify that the downloaded_file is an actual Hero image
+        if (fileLower.startsWith('fb_hero') || fileLower.includes('hero')) {
+          const stateCondoSanitized = (twoStageState.condo_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (!reqCondo || !stateCondoSanitized || reqCondo.includes(stateCondoSanitized) || stateCondoSanitized.includes(reqCondo)) {
+            const safeName = path.basename(twoStageState.downloaded_file);
+            const downloadsDir = path.join(os.homedir(), 'Downloads');
+            const targetPath = path.join(downloadsDir, safeName);
+            if (fs.existsSync(targetPath)) {
+              twoStageState.downloaded_file_path = targetPath;
+              twoStageState.downloaded_image_url = `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(safeName)}`;
+            }
+          } else {
+            // Mismatched condo request - do not return stale hero image of another condo
+            twoStageState = null;
+          }
+        } else {
+          // Polluted non-hero file - clear it
+          twoStageState = null;
         }
       } else if (reqCondo) {
         // Fallback: check matching fb_hero for THIS specific condo in Downloads

@@ -270,7 +270,13 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
         try {
           const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
           if (saved) {
-            setLiveHeroImage(JSON.parse(saved));
+            const parsed = JSON.parse(saved);
+            const fname = (parsed?.fileName || '').toLowerCase();
+            if (fname.includes('hero')) {
+              setLiveHeroImage(parsed);
+            } else {
+              setLiveHeroImage(null);
+            }
           } else {
             setLiveHeroImage(null);
           }

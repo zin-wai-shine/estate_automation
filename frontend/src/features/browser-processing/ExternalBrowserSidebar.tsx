@@ -763,11 +763,15 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       const saved = localStorage.getItem('bolthaven_last_hero_image');
       if (!saved) return null;
       const parsed = JSON.parse(saved);
+      const fileNameLower = (parsed?.fileName || '').toLowerCase();
+      if (!fileNameLower.includes('hero')) {
+        return null;
+      }
       const activeCondo = (aiExtractedCondoName || propertyContext?.title || boxConfig.browserCondoName || '').trim();
       if (!activeCondo || activeCondo === 'Featured Property Listing' || activeCondo === 'Facebook Property Post') {
         return null;
       }
-      if (parsed?.condoName && activeCondo.toLowerCase().includes(parsed.condoName.toLowerCase())) {
+      if (parsed?.condoName && (activeCondo.toLowerCase().includes(parsed.condoName.toLowerCase()) || parsed.condoName.toLowerCase().includes(activeCondo.toLowerCase()))) {
         return parsed;
       }
       return null;
@@ -805,13 +809,17 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           if (data?.state) {
             setTwoStageStatus(data.state);
             if (data.state.downloaded_image_url || data.state.downloaded_file) {
-              const file = data.state.downloaded_file;
-              const stateCondo = data.state.condo_name || '';
+              const file = data.state.downloaded_file || '';
+              const fileLower = file.toLowerCase();
+              if (!fileLower.includes('hero')) {
+                return;
+              }
+              const stateCondo = (data.state.condo_name || '').trim();
               if (
-                !queryCondo ||
-                stateCondo.toLowerCase().includes(queryCondo.toLowerCase()) ||
-                queryCondo.toLowerCase().includes(stateCondo.toLowerCase()) ||
-                file.toLowerCase().includes(queryCondo.toLowerCase().replace(/[^a-z0-9]/g, ''))
+                queryCondo && stateCondo && (
+                  stateCondo.toLowerCase().includes(queryCondo.toLowerCase()) ||
+                  queryCondo.toLowerCase().includes(stateCondo.toLowerCase())
+                )
               ) {
                 const imgUrl = data.state.downloaded_image_url || `http://127.0.0.1:9224/hero-downloaded-image?file=${encodeURIComponent(file)}`;
                 updateLatestHeroImage({
@@ -4039,11 +4047,12 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
 
             {/* ── 4. Generated Hero Advertisement Preview Card ── */}
-            {latestHeroImage && Boolean((condoName || condoSearchQuery) && (
-              !latestHeroImage.condoName ||
-              (condoName || condoSearchQuery).toLowerCase().includes(latestHeroImage.condoName.toLowerCase()) ||
-              latestHeroImage.condoName.toLowerCase().includes((condoName || condoSearchQuery).toLowerCase())
-            )) && (
+            {latestHeroImage && Boolean(latestHeroImage.fileName?.toLowerCase().includes('hero')) && Boolean(condoName || condoSearchQuery) && Boolean(
+              latestHeroImage.condoName && (
+                (condoName || condoSearchQuery).toLowerCase().includes(latestHeroImage.condoName.toLowerCase()) ||
+                latestHeroImage.condoName.toLowerCase().includes((condoName || condoSearchQuery).toLowerCase())
+              )
+            ) && (
               <div
                 style={{
                   borderRadius: '12px',
@@ -4118,6 +4127,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                       type="button"
                       onClick={() => {
                         updateLatestHeroImage(null);
+                        localStorage.removeItem('bolthaven_last_hero_image');
                         fetch('http://127.0.0.1:9224/two-stage-status', { method: 'DELETE' }).catch(() => {});
                       }}
                       title="Clear / Dismiss preview"

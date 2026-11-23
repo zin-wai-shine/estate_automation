@@ -3210,7 +3210,8 @@
             .replace(/[^a-zA-Z0-9_-]+/g, '_')
             .replace(/^_+|_+$/g, '')
             .slice(0, 40) || 'hero';
-          const fileName = `fb_hero_${safeCondoSlug}_${Date.now()}.png`;
+          const randomId = Math.random().toString(36).slice(2, 8).toUpperCase();
+          const fileName = `fb_hero_${safeCondoSlug}_${randomId}_${Date.now()}.png`;
 
           try {
             const nativeBtn = findGeneratedImageDownloadButton(heroImg);
