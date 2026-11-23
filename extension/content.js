@@ -456,22 +456,16 @@
     });
     if (anyStopBtn) return true;
 
-    // 2. Only check inside assistant conversation turns (never whole page / sidebar)
-    const assistantTurns = document.querySelectorAll(
-      'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"]'
-    );
-    if (assistantTurns.length === 0) return false;
+    // 2. Only check for ACTIVE spinning/pulsing animation elements outside header/nav
+    const activeSpinners = Array.from(
+      document.querySelectorAll('svg.animate-spin, div.animate-spin, .animate-pulse, div[class*="shimmer"]')
+    ).filter((el) => !el.closest('header, nav, aside'));
+    if (activeSpinners.length > 0) return true;
 
-    const lastTurn = assistantTurns[assistantTurns.length - 1];
-    // Active animated spinner, shimmer, or pulsing element in last turn
-    if (lastTurn.querySelector('svg.animate-spin, div[class*="spin"], .result-thinking, .animate-pulse, div[class*="shimmer"], [data-testid*="thinking"], [data-testid*="generating"], div[class*="loading"]')) {
-      return true;
-    }
-
-    const lastTurnText = (lastTurn.textContent || '').toLowerCase();
-    if (lastTurnText.includes('creating image') || lastTurnText.includes('generating image') || lastTurnText.includes('drawing image')) {
-      return true;
-    }
+    // 3. Only if stop button is possibly present or send button is in spinning/progress state
+    const composer = getComposerContainer() || document.querySelector('form');
+    const sendBtn = composer?.querySelector('button[data-testid="send-button"], button[aria-label*="Send" i]');
+    if (sendBtn && sendBtn.querySelector('svg.animate-spin, rect')) return true;
 
     return false;
   }
@@ -670,6 +664,22 @@
 
   // ── Locate the latest generated/enhanced image rendered in this ChatGPT tab ──
   function findLatestGeneratedImageInTab() {
+    // 0. Priority 0: Look for image with an "Edit" button adjacent or inside its card
+    const editButtons = Array.from(document.querySelectorAll('button')).filter((b) => (b.textContent || '').trim() === 'Edit');
+    for (let i = editButtons.length - 1; i >= 0; i--) {
+      const editBtn = editButtons[i];
+      const card = editBtn.closest('div[class*="group"], div[class*="relative"], article, section') || editBtn.parentElement;
+      if (card) {
+        const cardImg = card.querySelector('img');
+        if (cardImg && cardImg.complete) {
+          const s = (cardImg.src || cardImg.getAttribute('src') || '').toLowerCase();
+          if (s && !s.includes('avatar') && !s.includes('icon')) {
+            if ((cardImg.naturalWidth >= 100 || cardImg.width >= 100)) return cardImg;
+          }
+        }
+      }
+    }
+
     // 1. Inspect the latest assistant turn
     const assistantTurns = Array.from(document.querySelectorAll(
       'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
@@ -681,8 +691,8 @@
     if (assistantTurns.length > 0) {
       const latestTurn = assistantTurns[assistantTurns.length - 1];
 
-      // If latest turn is currently generating or spinning, don't grab incomplete image
-      if (latestTurn.querySelector('svg.animate-spin, div[class*="spin"], .result-thinking, .animate-pulse, div[class*="shimmer"], [data-testid*="thinking"], [data-testid*="generating"], div[class*="loading"]')) {
+      // If latest turn has active spinner and stop button is present, still generating
+      if (latestTurn.querySelector('svg.animate-spin, div.animate-spin, .animate-pulse') && findStopButton()) {
         return null;
       }
 
@@ -692,11 +702,20 @@
         if (img.closest('form, div[class*="composer"], header, nav')) return false;
         const w = img.naturalWidth || img.width || 0;
         const h = img.naturalHeight || img.height || 0;
-        return img.complete && w >= 200 && h >= 200;
+        return img.complete && (w >= 100 || h >= 100 || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:'));
       });
 
       if (imgs.length > 0) return imgs[imgs.length - 1];
     }
+
+    // 2. Fallback: Any complete oaiusercontent or large image on page outside composer
+    const anyOai = Array.from(document.querySelectorAll('img')).filter((img) => {
+      const s = (img.src || img.getAttribute('src') || '').toLowerCase();
+      if (!s || s.includes('avatar') || s.includes('icon')) return false;
+      if (img.closest('form, div[class*="composer"], header, nav, [data-message-author-role="user"]')) return false;
+      return img.complete && (s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:') || (img.naturalWidth >= 150 && img.naturalHeight >= 150));
+    });
+    if (anyOai.length > 0) return anyOai[anyOai.length - 1];
 
     return null;
   }
@@ -1053,11 +1072,32 @@
     return null;
   }
 
-  // Find newly generated enhanced photo for the Enhance IMG pipeline (strictly NEW images in turns generated AFTER preAssistantCount!)
+  // Find newly generated enhanced photo for the Enhance IMG pipeline (Multi-method escalation)
   function findGeneratedEnhancedImage(preExistingUrls, preAssistantCount = 0) {
     const preUrls = preExistingUrls || new Set();
 
-    // 1. Assistant turns (strictly excluding user turns)
+    // METHOD 0 (Primary - 100% Reliable): Locate any image with an "Edit" button adjacent or inside its card that was NOT pre-existing
+    const editButtons = Array.from(document.querySelectorAll('button')).filter((b) => (b.textContent || '').trim() === 'Edit');
+    for (let i = editButtons.length - 1; i >= 0; i--) {
+      const editBtn = editButtons[i];
+      const card = editBtn.closest('div[class*="group"], div[class*="relative"], article, section') || editBtn.parentElement;
+      if (card) {
+        const cardImg = card.querySelector('img');
+        if (cardImg) {
+          const src = cardImg.src || cardImg.getAttribute('src') || '';
+          if (src && !preUrls.has(src)) {
+            const clean = src.split('?')[0];
+            if (!preUrls.has(clean) && !src.toLowerCase().includes('avatar') && !src.toLowerCase().includes('icon')) {
+              if (cardImg.complete && (cardImg.naturalWidth >= 100 || cardImg.width >= 100)) {
+                return cardImg;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // METHOD 1: Assistant turns inspection (from newest turn backwards)
     const allAssistantTurns = Array.from(
       document.querySelectorAll(
         'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
@@ -1070,36 +1110,15 @@
       return true;
     });
 
-    // STRICT REQUIREMENT: Only look at turns generated AFTER preAssistantCount!
-    // A generated image for the current prompt CANNOT exist in turns prior to preAssistantCount!
-    if (allAssistantTurns.length <= preAssistantCount) {
-      // ChatGPT has not finished or rendered the new assistant turn yet
-      return null;
-    }
+    for (let i = allAssistantTurns.length - 1; i >= 0; i--) {
+      const turn = allAssistantTurns[i];
 
-    const newTurns = allAssistantTurns.slice(preAssistantCount);
-
-    // Inspect new turns from newest to oldest
-    for (let i = newTurns.length - 1; i >= 0; i--) {
-      const turn = newTurns[i];
-
-      // Check if this turn is still actively thinking, generating, or rendering
-      const hasActiveProgress = turn.querySelector(
-        'svg.animate-spin, div[class*="spin"], .result-thinking, .animate-pulse, div[class*="shimmer"], [data-testid*="thinking"], [data-testid*="generating"], div[class*="loading"]'
-      );
-      const turnText = (turn.textContent || '').toLowerCase();
-      const isGeneratingText =
-        turnText.includes('creating image') ||
-        turnText.includes('generating image') ||
-        turnText.includes('drawing image') ||
-        turnText.includes('thinking');
-
-      if (hasActiveProgress || isGeneratingText) {
-        // Still generating in this turn! Wait for completion.
-        return null;
+      // If active spinner is currently running and Stop button is present, wait
+      const hasActiveProgress = turn.querySelector('svg.animate-spin, div.animate-spin, .animate-pulse');
+      if (hasActiveProgress && findStopButton()) {
+        continue;
       }
 
-      // Find valid generated image strictly inside this new assistant turn
       const imgs = Array.from(turn.querySelectorAll('img')).filter((img) => {
         const src = img.src || img.getAttribute('src') || '';
         if (!src) return false;
@@ -1114,11 +1133,10 @@
           return false;
         }
 
-        // Must be complete and have realistic generated image dimensions (>= 200px)
         if (!img.complete) return false;
         const w = img.naturalWidth || img.width || 0;
         const h = img.naturalHeight || img.height || 0;
-        return w >= 200 && h >= 200;
+        return (w >= 100 && h >= 100) || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:');
       });
 
       if (imgs.length > 0) {
@@ -1126,7 +1144,37 @@
       }
     }
 
-    // Never search outside the new turns! If no complete image exists in new turns, it's still generating!
+    // METHOD 2: Look for any new oaiusercontent / file-service / blob image on page not in composer/nav
+    const oaiImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+      const src = img.src || img.getAttribute('src') || '';
+      if (!src || preUrls.has(src)) return false;
+      const cleanSrc = src.split('?')[0];
+      if (preUrls.has(cleanSrc)) return false;
+      if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
+      const s = src.toLowerCase();
+      return (s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
+    });
+    if (oaiImgs.length > 0) {
+      return oaiImgs[oaiImgs.length - 1];
+    }
+
+    // METHOD 3: Look for any new large completed image on page (>= 150px) not in user/composer
+    const largeImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+      const src = img.src || img.getAttribute('src') || '';
+      if (!src || preUrls.has(src)) return false;
+      const cleanSrc = src.split('?')[0];
+      if (preUrls.has(cleanSrc)) return false;
+      if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
+      const s = src.toLowerCase();
+      if (s.includes('avatar') || s.includes('icon') || s.includes('logo') || s.includes('favicon')) return false;
+      const w = img.naturalWidth || img.width || 0;
+      const h = img.naturalHeight || img.height || 0;
+      return w >= 150 && h >= 150 && img.complete;
+    });
+    if (largeImgs.length > 0) {
+      return largeImgs[largeImgs.length - 1];
+    }
+
     return null;
   }
 
@@ -2128,8 +2176,12 @@
           }
         }
 
-        // 1. If still generating or minimum wait time hasn't passed, reset calm counter
-        if (currentlyGenerating || elapsed < MIN_GENERATION_WAIT_MS) {
+        const generating = isThinkingOrGenerating();
+        let enhancedImg = findGeneratedEnhancedImage(preExistingImageUrls, preAssistantCount);
+        const isImageReady = enhancedImg && enhancedImg.complete && (enhancedImg.naturalWidth >= 100 || enhancedImg.width >= 100);
+
+        // 1. If actively generating and image is not ready yet, or minimum buffer hasn't passed:
+        if ((generating && !isImageReady) || elapsed < 10000) {
           consecutiveCalmChecks = 0;
           if (elapsed % 5000 < 1000) {
             console.log(
@@ -2139,12 +2191,7 @@
           return;
         }
 
-        // 2. Strict image search: ONLY inspect the newly created assistant turn for this exact job
-        // NEVER search outside the new assistant turn and NEVER fall back to whole-page queries,
-        // which previously caused grabbing older photos from previous runs!
-        let enhancedImg = findGeneratedEnhancedImage(preExistingImageUrls, preAssistantCount);
-
-        if (!enhancedImg) {
+        if (!isImageReady) {
           consecutiveCalmChecks = 0;
           return;
         }
@@ -2180,9 +2227,20 @@
             }, () => { if (chrome.runtime.lastError) {} });
           }
 
+          // Trigger native download button click if present on the image card
+          try {
+            const nativeBtn = findGeneratedImageDownloadButton(enhancedImg);
+            if (nativeBtn) {
+              console.log('[BOLTHAVEN] Clicking native ChatGPT image download button...');
+              nativeBtn.click();
+            }
+          } catch (e) {
+            console.warn('[BOLTHAVEN] Native download button click notice:', e.message);
+          }
+
           // Download using serialized multi-tier downloader
           await downloadEnhancedImage(enhancedImg, finalUrl, fileName);
-          await new Promise((r) => setTimeout(r, 2000));
+          await new Promise((r) => setTimeout(r, 1500));
 
           // Notify background that generation & download succeeded
           chrome.runtime.sendMessage({

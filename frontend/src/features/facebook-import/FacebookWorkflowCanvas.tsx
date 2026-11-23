@@ -347,7 +347,7 @@ export interface DynamicAIBoxConfig {
   selectedUpstreamAiId?: string;
   referenceImageMode?: 'photo_1' | 'picked' | 'custom_upload' | 'condo_scan';
   selectedReferenceIndex?: number;
-  imageSource?: 'get_images' | 'enhance' | 'generate' | 'all' | 'upload' | string;
+  imageSource?: 'get_images' | 'enhance' | 'generate' | 'all' | 'upload';
   selectedImageIndices?: number[];
   autoRun?: boolean;
   enableAutoRun?: boolean;
