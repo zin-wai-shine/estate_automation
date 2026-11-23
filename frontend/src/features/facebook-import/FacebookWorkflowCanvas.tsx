@@ -3910,16 +3910,15 @@ export const FacebookWorkflowCanvas = forwardRef<
   }, [executionState?.hasError, executionState?.failedNodeIds]);
 
   useEffect(() => {
-    if (!images || images.length === 0) {
-      return;
-    }
     let isCancelled = false;
     const pollCompanionEnhanced = async () => {
       try {
         const activeCode = executionState?.listingCode || previewSampleCode;
         const list = await fetchEnhancedDownloadedImages(executionState?.propertyId, activeCode);
         if (list && list.length > 0 && !isCancelled) {
-          const valid = list.filter((img) => (img.position || 1) <= images.length);
+          const valid = (images && images.length > 0)
+            ? list.filter((img) => (img.position || 1) <= images.length)
+            : list;
           const map: Record<number, string> = {};
           valid.forEach((img) => {
             const pos = img.position || 1;
@@ -3940,7 +3939,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             if (!hasChange && Object.keys(map).length === Object.keys(prev).length) {
               return prev;
             }
-            const maxPhotos = images?.length || 6;
+            const maxPhotos = (images && images.length > 0) ? images.length : Math.max(8, Object.keys(map).length);
             const next: Record<number, string> = {};
             for (let i = 0; i < maxPhotos; i++) {
               if (map[i]) next[i] = map[i];
@@ -3957,13 +3956,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
 
     pollCompanionEnhanced();
-    const isRunning = Boolean(locallyRunningNodeId || executionState?.isRunning);
-    if (!isRunning) {
-      return () => {
-        isCancelled = true;
-      };
-    }
-    const interval = setInterval(pollCompanionEnhanced, 4000);
+    const interval = setInterval(pollCompanionEnhanced, 3000);
     return () => {
       isCancelled = true;
       clearInterval(interval);
@@ -4016,6 +4009,60 @@ export const FacebookWorkflowCanvas = forwardRef<
       window.removeEventListener('ea_workflow_cleared', handleCleared);
     };
   }, []);
+
+  // Poll Companion directly for Hero image so all downstream crop and format nodes receive the downloaded hero image
+  useEffect(() => {
+    let isCancelled = false;
+    const fetchHeroFromCompanion = async () => {
+      try {
+        const activeCondoName = (
+          _projectName && _projectName !== 'Facebook Property Post' && _projectName !== 'Featured Property Listing'
+            ? _projectName
+            : ''
+        ) || (config.aiBoxes.find((b) => b.browserCondoName)?.browserCondoName || '');
+
+        const queryCondo = activeCondoName.trim();
+        const url = queryCondo
+          ? `http://127.0.0.1:9224/two-stage-status?condo=${encodeURIComponent(queryCondo)}`
+          : 'http://127.0.0.1:9224/two-stage-status';
+        const resp = await fetch(url);
+        if (resp.ok && !isCancelled) {
+          const data = await resp.json();
+          const file = data?.state?.downloaded_file || '';
+          if (file && file.toLowerCase().includes('hero')) {
+            const normQuery = queryCondo.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const normFile = file.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const normState = (data.state.condo_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const matches = !normQuery ||
+              (normState && (normState.includes(normQuery) || normQuery.includes(normState))) ||
+              (normFile && normFile.includes(normQuery));
+            if (matches) {
+              const imgUrl = data.state.downloaded_image_url || `http://127.0.0.1:9224/hero-downloaded-image?file=${encodeURIComponent(file)}`;
+              const heroObj = {
+                url: imgUrl,
+                fileName: file,
+                condoName: data.state.condo_name || queryCondo,
+              };
+              setHeroImage((prev) => {
+                if (prev?.fileName === file && prev?.url === imgUrl) return prev;
+                try {
+                  localStorage.setItem('bolthaven_last_hero_image', JSON.stringify(heroObj));
+                } catch (_) {}
+                return heroObj;
+              });
+            }
+          }
+        }
+      } catch (_) {}
+    };
+
+    fetchHeroFromCompanion();
+    const interval = setInterval(fetchHeroFromCompanion, 2500);
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [_projectName, config.aiBoxes]);
 
   useEffect(() => {
     let timer: any = null;
@@ -4149,108 +4196,94 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (targetBox) {
       const isWatermark = isWatermarkAIBox(targetBox);
       if (isWatermark) {
-        // If connected from an Enhance node or imageSource === 'enhance', ensure enhanced images actually exist!
-        const isUpstreamEnhance = (config.connections || []).some((c: any) => {
-          if (c.toNodeId === targetBox.id) {
-            const upBox = (config.aiBoxes || []).find((b) => b.id === c.fromNodeId);
-            return upBox && (isExternalBrowserAIBox(upBox) || upBox.processType === 'image_enhance' || upBox.title?.toLowerCase().includes('enhance') || upBox.browserGroupName?.toLowerCase().includes('enhance'));
-          }
-          return false;
-        }) || targetBox.imageSource === 'enhance';
-
-        if (isUpstreamEnhance && Object.keys(allEnhancedPhotos || {}).length === 0) {
-          return 'idle';
+        if (executionState?.completedNodeIds?.includes(nodeId) || locallyCompletedNodeIds.includes(nodeId)) {
+          return 'success';
         }
-
-        // If connected from Hero node, hero preset, or imageSource === 'generate', ensure hero image actually exists!
-        const isHeroCropBox =
-          targetBox.imageSource === 'generate' ||
-          targetBox.title?.toLowerCase().includes('hero') ||
-          targetBox.templateText?.toLowerCase().includes('hero') ||
-          targetBox.cropFormatId === 'format-grid-2split' ||
-          (config.connections || []).some((c: any) => {
-            if (c.toNodeId === targetBox.id) {
-              const upBox = (config.aiBoxes || []).find((b) => b.id === c.fromNodeId);
-              return upBox && (
-                upBox.title?.toLowerCase().includes('hero') ||
-                upBox.browserGroupName?.toLowerCase().includes('hero') ||
-                (upBox as any).tabGroupMode === 'generate'
-              );
-            }
-            return false;
-          });
-
-        let hasHeroPhoto = false;
-        try {
-          const rawHero = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
-          if (rawHero) {
-            const parsed = JSON.parse(rawHero);
-            if (parsed?.url) hasHeroPhoto = true;
-          }
-        } catch (_) {}
-
-        if (isHeroCropBox && !hasHeroPhoto) {
-          return 'idle';
-        }
-
-        // If configured with get_images, ensure images exist
-        if (targetBox.imageSource === 'get_images' && (effectiveImages?.length || 0) === 0) {
-          return 'idle';
-        }
+        return 'idle';
       }
 
-      // Auto-complete Enhance node if enhanced images have been downloaded
+      // Format preset nodes (prompt template / copywriting text presets) should ONLY be marked success if executed
+      if (isTextFormatAIBox(targetBox)) {
+        if (executionState?.completedNodeIds?.includes(nodeId) || locallyCompletedNodeIds.includes(nodeId)) {
+          return 'success';
+        }
+        return 'idle';
+      }
+
+      // Auto-complete Enhance node: ONLY if completed or during active workflow run
       const isEnhanceBox =
         targetBox.tabGroupMode === 'enhance' ||
         targetBox.processKind === 'enhance_images' ||
-        targetBox.title?.toLowerCase().includes('enhance') ||
-        targetBox.browserGroupName?.toLowerCase().includes('enhance');
-      if (isEnhanceBox && Object.keys(allEnhancedPhotos).length > 0 && !executionState?.hasError) {
-        return 'success';
-      }
+        (targetBox.browserGroupName || '').toLowerCase().includes('enhance') ||
+        (!isWatermark && !isTextFormatAIBox(targetBox) && (targetBox.title || '').toLowerCase().includes('enhance'));
 
-      // Auto-complete FB Hero / Generate Tab Group node if hero photo has been generated
-      const isHeroBox =
-        targetBox.tabGroupMode === 'generate' ||
-        targetBox.title?.toLowerCase().includes('hero') ||
-        targetBox.browserGroupName?.toLowerCase().includes('hero');
-      let hasHeroPhoto = false;
-      try {
-        const rawHero = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
-        if (rawHero) {
-          const parsed = JSON.parse(rawHero);
-          if (parsed?.url) hasHeroPhoto = true;
-        }
-      } catch (_) {}
-      if (isHeroBox && hasHeroPhoto && !executionState?.hasError) {
-        return 'success';
-      }
-
-      // Auto-complete Chrome Profile or External Browser if downstream execution completed
-      const isChromeProfile = isChromeProfileAIBox(targetBox);
-      const isExternalBrowser = isExternalBrowserAIBox(targetBox);
-      if ((isChromeProfile || isExternalBrowser) && !executionState?.hasError) {
-        const hasEnhanced = Object.keys(allEnhancedPhotos).length > 0;
-        if (hasEnhanced || hasHeroPhoto) {
+      if (isEnhanceBox) {
+        if (executionState?.completedNodeIds?.includes(nodeId) || locallyCompletedNodeIds.includes(nodeId)) {
           return 'success';
         }
+        if (executionState?.isRunning && Object.keys(allEnhancedPhotos).length > 0 && !executionState?.hasError) {
+          return 'success';
+        }
+        return 'idle';
+      }
+
+      // Auto-complete Hero tab group / generator node: ONLY if it's an actual hero generator (not a prompt or crop node!)
+      const isHeroBox =
+        targetBox.tabGroupMode === 'generate' ||
+        (isChromeTabGroupAIBox(targetBox) && (
+          (targetBox.title || '').toLowerCase().includes('hero') ||
+          (targetBox.browserGroupName || '').toLowerCase().includes('hero')
+        ));
+
+      if (isHeroBox) {
+        if (executionState?.completedNodeIds?.includes(nodeId) || locallyCompletedNodeIds.includes(nodeId)) {
+          return 'success';
+        }
+        if (executionState?.isRunning && !executionState?.hasError) {
+          try {
+            const boxTitle = (targetBox.title || '').toLowerCase();
+            const isTikTok = boxTitle.includes('tiktok') || (targetBox.browserGroupName || '').toLowerCase().includes('tiktok');
+            const nodeRawHero = typeof localStorage !== 'undefined' ? localStorage.getItem(`bolthaven_hero_image_${targetBox.id}`) : null;
+            if (nodeRawHero) {
+              const parsed = JSON.parse(nodeRawHero);
+              const fname = (parsed?.fileName || '').toLowerCase();
+              if (parsed?.url) {
+                if (isTikTok) {
+                  if (fname.includes('tiktok') && !fname.startsWith('fb_hero')) return 'success';
+                } else {
+                  if (!fname.includes('tiktok')) return 'success';
+                }
+              }
+            }
+          } catch (_) {}
+        }
+        return 'idle';
+      }
+
+      // Auto-complete Chrome Profile or External Browser if downstream execution completed during active run
+      const isChromeProfile = isChromeProfileAIBox(targetBox);
+      const isExternalBrowser = isExternalBrowserAIBox(targetBox);
+      if (isChromeProfile || isExternalBrowser) {
+        if (executionState?.completedNodeIds?.includes(nodeId) || locallyCompletedNodeIds.includes(nodeId)) {
+          return 'success';
+        }
+        if (executionState?.isRunning && !executionState?.hasError) {
+          const hasEnhanced = Object.keys(allEnhancedPhotos).length > 0;
+          if (hasEnhanced || Boolean(heroImage?.url)) {
+            return 'success';
+          }
+        }
+        return 'idle';
       }
     }
 
-    // Check Combine Boxes: if all incoming nodes have no data / not completed, remain idle
+    // Check Combine Boxes:
     const targetCombineBox = config.combineBoxes?.find((cb) => cb.id === nodeId);
     if (targetCombineBox) {
-      const incomingConns = (config.connections || []).filter((c) => c.toNodeId === nodeId && isNodeEffectivelyEnabled(c.fromNodeId));
-      if (incomingConns.length > 0) {
-        const anyIncomingCompleted = incomingConns.some((c) => {
-          if (c.fromNodeId === 'get-content') return Boolean(effectiveRawContent && effectiveRawContent.trim().length > 0);
-          if (c.fromNodeId === 'get-images') return (effectiveImages?.length || 0) > 0;
-          return executionState?.completedNodeIds?.includes(c.fromNodeId) || locallyCompletedNodeIds.includes(c.fromNodeId);
-        });
-        if (!anyIncomingCompleted) {
-          return 'idle';
-        }
+      if (executionState?.completedNodeIds?.includes(nodeId) || locallyCompletedNodeIds.includes(nodeId)) {
+        return 'success';
       }
+      return 'idle';
     }
 
     if (!executionState) return 'idle';
@@ -4695,8 +4728,6 @@ export const FacebookWorkflowCanvas = forwardRef<
           browserCondoImagesCount: 0,
           condoImages: [],
           condoPhotos: [],
-          referenceImage: '',
-          referenceImageData: '',
           uploadedImages: [],
           imageSource: b.imageSource === 'upload' ? undefined : b.imageSource,
           selectedImageIndices: undefined,
@@ -4733,6 +4764,10 @@ export const FacebookWorkflowCanvas = forwardRef<
       setLocallyRunningNodeId(null);
       setLocallyCompletedNodeIds([]);
       setCompanionEnhancedMap({});
+      setHeroImage(null);
+      setCombineMediaAssets([]);
+      setCombineCropSlices([]);
+      clearCropSlicesCache();
     };
 
     window.addEventListener('ea_workflow_cleared', handleWorkflowCleared);
@@ -5253,12 +5288,39 @@ export const FacebookWorkflowCanvas = forwardRef<
       return isNodeEffectivelyEnabled(c.fromNodeId);
     });
     return conns
-      .map((c) => {
+      .flatMap((c) => {
         const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
         const isImages = c.fromNodeId === 'get-images';
+        const isCropStudio = fromBox ? isCropStudioBox(fromBox) : false;
         const isWatermark = fromBox ? isWatermarkAIBox(fromBox) : false;
         const isCrop = fromBox ? (fromBox.processType === 'image_crop' || fromBox.title?.toLowerCase().includes('cut') || fromBox.title?.toLowerCase().includes('crop')) : false;
         const isEnhance = fromBox ? (isEnhanceAIBox(fromBox) || isImageAIBox(fromBox, config.connections)) : false;
+
+        if (isCropStudio) {
+          let childCropBoxes = config.aiBoxes.filter((b) => {
+            if (!isNodeEffectivelyEnabled(b.id)) return false;
+            if (!isWatermarkAIBox(b)) return false;
+            return (config.connections || []).some(
+              (conn) =>
+                (conn.fromNodeId === c.fromNodeId && conn.toNodeId === b.id) ||
+                (conn.toNodeId === c.fromNodeId && conn.fromNodeId === b.id)
+            );
+          });
+          if (childCropBoxes.length === 0) {
+            childCropBoxes = config.aiBoxes.filter((b) => isNodeEffectivelyEnabled(b.id) && isWatermarkAIBox(b));
+          }
+          if (childCropBoxes.length > 0) {
+            return childCropBoxes.map((ch) => {
+              const chAssets = combineMediaAssets.filter((a) => a.formatId === ch.id);
+              return {
+                id: ch.id,
+                title: ch.title || 'Format Preset',
+                count: chAssets.length,
+              };
+            });
+          }
+        }
+
         if (isImages || isWatermark || isCrop || isEnhance) {
           const boxAssets = fromBox
             ? combineMediaAssets.filter((a) => a.formatId === fromBox.id)
@@ -5268,13 +5330,13 @@ export const FacebookWorkflowCanvas = forwardRef<
             : isImages
               ? (effectiveImages?.length || 0)
               : 0;
-          return {
+          return [{
             id: c.fromNodeId,
             title: isImages ? 'Get Images' : fromBox?.title || c.fromNodeId,
             count,
-          };
+          }];
         }
-        return null;
+        return [];
       })
       .filter(Boolean) as { id: string; title: string; count: number }[];
   }, [activeModalNode, config.combineBoxes, config.connections, config.aiBoxes, config.getImages, combineMediaAssets, effectiveImages, allEnhancedPhotos]);
@@ -5388,13 +5450,19 @@ export const FacebookWorkflowCanvas = forwardRef<
           });
 
         if (isHeroCropBox) {
-          try {
-            const savedHero = localStorage.getItem('bolthaven_last_hero_image');
-            if (savedHero) {
-              const parsed = JSON.parse(savedHero);
-              if (parsed?.url) sourcePhotos.push({ url: parsed.url, photoIndex: 0, isEnhanced: false });
-            }
-          } catch (e) { }
+          const heroUrl = heroImage?.url || (() => {
+            try {
+              const savedHero = localStorage.getItem('bolthaven_last_hero_image');
+              if (savedHero) {
+                const parsed = JSON.parse(savedHero);
+                return parsed?.url;
+              }
+            } catch (e) {}
+            return null;
+          })();
+          if (heroUrl) {
+            sourcePhotos.push({ url: heroUrl, photoIndex: 0, isEnhanced: false });
+          }
           // If hero has NOT been generated yet, do NOT fallback to raw post images or enhance photos!
         } else if (isFromEnhance) {
           const hasEnhanced = Object.keys(allEnhancedPhotos || {}).length > 0;
@@ -15490,10 +15558,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                               }
 
                               const savedCropOrder: string[] = isCropStudio
-                                ? ((currentCombineBox as any)?.cropOrder || (fromBox as any)?.cropOrder || (() => {
+                                ? ((currentCombineBox as any)?.presetOrder || (fromBox as any)?.presetOrder || (() => {
                                     try {
-                                      const raw = localStorage.getItem(`combine_crop_order_${fromBox?.id}`) ||
-                                        (currentCombineBox ? localStorage.getItem(`combine_crop_order_${currentCombineBox.id}`) : null);
+                                      const raw = localStorage.getItem(`combine_preset_order_${fromBox?.id}`) ||
+                                        (currentCombineBox ? localStorage.getItem(`combine_preset_order_${currentCombineBox.id}`) : null);
                                       return raw ? JSON.parse(raw) : null;
                                     } catch {
                                       return null;
@@ -15705,7 +15773,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     >
                                       {childCropBoxes.map((chBox, idx) => {
                                         const chTitle = chBox.title || 'Format Preset';
-                                        const chSubtitle = chBox.subtitle || (chBox.targetWidth && chBox.targetHeight ? `${chBox.targetWidth}×${chBox.targetHeight}` : '');
+                                        const chFmt = savedCropFormatsList.find((f) => f.id === chBox.cropFormatId || f.id === chBox.templateId);
+                                        const chSubtitle = chBox.subtitle || (chFmt ? `${chFmt.targetWidth}×${chFmt.targetHeight}${(chFmt as any).aspectRatio ? ` (${(chFmt as any).aspectRatio})` : ''}` : (chBox.targetWidth && chBox.targetHeight ? `${chBox.targetWidth}×${chBox.targetHeight}` : ''));
                                         const chAssets = combineMediaAssets.filter((a) => a.formatId === chBox.id);
                                         const chCount = chAssets.length;
 
@@ -18130,6 +18199,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                             browserGroupName: b.browserGroupName || b.title,
                           }));
 
+                        const isTikTokTitle = Boolean(currentModalAIBox.title?.toLowerCase().includes('tiktok'));
                         const isHeroTitle = Boolean(
                           (currentModalAIBox.title?.toLowerCase().includes('hero') || currentModalAIBox.title?.toLowerCase().includes('fb')) &&
                           !currentModalAIBox.title?.toLowerCase().includes('enhance')
@@ -18138,11 +18208,13 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                         const resolvedGroupName = isEnhanceTitle
                           ? 'Enhance IMG'
-                          : isHeroTitle
-                            ? 'FB Hero'
-                            : (isTabGroupNode
-                              ? (currentModalAIBox.title && currentModalAIBox.title !== 'Tab Group' ? currentModalAIBox.title : (currentModalAIBox.browserGroupName || currentModalAIBox.title || 'Tab Group'))
-                              : currentModalAIBox.browserGroupName);
+                          : isTikTokTitle
+                            ? (currentModalAIBox.title && currentModalAIBox.title !== 'Tab Group' ? currentModalAIBox.title : (currentModalAIBox.browserGroupName || 'TikTok Hero'))
+                            : isHeroTitle
+                              ? (currentModalAIBox.title && currentModalAIBox.title !== 'Tab Group' ? currentModalAIBox.title : (currentModalAIBox.browserGroupName || 'FB Hero'))
+                              : (isTabGroupNode
+                                ? (currentModalAIBox.title && currentModalAIBox.title !== 'Tab Group' ? currentModalAIBox.title : (currentModalAIBox.browserGroupName || currentModalAIBox.title || 'Tab Group'))
+                                : currentModalAIBox.browserGroupName);
 
                         const isExplicitlyNoRef = currentModalAIBox.referenceImage === '' || isReferenceImageExplicitlyDeleted();
                         const effectiveBoxConfig = {
