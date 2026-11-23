@@ -356,10 +356,23 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
       isEnhanced?: boolean;
     }> = [];
 
+    if (imageSource === 'upload' && box.uploadedImages && box.uploadedImages.length > 0) {
+      return box.uploadedImages.map((img: any, idx: number) => ({
+        id: img.id || `up-${idx + 1}`,
+        index: idx + 1,
+        displayNumber: idx + 1,
+        url: img.url,
+        source: 'upload' as any,
+        label: img.name || `Uploaded #${idx + 1}`,
+        isEnhanced: false,
+      }));
+    }
+
     const isHeroSource =
-      imageSource === 'generate' ||
+      imageSource !== 'upload' &&
+      (imageSource === 'generate' ||
       (typeof imageSource === 'string' && (imageSource.includes('hero') || imageSource.includes('generator'))) ||
-      (!box.imageSource && isHeroCropNode);
+      (!box.imageSource && isHeroCropNode));
 
     const isEnhanceSource =
       imageSource === 'enhance' ||
@@ -558,8 +571,16 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
       value: 'all',
       label: 'All Available Media',
     });
+
+    if (box.uploadedImages && box.uploadedImages.length > 0) {
+      opts.push({
+        value: 'upload',
+        label: `Uploaded Files (${box.uploadedImages.length} ${box.uploadedImages.length === 1 ? 'Photo' : 'Photos'})`,
+      });
+    }
+
     return opts;
-  }, [connections, box.id, workflowBoxes, heroNode, enhanceNode, isHeroCropNode, heroLabel, enhanceLabel, images.length, enhancedPhotos, isUpstreamEnhance, effectiveHeroImage]);
+  }, [connections, box.id, workflowBoxes, heroNode, enhanceNode, isHeroCropNode, heroLabel, enhanceLabel, images.length, enhancedPhotos, isUpstreamEnhance, effectiveHeroImage, box.uploadedImages]);
 
   const handleSelectFormat = (format: CropStudioFormat) => {
     setSelectedFormatId(format.id);

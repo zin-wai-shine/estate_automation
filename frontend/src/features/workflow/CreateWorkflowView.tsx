@@ -1007,8 +1007,6 @@ export const CreateWorkflowView: React.FC = () => {
           browserCondoImagesCount: 0,
           condoImages: [],
           condoPhotos: [],
-          referenceImage: '',
-          referenceImageData: '',
           outputCopy: '',
           lastResult: undefined,
           generatedImages: [],
@@ -1017,9 +1015,6 @@ export const CreateWorkflowView: React.FC = () => {
         })),
       });
     }
-    try {
-      clearPersistedReferenceImage();
-    } catch {}
     if (editingFormat?.id) {
       try {
         localStorage.removeItem(getWorkflowRunStorageKey(editingFormat.id));
@@ -1042,13 +1037,21 @@ export const CreateWorkflowView: React.FC = () => {
          k.startsWith('bolthaven_format_uploads_') ||
          k.startsWith('bolthaven_canvas_enhanced_') ||
          k.startsWith('bolthaven_last_hero_image') ||
-         k.startsWith('bolthaven_ref_img_') ||
+         k.startsWith('bolthaven_hero_image_') ||
          k.startsWith('bolthaven_condo_') ||
+         k.startsWith('ea_crop_studio_images_') ||
+         k.startsWith('combine_card_order_') ||
+         k.startsWith('combine_preset_order_') ||
          k.startsWith('estate_facebook_import_'))
       ) {
         localStorage.removeItem(k);
       }
     }
+    // Also notify Mac companion to clear two-stage status and cached canvas images
+    try {
+      fetch('http://127.0.0.1:9224/two-stage-status', { method: 'DELETE' }).catch(() => {});
+      fetch('http://127.0.0.1:9224/clear-canvas-images', { method: 'POST' }).catch(() => {});
+    } catch {}
     window.dispatchEvent(new CustomEvent('ea_workflow_cleared'));
   };
 
@@ -3311,12 +3314,17 @@ export const CreateWorkflowView: React.FC = () => {
                    null)
                 : null;
 
+              const isTikTokTarget = (stagingGroupTarget || '').toLowerCase().includes('tiktok') || (stagingBox.title || '').toLowerCase().includes('tiktok');
+              const isBoltHavenTarget = (stagingGroupTarget || '').toLowerCase().includes('bolthaven') || (stagingBox.title || '').toLowerCase().includes('bolthaven');
+              const isDotTarget = (stagingGroupTarget || '').toLowerCase().includes('dot') || (stagingBox.title || '').toLowerCase().includes('dot');
+              const calculatedHeroPrefix = isTikTokTarget ? (isBoltHavenTarget ? 'bolthaven_tiktok_hero' : (isDotTarget ? 'dot_tiktok_hero' : 'tiktok_hero')) : 'fb_hero';
+
               updateBranchNodes(
                 [],
                 [tabGroupNodeId],
                 [],
                 isDirectStagingGroup
-                  ? `🚀 Direct Mode (1 Tab): Attaching Reference Image + 3 Condo Photos (${effectiveCondoName}) + Prompt in [${stagingGroupTarget}]...`
+                  ? `🚀 Direct Mode (1 Tab): Opening browser & attaching images (${effectiveCondoName}) + Prompt in [${stagingGroupTarget}]...`
                   : `🚀 2-Stage Mode (2 Tabs): Pasting & generating prompt for ${effectiveCondoName} in [${stagingGroupTarget}]...`
               );
 
@@ -3327,9 +3335,13 @@ export const CreateWorkflowView: React.FC = () => {
                   body: JSON.stringify({
                     profile_key: profKey,
                     group_name: stagingGroupTarget,
+                    node_id: stagingBox.id,
+                    prefix: calculatedHeroPrefix,
                     condo_name: effectiveCondoName,
                     initial_prompt: initialPrompt,
                     reference_image: resolvedRefImage,
+                    condo_images: stagingBox.condoImages || [],
+                    enhanced_images: (stagingBox as any).enhancedImages || [],
                     target_folder: stagingBox.targetFolder || (box as any).targetFolder || localStorage.getItem('bolthaven_condo_target_folder') || '',
                     use_condo_images: stagingBox.useCondoImages !== false && (box as any).useCondoImages !== false,
                     use_reference_image: useRefImg,
@@ -3359,7 +3371,11 @@ export const CreateWorkflowView: React.FC = () => {
                     return false;
                   }
                   try {
-                    const st = await fetch('http://127.0.0.1:9224/two-stage-status', { signal }).then((r) => r.json());
+                    const pollParams = new URLSearchParams();
+                    if (tabGroupNodeId) pollParams.set('node_id', tabGroupNodeId);
+                    if (stagingGroupTarget) pollParams.set('group', stagingGroupTarget);
+                    if (effectiveCondoName) pollParams.set('condo', effectiveCondoName);
+                    const st = await fetch(`http://127.0.0.1:9224/two-stage-status?${pollParams.toString()}`, { signal }).then((r) => r.json());
                     if (isRunStopped(myRunId) || branchFatalError) {
                       await stopAutomation().catch(() => {});
                       return false;
@@ -3375,11 +3391,11 @@ export const CreateWorkflowView: React.FC = () => {
                           [tabGroupNodeId],
                           [],
                           isDirectStagingGroup
-                            ? `⚡ Direct Mode (1 Tab): Prompt ready, attaching Reference Image + 3 Condo Photos...`
+                            ? `⚡ Direct Mode (1 Tab): Prompt ready, attaching images...`
                             : `✓ Tab 1 prompt extracted! Switching to Tab 2...`
                         );
                       } else if (st.state.step === 'stage2_running') {
-                        updateBranchNodes([], [tabGroupNodeId], [], `🖼️ Attaching Reference Image (1st), Condo Photos 1, 2, 3 (next) & Prompt...`);
+                        updateBranchNodes([], [tabGroupNodeId], [], st.state.message || `🖼️ Attaching images & Prompt...`);
                       } else if (st.state.step === 'generating_image') {
                         updateBranchNodes([], [tabGroupNodeId], [], st.state.message || `🎨 Generating Hero Image in ChatGPT...`);
                       } else if (st.state.step === 'downloading_image') {

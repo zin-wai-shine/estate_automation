@@ -232,7 +232,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   }, [workflowImageSources, availableEnhancedPhotos, propertyContext?.images]);
 
   const [useEnhancedImages, setUseEnhancedImages] = useState<boolean>(() => {
-    return boxConfig.useEnhancedImages !== undefined ? boxConfig.useEnhancedImages : true;
+    return boxConfig.useEnhancedImages === true;
   });
 
   const [enhancedImagesSource, setEnhancedImagesSource] = useState<'enhanced' | 'get_images'>(() => {
@@ -321,7 +321,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   const [isOpeningFreshTabs, setIsOpeningFreshTabs] = useState(false);
   const [copiedTabUrlIndex, setCopiedTabUrlIndex] = useState<number | null>(null);
 
-  const resolvedGroupName = boxConfig.browserGroupName || (isHero ? 'FB Hero' : 'Enhance IMG');
+  const resolvedGroupName = boxConfig.browserGroupName || boxConfig.title || (isHero ? 'FB Hero' : 'Enhance IMG');
 
   const loadLiveMemorizedTabs = async () => {
     setIsLoadingMemorizedTabs(true);
@@ -341,7 +341,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
       const profKey = boxConfig.browserProfileKey;
       const effectiveCount = isHero && stagingMode === 'direct_tab2' ? 1 : workerTabCount;
 
-      // 1. Open fresh clean ChatGPT tabs in Chrome and memorize them
+      // 1. Open dedicated fresh clean ChatGPT tabs in Chrome and memorize them
       await focusBrowserTabGroup({
         groupName: resolvedGroup,
         profileKey: profKey,
@@ -352,10 +352,17 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
       });
 
       // 2. Fetch the newly opened and memorized tabs
-      await new Promise((r) => setTimeout(r, 1400));
+      await new Promise((r) => setTimeout(r, 1500));
       const freshTabs = await fetchMemorizedTabs(resolvedGroup, profKey);
       if (freshTabs && freshTabs.length > 0) {
         setMemorizedTabs(freshTabs);
+        updateSettings({
+          workerTabMode: 'existing_tabs',
+          subtitle: `${freshTabs.length} ${freshTabs.length === 1 ? 'Tab' : 'Tabs'}`,
+          browserGroupTabUrls: freshTabs.map((t) => t.url).filter(Boolean),
+          browserWorkerCount: freshTabs.length,
+          workerTabCount: freshTabs.length,
+        });
       }
     } catch (err) {
       console.warn('Failed to open fresh tabs:', err);
@@ -641,8 +648,6 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   // Listen for global workflow cleared event (Clear Canvas Data & Results)
   useEffect(() => {
     const handleWorkflowCleared = () => {
-      clearPersistedReferenceImage(boxConfig?.id);
-      setReferenceImageData('');
       setMatchedCondoInfo(null);
       setCondoSearchQuery('');
       lastScannedSettingsKeyRef.current = '';
@@ -651,8 +656,6 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
         browserMatchedFolder: '',
         browserCondoImagesCount: 0,
         condoImages: [],
-        referenceImage: '',
-        referenceImageData: '',
       });
     };
     window.addEventListener('ea_workflow_cleared', handleWorkflowCleared);

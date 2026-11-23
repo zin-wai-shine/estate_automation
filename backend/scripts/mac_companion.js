@@ -207,7 +207,8 @@ let automationState = {
   updated_at: null,
 };
 
-// Two-Stage Staging state (shared across HTTP handlers)
+// Two-Stage Staging state (shared across HTTP handlers, scoped by group and node)
+let twoStageStates = {}; // keyed by node_id and group_name
 let twoStageState = {
   is_running: false,
   step: 'idle',
@@ -220,23 +221,52 @@ let twoStageState = {
   updated_at: null,
 };
 
+function getAllImageCandidateDirs() {
+  const dirs = [
+    defaultProcessingDir,
+    path.join(os.homedir(), 'Downloads'),
+    canvasCacheDir,
+    backendStorageEnhancedDir,
+  ];
+  return dirs.filter((d) => d && fs.existsSync(d));
+}
+
+function findImageFileOnDisk(filename) {
+  if (!filename) return null;
+  const safeName = path.basename(filename);
+  for (const dir of getAllImageCandidateDirs()) {
+    const full = path.join(dir, safeName);
+    if (fs.existsSync(full)) {
+      return { path: full, name: safeName, dir };
+    }
+  }
+  return null;
+}
+
 // Pending commands queue for extension to pick up via /poll-command
 let pendingAutomationCommands = [];
 
 function pushPendingCommand(cmd) {
   if (cmd && (cmd.action === 'START_AUTOMATION' || cmd.action === 'START_TWO_STAGE_STAGING')) {
-    // If an automation command for the SAME action and SAME profile is already queued, replace it
-    // Commands for different profiles must coexist so each profile's extension can pick up its own command.
+    // Only replace commands targeting the SAME profile AND the SAME group.
+    // Different tab groups under the same profile (e.g. Enhance IMG + Facebook Hero IMG + BoltHaven Tiktok Hero IMG)
+    // MUST coexist in queue so each runs in parallel!
     const targetProfile = normalizeProfileKey(cmd.payload?.profileKey || cmd.payload?.profile_key || '');
+    const targetGroup = (cmd.payload?.groupName || cmd.payload?.group_name || '').toLowerCase().trim();
     const beforeCount = pendingAutomationCommands.length;
     pendingAutomationCommands = pendingAutomationCommands.filter((c) => {
       if (c.action !== cmd.action) return true;
       const existingProfile = normalizeProfileKey(c.payload?.profileKey || c.payload?.profile_key || '');
-      // Only remove if it targets the same profile
-      return targetProfile && existingProfile ? existingProfile !== targetProfile : false;
+      const existingGroup = (c.payload?.groupName || c.payload?.group_name || '').toLowerCase().trim();
+      if (targetProfile && existingProfile && targetProfile === existingProfile) {
+        if (targetGroup && existingGroup) {
+          return targetGroup !== existingGroup; // Keep commands for different groups!
+        }
+      }
+      return false;
     });
     if (beforeCount !== pendingAutomationCommands.length) {
-      console.log(`[COMPANION] ℹ️ Replaced previous pending ${cmd.action} for profile "${targetProfile}" with latest command.`);
+      console.log(`[COMPANION] ℹ️ Replaced previous pending ${cmd.action} for profile "${targetProfile}" group "${targetGroup}" with latest command.`);
     }
   }
   pendingAutomationCommands.push(cmd);
@@ -1135,21 +1165,45 @@ function handleDetectedDownload(filePath, fileName, size) {
     console.log(`[COMPANION] Validated download: ${fileName} (${size} bytes, sha256: ${hash.slice(0, 12)})`);
 
     // If this is a Hero image download (or twoStageState is actively waiting for it), attach data URL so the workflow receives the local downloaded file
-    if (fileName.toLowerCase().startsWith('fb_hero') || (twoStageState && twoStageState.is_running && twoStageState.step === 'downloading_image')) {
+    const lowerName = fileName.toLowerCase();
+    const isHeroDownload = lowerName.startsWith('fb_hero') || lowerName.includes('hero') || lowerName.includes('tiktok') || (twoStageState && twoStageState.is_running && twoStageState.step === 'downloading_image');
+    if (isHeroDownload) {
       const ext = path.extname(fileName).toLowerCase().replace('.', '') || 'png';
       const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
       const dataUrl = `data:${mime};base64,${fileBuf.toString('base64')}`;
       const imageUrl = `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(fileName)}&t=${Date.now()}`;
-      twoStageState = {
-        ...(twoStageState || {}),
+      
+      const heroPayload = {
         downloaded_file: fileName,
         downloaded_file_path: filePath,
         downloaded_data_url: dataUrl,
         downloaded_image_url: imageUrl,
         result_url: imageUrl,
+        is_running: false,
+        step: 'completed',
         updated_at: new Date().toISOString(),
       };
-      console.log(`[COMPANION] 🎉 Hero image attached to twoStageState: ${fileName} -> ${imageUrl}`);
+
+      // Match and update all relevant entries in twoStageStates
+      for (const [key, state] of Object.entries(twoStageStates)) {
+        if (!state) continue;
+        const stateGroup = (state.group_name || state.groupName || '').toLowerCase();
+        const statePrefix = (state.prefix || '').toLowerCase();
+        let matches = false;
+        if (statePrefix && lowerName.startsWith(statePrefix)) matches = true;
+        if (lowerName.startsWith('fb_hero') && (stateGroup.includes('facebook') || stateGroup.includes('fb') || !stateGroup)) matches = true;
+        if (lowerName.includes('bolthaven') && lowerName.includes('tiktok') && stateGroup.includes('bolthaven')) matches = true;
+        if (lowerName.includes('dot') && lowerName.includes('tiktok') && stateGroup.includes('dot')) matches = true;
+        if (matches) {
+          twoStageStates[key] = { ...state, ...heroPayload };
+        }
+      }
+
+      twoStageState = {
+        ...(twoStageState || {}),
+        ...heroPayload,
+      };
+      console.log(`[COMPANION] 🎉 Hero image attached to states: ${fileName} -> ${imageUrl}`);
     }
 
     // Notify BoltHaven backend of newly downloaded file
@@ -2783,6 +2837,30 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     }
   }
 
+  // ── Recover Currently Generated Hero Image from Active Tab ──
+  if (url.pathname === '/recover-hero-image' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const condoName = payload.condo_name || (twoStageState?.condo_name) || '';
+        console.log(`[COMPANION] 🛟 Requesting on-demand download of currently generated Hero image for "${condoName}"...`);
+        pushPendingCommand({
+          action: 'RECOVER_HERO_IMAGE',
+          payload: { condoName },
+          created_at: new Date().toISOString(),
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({ status: 'ok', message: 'Recovery command queued' }));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   // ── Two-Stage / Direct Staging Automation (FB Hero) ──
   if (url.pathname === '/start-two-stage-staging' && req.method === 'POST') {
     let body = '';
@@ -2823,29 +2901,93 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         const resolvedProfileKey = normalizeProfileKey(profileKey);
         activateChromeProfile(resolvedProfileKey, 'https://chatgpt.com/');
 
-        // Read local condo images 1, 2, 3 (Strictly Read-Only!)
-        let condoImages = Array.isArray(payload.condo_images) && payload.condo_images.length > 0
-          ? payload.condo_images.slice(0, 3).map((img, i) => {
-              const localPath = img.full_path || (typeof img.url === 'string' && img.url.startsWith('/') ? img.url : null);
-              if (localPath && fs.existsSync(localPath) && (!img.data_url || !img.data_url.startsWith('data:'))) {
-                try {
-                  const ext = path.extname(localPath).toLowerCase().replace('.', '') || 'png';
-                  const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-                  const buf = fs.readFileSync(localPath);
-                  return {
-                    ...img,
-                    index: img.index || i + 1,
-                    data_url: `data:${mime};base64,${buf.toString('base64')}`,
-                  };
-                } catch (e) {}
+        // Helper to resolve an image object into a full base64 data URL from local disk
+        const resolveImageToDataUrl = (img, fallbackIndex = 1) => {
+          let localPath = img.full_path && fs.existsSync(img.full_path) ? img.full_path : null;
+          const rawUrl = typeof img.url === 'string' ? img.url : (typeof img.data_url === 'string' ? img.data_url : '');
+
+          // 1. Check if rawUrl is already a real file path on disk
+          if (!localPath && rawUrl && rawUrl.startsWith('/') && fs.existsSync(rawUrl)) {
+            localPath = rawUrl;
+          }
+
+          // 2. Check if rawUrl has path= query parameter (e.g. /condo-image-file?path=...)
+          if (!localPath && rawUrl && rawUrl.includes('path=')) {
+            try {
+              const u = new URL(rawUrl.startsWith('http') ? rawUrl : `http://127.0.0.1:9224${rawUrl}`);
+              const p = u.searchParams.get('path');
+              if (p && fs.existsSync(p)) {
+                localPath = p;
               }
+            } catch (e) {}
+          }
+
+          // 3. Search candidate storage directories using file name
+          if (!localPath) {
+            let fname = '';
+            if (rawUrl && rawUrl.includes('file=')) {
+              try {
+                const u = new URL(rawUrl.startsWith('http') ? rawUrl : `http://127.0.0.1:9224${rawUrl}`);
+                fname = u.searchParams.get('file') || '';
+              } catch (e) {}
+            }
+            if (!fname && rawUrl && (rawUrl.includes('/storage/uploads/') || rawUrl.includes('/facebook-import/'))) {
+              fname = path.basename(rawUrl.split('?')[0]);
+            }
+            if (!fname && img.filename) {
+              fname = path.basename(img.filename);
+            }
+
+            const candidateNames = [fname, img.filename].filter(Boolean);
+            const downloadsDir = path.join(os.homedir(), 'Downloads');
+            const searchDirs = [downloadsDir, defaultProcessingDir, backendStorageEnhancedDir, canvasCacheDir];
+
+            for (const name of candidateNames) {
+              if (localPath) break;
+              for (const dir of searchDirs) {
+                const candidate = path.join(dir, name);
+                if (fs.existsSync(candidate)) {
+                  localPath = candidate;
+                  break;
+                }
+              }
+            }
+          }
+
+          if (localPath && fs.existsSync(localPath) && (!img.data_url || !img.data_url.startsWith('data:'))) {
+            try {
+              const ext = path.extname(localPath).toLowerCase().replace('.', '') || 'png';
+              const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+              const buf = fs.readFileSync(localPath);
               return {
                 ...img,
-                index: img.index || i + 1,
-                data_url: img.data_url || img.url || '',
+                index: img.index || fallbackIndex,
+                full_path: localPath,
+                data_url: `data:${mime};base64,${buf.toString('base64')}`,
               };
-            })
+            } catch (e) {
+              console.warn('[COMPANION] Error reading image to base64:', e.message);
+            }
+          }
+
+          return {
+            ...img,
+            index: img.index || fallbackIndex,
+            full_path: localPath || img.full_path || '',
+            data_url: img.data_url || img.url || '',
+          };
+        };
+
+        // Read local condo images (Attach ALL selected images, not just 3!)
+        let condoImages = Array.isArray(payload.condo_images) && payload.condo_images.length > 0
+          ? payload.condo_images.map((img, i) => resolveImageToDataUrl(img, i + 1))
           : [];
+
+        // Read enhanced / interior images if provided
+        const rawEnhanced = Array.isArray(payload.enhanced_images)
+          ? payload.enhanced_images
+          : (Array.isArray(payload.enhancedImages) ? payload.enhancedImages : []);
+        const enhancedImages = rawEnhanced.map((img, i) => resolveImageToDataUrl(img, i + 1));
         let matchedDir = payload.matched_folder || '';
         if (condoImages.length === 0 && useCondoImgs && condoName) {
           let activeBase = CONDO_BASE_DIR;
@@ -2893,29 +3035,41 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         console.log(`  - Matched directory: ${matchedDir || 'none'}`);
         console.log(`  - Direct Staging (1 tab): ${skipTab1}`);
 
-        twoStageState = {
+        const nodeId = payload.node_id || payload.nodeId || '';
+        const prefix = payload.prefix || (groupName.toLowerCase().includes('tiktok') ? 'tiktok_hero' : 'fb_hero');
+
+        const initialStagingState = {
           is_running: true,
           step: 'starting',
           condo_name: condoName,
           matched_folder: matchedDir || 'not found',
-          images_attached: (referenceImage ? 1 : 0) + condoImages.length,
+          images_attached: (referenceImage ? 1 : 0) + condoImages.length + enhancedImages.length,
           extracted_prompt: '',
           result_url: '',
           downloaded_file: '',
+          node_id: nodeId,
+          group_name: groupName,
+          prefix: prefix,
           error: null,
           started_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
+
+        if (nodeId) twoStageStates[nodeId] = initialStagingState;
+        if (groupName) twoStageStates[groupName] = initialStagingState;
+        twoStageState = initialStagingState;
 
         pushPendingCommand({
           action: 'START_TWO_STAGE_STAGING',
           payload: {
             profileKey: resolvedProfileKey,
             groupName,
+            nodeId,
+            prefix,
             initialPrompt,
             referenceImage, // 1st: manual reference image
-            condoImages,    // 2nd: 1.png, 2.png, 3.png
-            enhancedImages: Array.isArray(payload.enhanced_images) ? payload.enhanced_images : (Array.isArray(payload.enhancedImages) ? payload.enhancedImages : []), // 3rd: interior/enhanced images
+            condoImages,    // 2nd: condo / group photos
+            enhancedImages, // 3rd: interior/enhanced images
             condoName,
             matchedFolder: matchedDir,
             skipTab1,
@@ -2931,7 +3085,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           status: 'success',
           message: `${skipTab1 ? 'Direct (1-Tab)' : 'Two-stage (2-Tab)'} Hero generation initiated for "${condoName}" in group "${groupName}"`,
           matched_folder: matchedDir,
-          images_count: condoImages.length,
+          images_count: (referenceImage ? 1 : 0) + condoImages.length + enhancedImages.length,
           reference_image_present: !!referenceImage,
           tabs_used: workerCount,
         }));
@@ -2946,7 +3100,14 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
   if (url.pathname === '/two-stage-status') {
     if (req.method === 'DELETE') {
-      twoStageState = null;
+      const delNodeId = url.searchParams.get('node_id');
+      const delGroup = url.searchParams.get('group');
+      if (delNodeId) delete twoStageStates[delNodeId];
+      if (delGroup) delete twoStageStates[delGroup];
+      if (!delNodeId && !delGroup) {
+        twoStageStates = {};
+        twoStageState = null;
+      }
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       return res.end(JSON.stringify({ status: 'cleared', state: null }));
     }
@@ -2956,23 +3117,37 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       req.on('end', () => {
         try {
           const update = JSON.parse(body || '{}');
-          twoStageState = { ...twoStageState, ...update, updated_at: new Date().toISOString() };
+          const nodeId = update.node_id || update.nodeId;
+          const groupName = update.group_name || update.groupName;
+          const condoName = update.condo_name || update.condoName;
 
-          // If downloaded_file is provided, resolve it
-          const rawFile = update.downloaded_file || twoStageState?.downloaded_file;
+          // If downloaded_file is provided, resolve it across ALL image candidate directories
+          const rawFile = update.downloaded_file;
           if (rawFile) {
             const safeName = path.basename(rawFile);
-            const downloadsDir = path.join(os.homedir(), 'Downloads');
-            const targetPath = path.join(downloadsDir, safeName);
-            if (fs.existsSync(targetPath)) {
-              twoStageState.downloaded_file = safeName;
-              twoStageState.downloaded_file_path = targetPath;
-              twoStageState.downloaded_image_url = `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(safeName)}&t=${Date.now()}`;
+            const found = findImageFileOnDisk(safeName);
+            if (found) {
+              update.downloaded_file = safeName;
+              update.downloaded_file_path = found.path;
+              update.downloaded_image_url = `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(safeName)}&t=${Date.now()}`;
+              if (!update.condo_name && !condoName) {
+                const m = safeName.match(/^fb_hero_([A-Za-z0-9_]+)_[A-Za-z0-9]+_\d+\.png$/i);
+                if (m) {
+                  update.condo_name = m[1].replace(/_+/g, ' ').trim();
+                }
+              }
             }
           }
 
+          const existingState = (nodeId && twoStageStates[nodeId]) || (groupName && twoStageStates[groupName]) || twoStageState || {};
+          const mergedState = { ...existingState, ...update, updated_at: new Date().toISOString() };
+
+          if (nodeId) twoStageStates[nodeId] = mergedState;
+          if (groupName) twoStageStates[groupName] = mergedState;
+          twoStageState = mergedState;
+
           res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-          res.end(JSON.stringify({ status: 'ok', twoStageState }));
+          res.end(JSON.stringify({ status: 'ok', twoStageState: mergedState }));
         } catch (e) {
           res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
           res.end(JSON.stringify({ error: e.message }));
@@ -2981,53 +3156,105 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       return;
     } else {
       // GET request
+      const reqNodeId = url.searchParams.get('node_id');
+      const reqGroup = url.searchParams.get('group');
       const reqCondo = (url.searchParams.get('condo') || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (twoStageState && twoStageState.downloaded_file) {
-        const fileLower = (twoStageState.downloaded_file || '').toLowerCase();
-        // Strictly verify that the downloaded_file is an actual Hero image
-        if (fileLower.startsWith('fb_hero') || fileLower.includes('hero')) {
-          const stateCondoSanitized = (twoStageState.condo_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-          if (!reqCondo || !stateCondoSanitized || reqCondo.includes(stateCondoSanitized) || stateCondoSanitized.includes(reqCondo)) {
-            const safeName = path.basename(twoStageState.downloaded_file);
-            const downloadsDir = path.join(os.homedir(), 'Downloads');
-            const targetPath = path.join(downloadsDir, safeName);
-            if (fs.existsSync(targetPath)) {
-              twoStageState.downloaded_file_path = targetPath;
-              twoStageState.downloaded_image_url = `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(safeName)}`;
-            }
-          } else {
-            // Mismatched condo request - do not return stale hero image of another condo
-            twoStageState = null;
-          }
-        } else {
-          // Polluted non-hero file - clear it
-          twoStageState = null;
+
+      let state = (reqNodeId && twoStageStates[reqNodeId]) || (reqGroup && twoStageStates[reqGroup]) || null;
+      if (!state && reqGroup) {
+        const gLow = reqGroup.toLowerCase();
+        state = Object.values(twoStageStates).find((s) => (s?.group_name || s?.groupName || '').toLowerCase() === gLow);
+      }
+      if (!state && reqCondo) {
+        state = Object.values(twoStageStates).find((s) => {
+          const sCondo = (s?.condo_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          return sCondo && (sCondo.includes(reqCondo) || reqCondo.includes(sCondo));
+        });
+      }
+      if (!state) {
+        state = twoStageState;
+      }
+
+      // Verify if current state matches the requested condo
+      const stateCondoSanitized = (state?.condo_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const stateFileSanitized = (state?.downloaded_file || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const condoMatches = !reqCondo ||
+        (stateCondoSanitized && (stateCondoSanitized.includes(reqCondo) || reqCondo.includes(stateCondoSanitized))) ||
+        (stateFileSanitized && stateFileSanitized.includes(reqCondo));
+
+      // If state already has downloaded_file and matches, verify path exists
+      if (state && state.downloaded_file && condoMatches) {
+        const found = findImageFileOnDisk(state.downloaded_file);
+        if (found) {
+          state.downloaded_file_path = found.path;
+          state.downloaded_image_url = `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(found.name)}`;
         }
-      } else if (reqCondo) {
-        // Fallback: check matching fb_hero for THIS specific condo in Downloads
-        try {
-          const downloadsDir = path.join(os.homedir(), 'Downloads');
-          const heroFiles = fs.readdirSync(downloadsDir)
-            .filter((f) => {
+      }
+
+      // If state does not match the requested condo, or is missing downloaded_file, scan ALL candidate dirs for matching generated hero images on disk!
+      if (!condoMatches || !state?.downloaded_file || !findImageFileOnDisk(state.downloaded_file)) {
+        const allCandidateDirs = getAllImageCandidateDirs();
+        const candidateFiles = [];
+        for (const dir of allCandidateDirs) {
+          try {
+            if (!fs.existsSync(dir)) continue;
+            const files = fs.readdirSync(dir);
+            for (const f of files) {
               const lower = f.toLowerCase();
-              const sanitized = lower.replace(/[^a-z0-9]/g, '');
-              return lower.startsWith('fb_hero') && lower.endsWith('.png') && sanitized.includes(reqCondo);
-            })
-            .map((f) => ({ name: f, path: path.join(downloadsDir, f), mtime: fs.statSync(path.join(downloadsDir, f)).mtimeMs }))
-            .sort((a, b) => b.mtime - a.mtime);
-          if (heroFiles.length > 0) {
-            twoStageState = {
-              ...(twoStageState || {}),
-              downloaded_file: heroFiles[0].name,
-              downloaded_file_path: heroFiles[0].path,
-              downloaded_image_url: `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(heroFiles[0].name)}`,
-            };
-          }
-        } catch (e) {}
+              if (!lower.endsWith('.png') && !lower.endsWith('.jpg') && !lower.endsWith('.webp')) continue;
+              if (lower.startsWith('.')) continue;
+
+              let isTargetType = false;
+              if (reqGroup) {
+                const gLow = reqGroup.toLowerCase();
+                if (gLow.includes('facebook') || gLow.includes('fb')) {
+                  isTargetType = lower.startsWith('fb_hero');
+                } else if (gLow.includes('bolthaven') && gLow.includes('tiktok')) {
+                  isTargetType = lower.includes('bolthaven') && lower.includes('tiktok');
+                } else if (gLow.includes('dot') && gLow.includes('tiktok')) {
+                  isTargetType = lower.includes('dot') && lower.includes('tiktok');
+                } else {
+                  isTargetType = lower.includes('hero');
+                }
+              } else {
+                isTargetType = lower.startsWith('fb_hero') || lower.includes('hero');
+              }
+
+              if (isTargetType) {
+                const fullP = path.join(dir, f);
+                const stat = fs.statSync(fullP);
+                const sanitized = lower.replace(/[^a-z0-9]/g, '');
+                const matchesCondo = !reqCondo || sanitized.includes(reqCondo);
+                if (matchesCondo) {
+                  candidateFiles.push({ name: f, path: fullP, mtime: stat.mtimeMs });
+                }
+              }
+            }
+          } catch (e) {}
+        }
+
+        if (candidateFiles.length > 0) {
+          candidateFiles.sort((a, b) => b.mtime - a.mtime);
+          const best = candidateFiles[0];
+          const m = best.name.match(/^fb_hero_([A-Za-z0-9_]+)_[A-Za-z0-9]+_\d+\.png$/i);
+          const extractedCondo = m ? m[1].replace(/_+/g, ' ').trim() : (state?.condo_name || reqCondo);
+          state = {
+            ...(state || {}),
+            condo_name: extractedCondo,
+            downloaded_file: best.name,
+            downloaded_file_path: best.path,
+            downloaded_image_url: `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(best.name)}&t=${Date.now()}`,
+            is_running: false,
+            step: 'completed',
+          };
+          if (reqNodeId) twoStageStates[reqNodeId] = state;
+          if (reqGroup) twoStageStates[reqGroup] = state;
+          twoStageState = state;
+        }
       }
 
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      return res.end(JSON.stringify({ status: 'success', state: twoStageState }));
+      return res.end(JSON.stringify({ status: 'success', state: state || null }));
     }
   }
 
@@ -3126,12 +3353,14 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           for (const f of files) {
             const lower = f.toLowerCase();
             if (!lower.endsWith('.png') && !lower.endsWith('.jpg') && !lower.endsWith('.jpeg') && !lower.endsWith('.webp')) continue;
+            // Exclude hero images completely from enhanced images list
+            if (lower.startsWith('fb_hero') || lower.includes('hero')) continue;
 
             let pos = 0;
             let listingPrefix = '';
             const mEnhanced = f.match(/^enhanced_(\d+)_/i);
             const mPrefixCode = f.match(/^([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)[-_](\d+)\.(?:png|jpg|jpeg|webp)$/i);
-            const mSimpleCode = f.match(/[-_](\d+)\.(?:png|jpg|jpeg|webp)$/i);
+            const mSimpleCode = f.match(/[-_](\d{1,2})\.(?:png|jpg|jpeg|webp)$/i);
 
             if (mEnhanced) {
               pos = parseInt(mEnhanced[1], 10);
@@ -3257,6 +3486,35 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         }
       }
 
+      // Fallback: If requested listing filter yielded 0 images, fallback to the newest available batch in cache/downloads
+      if (seenPositions.size === 0 && allCandidates.length > 0) {
+        const sortedByMtime = [...allCandidates].sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+        const newestWithPrefix = sortedByMtime.find((c) => c.listingPrefix);
+        const fallbackFilter = newestWithPrefix ? newestWithPrefix.listingPrefix : '';
+        for (const item of allCandidates) {
+          const { filename: f, fullPath, stat, pos, listingPrefix } = item;
+          if (!fs.existsSync(fullPath)) continue;
+          if (fallbackFilter) {
+            if (!listingPrefix || listingPrefix.toLowerCase() !== fallbackFilter.toLowerCase()) continue;
+          }
+          const imgObj = {
+            filename: f,
+            full_path: fullPath,
+            size: stat.size,
+            size_bytes: stat.size,
+            mtime: stat.mtimeMs,
+            position: pos,
+            url: `http://127.0.0.1:${PORT}/downloaded-image?file=${encodeURIComponent(f)}&t=${Math.round(stat.mtimeMs)}`,
+            backend_url: `http://localhost:8085/storage/uploads/facebook-import/enhanced/${encodeURIComponent(f)}?t=${Math.round(stat.mtimeMs)}`,
+          };
+          const key = imgObj.position;
+          const existing = seenPositions.get(key);
+          if (!existing || (item.listingPrefix && !existing.listingPrefix) || stat.mtimeMs > existing.mtime) {
+            seenPositions.set(key, imgObj);
+          }
+        }
+      }
+
       const sortedImages = Array.from(seenPositions.values()).sort((a, b) => a.position - b.position);
       res.writeHead(200, {
         'Content-Type': 'application/json',
@@ -3333,6 +3591,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
   // ── Clear Canvas Images (called when user explicitly resets/cleans canvas) ──
   if ((url.pathname === '/clear-canvas-images' || url.pathname === '/reset-canvas-images') && req.method === 'POST') {
     try {
+      twoStageState = null;
       if (fs.existsSync(CANVAS_ENHANCED_MANIFEST)) {
         try { fs.unlinkSync(CANVAS_ENHANCED_MANIFEST); } catch (e) {}
       }
@@ -3371,7 +3630,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         try {
           if (!fs.existsSync(d)) continue;
           const files = fs.readdirSync(d)
-            .filter((f) => f.toLowerCase().startsWith('fb_hero') && f.toLowerCase().endsWith('.png'))
+            .filter((f) => (f.toLowerCase().startsWith('fb_hero') || f.toLowerCase().includes('hero') || f.toLowerCase().includes('tiktok')) && (f.toLowerCase().endsWith('.png') || f.toLowerCase().endsWith('.jpg') || f.toLowerCase().endsWith('.webp')))
             .map((f) => ({ name: f, path: path.join(d, f), mtime: fs.statSync(path.join(d, f)).mtimeMs }))
             .sort((a, b) => b.mtime - a.mtime);
           if (files.length > 0) {

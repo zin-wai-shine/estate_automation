@@ -111,6 +111,7 @@ async function handleSerializedDownload(request) {
             if (chrome.runtime.lastError) {
               console.log('[BOLTHAVEN EXT] chrome.downloads note:', chrome.runtime.lastError.message);
               chrome.downloads.download({ url: targetUrl, saveAs: false, conflictAction: 'overwrite' }, (id2) => {
+                if (chrome.runtime.lastError) {}
                 resolve(id2 || null);
               });
             } else {
@@ -323,19 +324,24 @@ async function getTabGroupsWithTabs() {
       };
     });
 
-    // Enrich with memorized groups (Enhance IMG, FB Hero, etc.)
+    // Enrich with memorized groups (Enhance IMG, FB Hero, TikTok Hero, etc.)
     try {
       const stored = await chrome.storage.local.get([MEMORIZED_TABS_STORAGE_KEY]);
       const map = stored[MEMORIZED_TABS_STORAGE_KEY] || {};
       for (const [key, memTabs] of Object.entries(map)) {
         if (!Array.isArray(memTabs) || memTabs.length === 0) continue;
-        const groupTitle = key === 'enhance img' ? 'Enhance IMG' : key === 'fb hero' ? 'FB Hero' : key.toUpperCase();
+        let groupTitle = key;
+        if (key === 'enhance img') groupTitle = 'Enhance IMG';
+        else if (key === 'fb hero') groupTitle = 'FB Hero';
+        else {
+          groupTitle = key.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        }
         const exists = result.find((g) => (g.title || '').toLowerCase() === groupTitle.toLowerCase());
         if (!exists) {
           result.push({
             id: `mem-${key}`,
             title: groupTitle,
-            color: groupTitle === 'FB Hero' ? 'yellow' : 'blue',
+            color: getGroupColor(groupTitle),
             collapsed: false,
             is_memorized: true,
             tabsCount: memTabs.length,
@@ -351,6 +357,19 @@ async function getTabGroupsWithTabs() {
               };
             }),
           });
+        } else if (exists.tabs.length === 0) {
+          exists.tabs = memTabs.map((m) => {
+            const liveT = tabs.find((t) => t.id === m.id);
+            return {
+              id: m.id,
+              title: (liveT && liveT.title) || m.title || `Worker Tab #${m.index || 1}`,
+              url: (liveT && (liveT.url || liveT.pendingUrl)) || m.url || '',
+              favIconUrl: liveT?.favIconUrl || '',
+              isChatGPT: true,
+              is_alive: Boolean(liveT),
+            };
+          });
+          exists.tabsCount = exists.tabs.length;
         }
       }
     } catch (e) {}
@@ -418,56 +437,78 @@ const automation = {
 let automationSessionId = 0;
 let twoStageAborted = false;
 
-async function stopAllExtensionAutomation() {
-  automationSessionId += 1;
-  twoStageAborted = true;
-  automation.isRunning = false;
-  automation.queue = [];
-  setupMutex = Promise.resolve();
+// Group-scoped sessions and abort flags for multi-group parallel execution
+const groupSessions = new Map();
+const groupAborted = new Map();
 
-  for (const [jobId, resolver] of pendingJobGenerations.entries()) {
-    try {
-      resolver({ success: false, error: 'Automation stopped by user' });
-    } catch (e) {}
-  }
-  pendingJobGenerations.clear();
+function startGroupSession(groupKey = 'Enhance IMG') {
+  const normKey = (groupKey || 'Enhance IMG').trim();
+  const next = (groupSessions.get(normKey) || 0) + 1;
+  groupSessions.set(normKey, next);
+  groupAborted.set(normKey, false);
+  automationSessionId = next;
+  return next;
+}
 
-  for (const [heroJobId, resolver] of pendingHeroGenerations.entries()) {
-    try {
-      resolver({ success: false, error: 'Automation stopped by user' });
-    } catch (e) {}
-  }
-  pendingHeroGenerations.clear();
+function getGroupSession(groupKey = 'Enhance IMG') {
+  const normKey = (groupKey || 'Enhance IMG').trim();
+  return groupSessions.get(normKey) || 0;
+}
 
-  const notifiedTabIds = new Set();
-  if (Array.isArray(automation.tabSlots)) {
-    for (const slot of automation.tabSlots) {
-      if (slot && slot.tabId) {
-        notifiedTabIds.add(slot.tabId);
-        try {
-          chrome.tabs.sendMessage(slot.tabId, { action: 'STOP_TAB_JOB' }, () => {
-            if (chrome.runtime.lastError) {}
-          });
-        } catch (e) {}
+function isGroupSessionStopped(groupKey = 'Enhance IMG', sessionId) {
+  const normKey = (groupKey || 'Enhance IMG').trim();
+  if (groupAborted.get(normKey) === true) return true;
+  const current = groupSessions.get(normKey);
+  return current !== undefined && sessionId !== current;
+}
+
+async function stopGroupAutomation(groupKey = null) {
+  if (groupKey) {
+    const normKey = groupKey.trim();
+    groupAborted.set(normKey, true);
+    groupSessions.set(normKey, (groupSessions.get(normKey) || 0) + 1);
+    if (automation.isRunning && (automation.groupName || 'Enhance IMG').trim() === normKey) {
+      automation.isRunning = false;
+      automation.queue = [];
+      if (Array.isArray(automation.tabSlots)) {
+        for (const slot of automation.tabSlots) {
+          if (slot?.tabId) {
+            chrome.tabs.sendMessage(slot.tabId, { action: 'STOP_TAB_JOB' }, () => {}).catch(() => {});
+          }
+        }
       }
     }
-  }
+  } else {
+    for (const key of groupSessions.keys()) {
+      groupAborted.set(key, true);
+      groupSessions.set(key, (groupSessions.get(key) || 0) + 1);
+    }
+    twoStageAborted = true;
+    automation.isRunning = false;
+    automation.queue = [];
+    setupMutex = Promise.resolve();
 
-  try {
-    const allTabs = await chrome.tabs.query({});
+    for (const [jobId, resolver] of pendingJobGenerations.entries()) {
+      try { resolver({ success: false, error: 'Automation stopped by user' }); } catch (e) {}
+    }
+    pendingJobGenerations.clear();
+
+    for (const [heroJobId, resolver] of pendingHeroGenerations.entries()) {
+      try { resolver({ success: false, error: 'Automation stopped by user' }); } catch (e) {}
+    }
+    pendingHeroGenerations.clear();
+
+    const allTabs = await chrome.tabs.query({}).catch(() => []);
     for (const t of allTabs) {
-      if (t && t.id && (t.url || '').includes('chatgpt.com') && !notifiedTabIds.has(t.id)) {
-        notifiedTabIds.add(t.id);
-        try {
-          chrome.tabs.sendMessage(t.id, { action: 'STOP_TAB_JOB' }, () => {
-            if (chrome.runtime.lastError) {}
-          });
-        } catch (e) {}
+      if (t && t.id && (t.url || '').includes('chatgpt.com')) {
+        chrome.tabs.sendMessage(t.id, { action: 'STOP_TAB_JOB' }, () => {}).catch(() => {});
       }
     }
-  } catch (e) {}
+  }
+}
 
-  console.log(`[BOLTHAVEN EXT] Stopped all automation across ${notifiedTabIds.size} ChatGPT tab(s).`);
+async function stopAllExtensionAutomation() {
+  await stopGroupAutomation(null);
 }
 
 /** Send a job to a specific ChatGPT tab via the content script. */
@@ -737,13 +778,13 @@ async function resetTabChatCleanly(tabId) {
  * When done (success or fail), automatically picks the next pending job
  * from the shared queue and processes it on the same slot.
  */
-async function processSlot(slotIndex, sessionId, initialJob = null) {
+async function processSlot(slotIndex, sessionId, initialJob = null, groupKey = 'Enhance IMG') {
   const slot = automation.tabSlots[slotIndex];
   if (!slot) return;
 
   let nextJob = initialJob;
 
-  while (automation.isRunning && sessionId === automationSessionId) {
+  while (automation.isRunning && !isGroupSessionStopped(groupKey, sessionId)) {
     const job = nextJob || automation.queue.shift();
     nextJob = null; // only use initialJob on first iteration
     if (!job) break;
@@ -757,7 +798,7 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
     // 1. SEQUENTIAL SETUP & SEND (exclusive focus on this tab for ~3 seconds)
     const releaseLock = await acquireAttachmentMutex();
     try {
-      if (!automation.isRunning || sessionId !== automationSessionId) {
+      if (!automation.isRunning || isGroupSessionStopped(groupKey, sessionId)) {
         slot.busy = false;
         slot.currentJob = null;
         return;
@@ -769,7 +810,7 @@ async function processSlot(slotIndex, sessionId, initialJob = null) {
       await delay(400);
 
       await ensureContentScriptInjected(slot.tabId);
-      if (!automation.isRunning || sessionId !== automationSessionId) {
+      if (!automation.isRunning || isGroupSessionStopped(groupKey, sessionId)) {
         slot.busy = false;
         slot.currentJob = null;
         return;
@@ -1023,6 +1064,20 @@ async function getAllReservedTabIds(excludeGroupName) {
         }
       }
     }
+
+    // Also reserve tabs tracked under memorized tabs map
+    const memStored = await chrome.storage.local.get([MEMORIZED_TABS_STORAGE_KEY]);
+    const memMap = memStored[MEMORIZED_TABS_STORAGE_KEY] || {};
+    const normExclude = (excludeGroupName || '').toLowerCase().trim();
+    for (const [key, list] of Object.entries(memMap)) {
+      if (key !== normExclude && Array.isArray(list)) {
+        for (const item of list) {
+          if (item && item.id && aliveIds.has(item.id)) {
+            reserved.add(item.id);
+          }
+        }
+      }
+    }
     return reserved;
   } catch (e) {
     return new Set();
@@ -1103,6 +1158,16 @@ async function ensureTabGroupOpen(groupName, customUrls, tabMode = 'existing_tab
   return isEnsuringGroupOpenByGroup[key];
 }
 
+function getGroupColor(name) {
+  const n = (name || '').toLowerCase();
+  if (n.includes('enhance')) return 'green';
+  if (n.includes('facebook') || n.includes('fb')) return 'blue';
+  if (n.includes('bolthaven') && n.includes('tiktok')) return 'purple';
+  if (n.includes('dot') && n.includes('tiktok')) return 'pink';
+  if (n.includes('tiktok')) return 'cyan';
+  return 'orange';
+}
+
 async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'existing_tabs', workerCount = 4, reuseSessionTabs = true) {
   const isHero = (groupName || '').toLowerCase().includes('hero');
   const parsedWorkers = parseInt(workerCount, 10);
@@ -1110,180 +1175,151 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
     ? Math.min(8, parsedWorkers)
     : (isHero ? 1 : 4);
   const resolvedName = (groupName || (isHero ? 'FB Hero' : 'Enhance IMG')).trim();
-  const isFreshTabs = tabMode === 'new_tabs' || tabMode === 'fresh_tabs';
+  const isFreshTabs = tabMode === 'new_tabs' || tabMode === 'fresh_tabs' || tabMode === 'open_fresh';
 
-  console.log(`[BOLTHAVEN EXT] 🎯 Ensuring worker tabs for "${resolvedName}" (count: ${count}, tabMode: ${tabMode || 'existing_tabs'}, reuseSession: ${reuseSessionTabs})`);
+  console.log(`[BOLTHAVEN EXT] 🎯 Ensuring dedicated worker tabs for "${resolvedName}" (count: ${count}, tabMode: ${tabMode || 'existing_tabs'}, reuseSession: ${reuseSessionTabs})`);
 
   let allTabs = await chrome.tabs.query({});
+  let allGroups = [];
+  try {
+    allGroups = await chrome.tabGroups.query({});
+  } catch (e) {}
 
-  // 1. If any tabs are currently inside a Chrome Tab Group, ungroup them so tabs are plain and simple
-  const groupedTabIds = allTabs.filter((t) => t.groupId && t.groupId !== -1).map((t) => t.id);
-  if (groupedTabIds.length > 0) {
-    try {
-      await chrome.tabs.ungroup(groupedTabIds);
-      console.log(`[BOLTHAVEN EXT] ✓ Ungrouped ${groupedTabIds.length} tabs to keep plain tabs`);
-      allTabs = await chrome.tabs.query({});
-    } catch (e) {
-      console.warn('[BOLTHAVEN EXT] Ungroup notice:', e.message);
-    }
-  }
-
-  // 2. Identify tabs reserved by OTHER tab groups/branches (e.g. Enhance IMG tabs must NOT be touched by FB Hero)
-  const reservedByOtherGroups = await getAllReservedTabIds(resolvedName);
-  console.log(`[BOLTHAVEN EXT] Tabs reserved by other groups (off-limits for "${resolvedName}"):`, Array.from(reservedByOtherGroups));
-
-  // Find all unassigned ChatGPT tabs currently open in the browser
-  const availableChatTabs = allTabs.filter((t) => {
-    const u = t.url || t.pendingUrl || '';
-    return u.includes('chatgpt.com') && !reservedByOtherGroups.has(t.id);
-  });
+  // 1. Locate any existing Chrome Tab Group matching this group name
+  const existingGroup = allGroups.find(
+    (g) => (g.title || '').trim().toLowerCase() === resolvedName.toLowerCase()
+  );
 
   let finalTabIds = [];
 
+  // Identify tabs reserved by OTHER tab groups/branches (off-limits for resolvedName)
+  const reservedByOtherGroups = await getAllReservedTabIds(resolvedName);
+  // Also, any tab already assigned to a DIFFERENT Chrome tab group is strictly off-limits!
+  allTabs.forEach((t) => {
+    if (t.groupId && t.groupId !== -1 && (!existingGroup || t.groupId !== existingGroup.id)) {
+      reservedByOtherGroups.add(t.id);
+    }
+  });
+
   if (isFreshTabs) {
     // ── CASE A: OPEN FRESH TABS ──
-    // The user explicitly requested fresh tabs for this branch/group.
-    // Open brand new tabs specifically for this group.
+    // The user explicitly requested fresh clean tabs for this pipeline.
     console.log(`[BOLTHAVEN EXT] 🆕 Open Fresh Tabs requested for "${resolvedName}". Opening ${count} fresh tab(s)...`);
     for (let i = 0; i < count; i++) {
       const targetUrl = (customUrls && customUrls[i]) || 'https://chatgpt.com/';
       try {
-        const createdTab = await chrome.tabs.create({
-          url: targetUrl,
-          active: false,
-        });
+        const createdTab = await chrome.tabs.create({ url: targetUrl, active: false });
         finalTabIds.push(createdTab.id);
       } catch (e) {
         console.warn('[BOLTHAVEN EXT] Error creating fresh tab:', e.message);
       }
     }
+    // If the group had old tabs, close them so only the fresh tabs remain
+    if (existingGroup) {
+      const oldGroupTabs = allTabs.filter((t) => t.groupId === existingGroup.id);
+      oldGroupTabs.forEach((ot) => chrome.tabs.remove(ot.id).catch(() => {}));
+    }
   } else {
     // ── CASE B: EXISTING / REUSE TABS ──
-    // 1. First priority: Reconnect or re-open the exact memorized chat links for THIS group
-    if (reuseSessionTabs !== false) {
+    // 1. First priority: Tabs already in THIS Chrome tab group!
+    if (existingGroup) {
+      const tabsInThisGroup = allTabs.filter((t) => t.groupId === existingGroup.id && !finalTabIds.includes(t.id));
+      for (const t of tabsInThisGroup.slice(0, count)) {
+        finalTabIds.push(t.id);
+      }
+      if (finalTabIds.length > 0) {
+        console.log(`[BOLTHAVEN EXT] ✓ Found ${finalTabIds.length} tab(s) already in Chrome tab group "${resolvedName}" (id: ${existingGroup.id})`);
+      }
+    }
+
+    // 2. Second priority: Memorized chat links for THIS group
+    if (finalTabIds.length < count && reuseSessionTabs !== false) {
       const memorizedList = await loadMemorizedTabs(resolvedName);
       if (memorizedList.length > 0) {
-        console.log(`[BOLTHAVEN EXT] 💾 Found ${memorizedList.length} memorized tab definitions for "${resolvedName}"`);
         for (let i = 0; i < Math.min(count, memorizedList.length); i++) {
+          if (finalTabIds.length >= count) break;
           const mem = memorizedList[i];
           if (!mem || !mem.url) continue;
 
-          // Check if tab ID is still alive
           let aliveTab = allTabs.find((t) => t.id === mem.id && !reservedByOtherGroups.has(t.id) && !finalTabIds.includes(t.id));
-
-          // If ID not alive, check if any open tab has this exact memorized URL
           if (!aliveTab) {
             aliveTab = allTabs.find((t) => {
               const u = t.url || t.pendingUrl || '';
               return u && (u === mem.url || (mem.url.includes('/c/') && u.includes(mem.url.split('?')[0]))) && !reservedByOtherGroups.has(t.id) && !finalTabIds.includes(t.id);
             });
           }
-
-          // If still not matched, check if an unassigned open ChatGPT tab exists and repurpose it
-          if (!aliveTab) {
-            const freeChatTab = availableChatTabs.find((t) => !finalTabIds.includes(t.id));
-            if (freeChatTab) {
-              aliveTab = freeChatTab;
-              if (mem.url && mem.url !== 'https://chatgpt.com/' && !(freeChatTab.url || '').includes(mem.url.split('?')[0])) {
-                chrome.tabs.update(freeChatTab.id, { url: mem.url }).catch(() => {});
-              }
-            }
-          }
-
           if (aliveTab) {
-            if (!finalTabIds.includes(aliveTab.id) && finalTabIds.length < count) {
-              finalTabIds.push(aliveTab.id);
-              console.log(`[BOLTHAVEN EXT] ✓ Re-bound to open memorized tab [Tab #${i + 1}]: ${aliveTab.url}`);
-            }
+            finalTabIds.push(aliveTab.id);
           } else {
-            // Only create if we have fewer tabs than count and no open tabs to repurpose
-            if (finalTabIds.length < count) {
-              try {
-                console.log(`[BOLTHAVEN EXT] 🚀 Re-opening saved memorized tab URL [Tab #${i + 1}]: ${mem.url}`);
-                const createdTab = await chrome.tabs.create({ url: mem.url, active: false });
-                finalTabIds.push(createdTab.id);
-              } catch (e) {
-                console.warn('[BOLTHAVEN EXT] Error restoring memorized tab:', e.message);
-              }
-            }
+            try {
+              const createdTab = await chrome.tabs.create({ url: mem.url, active: false });
+              finalTabIds.push(createdTab.id);
+            } catch (e) {}
           }
         }
       }
-
-      // If more tabs needed, check alive numeric session tab IDs
-      if (finalTabIds.length < count) {
-        const myAliveSessionTabs = await loadAliveSessionTabs(resolvedName);
-        for (const tid of myAliveSessionTabs) {
-          if (!finalTabIds.includes(tid) && !reservedByOtherGroups.has(tid) && finalTabIds.length < count) {
-            finalTabIds.push(tid);
-          }
-        }
-      }
-      if (finalTabIds.length > 0) {
-        console.log(`[BOLTHAVEN EXT] ✓ Reusing ${finalTabIds.length} session tab(s) remembered for "${resolvedName}":`, finalTabIds);
-      }
     }
 
-    // 2. Second priority: If more tabs needed, reuse any free ChatGPT tabs that are already open
+    // 3. Third priority: Alive session tab IDs
     if (finalTabIds.length < count) {
-      for (const ft of availableChatTabs) {
-        if (!finalTabIds.includes(ft.id) && finalTabIds.length < count) {
-          finalTabIds.push(ft.id);
+      const myAliveSessionTabs = await loadAliveSessionTabs(resolvedName);
+      for (const tid of myAliveSessionTabs) {
+        if (!finalTabIds.includes(tid) && !reservedByOtherGroups.has(tid) && finalTabIds.length < count) {
+          finalTabIds.push(tid);
         }
       }
     }
 
-    // 3. Third priority: Reuse any blank/newtab tabs
-    if (finalTabIds.length < count) {
-      const blankTabs = allTabs.filter(
-        (t) =>
-          !reservedByOtherGroups.has(t.id) &&
-          !finalTabIds.includes(t.id) &&
-          ((t.url || '').includes('newtab') || (t.title || '').toLowerCase() === 'new tab')
-      );
-      for (const bt of blankTabs) {
-        if (finalTabIds.length < count) {
-          try {
-            const idx = finalTabIds.length;
-            const targetUrl = (customUrls && customUrls[idx]) || 'https://chatgpt.com/';
-            await chrome.tabs.update(bt.id, { url: targetUrl });
-            finalTabIds.push(bt.id);
-          } catch (e) {}
-        }
-      }
-    }
-
-    // 4. Fourth priority: ONLY open new tabs if we strictly have fewer than count tabs!
+    // 4. Fourth priority: If this pipeline STILL does not have its own tab(s), open FRESH new tab(s)!
+    // "for this taps pipeline that must be have their own for each if that new or create new that fresh tap fix it"
     while (finalTabIds.length < count) {
       try {
         const idx = finalTabIds.length;
         const targetUrl = (customUrls && customUrls[idx]) || 'https://chatgpt.com/';
-        const createdTab = await chrome.tabs.create({
-          url: targetUrl,
-          active: false,
-        });
+        const createdTab = await chrome.tabs.create({ url: targetUrl, active: false });
         finalTabIds.push(createdTab.id);
+        console.log(`[BOLTHAVEN EXT] 🚀 Opened dedicated fresh tab [Tab #${idx + 1}] for "${resolvedName}" (id: ${createdTab.id})`);
       } catch (e) {
         break;
       }
     }
   }
 
-  // 3. Close any leftover blank new tab pages if we already have our worker tabs
-  try {
-    const blankTabs = (await chrome.tabs.query({})).filter(
-      (t) =>
-        !finalTabIds.includes(t.id) &&
-        !reservedByOtherGroups.has(t.id) &&
-        ((t.url || '').includes('newtab') || (t.title || '').toLowerCase() === 'new tab')
-    );
-    blankTabs.forEach((bt) => chrome.tabs.remove(bt.id).catch(() => {}));
-  } catch (e) {}
-
   finalTabIds = finalTabIds.slice(0, count);
+
+  // 5. User explicitly requested PURE TABS without creating Chrome native tab groups (no group chips/labels in tab bar)
+  // Ensure that all worker tabs are pure, normal, un-grouped tabs!
+  try {
+    const tabsToUngroup = [];
+    for (const tid of finalTabIds) {
+      const tObj = await chrome.tabs.get(tid).catch(() => null);
+      if (tObj && tObj.groupId && tObj.groupId !== -1) {
+        tabsToUngroup.push(tid);
+      }
+    }
+    // Also if there was an existingGroup in Chrome matching this name, disband it into pure tabs
+    if (existingGroup) {
+      const gTabs = allTabs.filter((t) => t.groupId === existingGroup.id);
+      gTabs.forEach((gt) => {
+        if (!tabsToUngroup.includes(gt.id)) tabsToUngroup.push(gt.id);
+      });
+    }
+    if (tabsToUngroup.length > 0) {
+      await chrome.tabs.ungroup(tabsToUngroup).catch(() => {});
+      console.log(`[BOLTHAVEN EXT] 🫧 Disbanded tab group: restored ${tabsToUngroup.length} tab(s) to pure tabs for "${resolvedName}"`);
+    }
+  } catch (e) {
+    console.warn('[BOLTHAVEN EXT] Tab ungrouping notice:', e.message);
+  }
+
+  // Focus the first tab in the group
+  if (finalTabIds.length > 0) {
+    await focusTab(finalTabIds[0]);
+  }
+
   await saveSessionTabs(resolvedName, finalTabIds);
 
-  // Capture current URLs & titles of finalTabIds to keep memory up-to-date
+  // Capture current URLs & titles of finalTabIds
   const liveMemorizedTabs = [];
   for (let i = 0; i < finalTabIds.length; i++) {
     const tid = finalTabIds[i];
@@ -1300,10 +1336,6 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
   await saveMemorizedTabs(resolvedName, liveMemorizedTabs);
   reportMemorizedTabsToCompanion(resolvedName, liveMemorizedTabs);
 
-  if (finalTabIds.length > 0) {
-    await focusTab(finalTabIds[0]);
-  }
-
   console.log(`[BOLTHAVEN EXT] ✓ Ready: ${finalTabIds.length} tab(s) confirmed for "${resolvedName}":`, finalTabIds);
   return finalTabIds;
 }
@@ -1318,22 +1350,22 @@ async function _ensureTabGroupOpenInternal(groupName, customUrls, tabMode = 'exi
  */
 async function startAutomation(payload) {
   let { tabIds, jobs, propertyId, groupName, groupTabUrls, tabMode, workerCount, reuseSessionTabs } = payload || {};
+  const groupKey = (groupName || 'Enhance IMG').trim();
   const maxWorkers = Math.max(1, Math.min(8, parseInt(workerCount, 10) || 4));
 
-  if (automation.isRunning) {
-    console.log('[BOLTHAVEN EXT] Automation was already marked running. Resetting previous session to run requested batch...');
-    await stopAllExtensionAutomation();
-    await delay(400);
+  if (automation.isRunning && (automation.groupName || 'Enhance IMG').trim() === groupKey) {
+    console.log(`[BOLTHAVEN EXT] Automation was already marked running for "${groupKey}". Resetting previous session...`);
+    await stopGroupAutomation(groupKey);
+    await delay(300);
   }
 
-  const mySessionId = ++automationSessionId;
-  twoStageAborted = false;
-  setupMutex = Promise.resolve();
+  const mySessionId = startGroupSession(groupKey);
+  automation.groupName = groupKey;
 
   // 1. Immediately ensure the worker tabs are open, organized in Tab Group, and focused
-  console.log(`[BOLTHAVEN EXT] Ensuring Tab Group "${groupName || 'Enhance IMG'}" is active...`);
-  const ensuredTabIds = await ensureTabGroupOpen(groupName || 'Enhance IMG', groupTabUrls, tabMode, maxWorkers, reuseSessionTabs).catch(() => []);
-  if (mySessionId !== automationSessionId) {
+  console.log(`[BOLTHAVEN EXT] Ensuring Tab Group "${groupKey}" is active...`);
+  const ensuredTabIds = await ensureTabGroupOpen(groupKey, groupTabUrls, tabMode, maxWorkers, reuseSessionTabs).catch(() => []);
+  if (isGroupSessionStopped(groupKey, mySessionId)) {
     return { success: false, error: 'Automation cancelled by user' };
   }
 
@@ -1389,7 +1421,7 @@ async function startAutomation(payload) {
     }
   }
 
-  if (mySessionId !== automationSessionId) {
+  if (isGroupSessionStopped(groupKey, mySessionId)) {
     return { success: false, error: 'Automation cancelled by user' };
   }
 
@@ -1444,10 +1476,10 @@ async function startAutomation(payload) {
   // Start all tab slots: acquireAttachmentMutex inside processSlot guarantees
   // each tab performs setup & send one-by-one in sequence without conflict!
   for (let i = 0; i < automation.tabSlots.length; i++) {
-    if (!automation.isRunning || mySessionId !== automationSessionId) break;
+    if (!automation.isRunning || isGroupSessionStopped(groupKey, mySessionId)) break;
     const initialJob = jobs[i];
     if (!initialJob) break;
-    processSlot(i, mySessionId, initialJob).catch((err) => {
+    processSlot(i, mySessionId, initialJob, groupKey).catch((err) => {
       console.warn(`[BOLTHAVEN EXT] Slot ${i} error:`, err?.message || err);
     });
   }
@@ -1934,9 +1966,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // ── Stop running automation ─────────────────────────────────────────
   if (request.action === 'STOP_AUTOMATION') {
-    stopAllExtensionAutomation().then(() => {
-      sendResponse({ success: true, message: 'Automation stopped' });
-    });
+    const grp = request.groupName || request.payload?.groupName;
+    if (grp) {
+      stopGroupAutomation(grp).then(() => {
+        sendResponse({ success: true, message: `Automation stopped for group "${grp}"` });
+      });
+    } else {
+      stopAllExtensionAutomation().then(() => {
+        sendResponse({ success: true, message: 'Automation stopped' });
+      });
+    }
     return true;
   }
 
@@ -1987,6 +2026,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         error: request.error || '',
       });
     }
+
+    if (request.action === 'HERO_GENERATION_COMPLETE') {
+      fetch(`${COMPANION_URL}/two-stage-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          is_running: false,
+          step: 'completed',
+          result_url: request.result_url || '',
+          downloaded_file: request.filename || '',
+          message: `✓ Hero Image generated and downloaded (${request.filename || 'fb_hero.png'})!`,
+        }),
+      }).catch(() => {});
+    }
+
     sendResponse({ ok: true });
     return true;
   }
@@ -2108,15 +2162,14 @@ async function executeTwoStageStaging(payload) {
     : (Array.isArray(payload?.enhanced_images) ? payload.enhanced_images : []);
   const resolvedPrompt = (initialPrompt || payload?.initial_prompt || payload?.extractedPrompt || '').trim();
   const resolvedCondoName = condoName || payload?.condo_name || '';
+  const groupKey = (groupName || 'FB Hero').trim();
   const isDirectMode = Boolean(skipTab1 || payload?.skip_tab1) || reqWorkerCount === 1 || payload?.worker_count === 1;
   const requiredTabCount = isDirectMode ? 1 : Math.max(1, parseInt(reqWorkerCount || payload?.worker_count, 10) || 2);
-  const mySessionId = ++automationSessionId;
-  twoStageAborted = false;
-  setupMutex = Promise.resolve();
-  const isTwoStageStopped = () => twoStageAborted || mySessionId !== automationSessionId;
+  const mySessionId = startGroupSession(groupKey);
+  const isTwoStageStopped = () => isGroupSessionStopped(groupKey, mySessionId);
 
   console.log(
-    `[BOLTHAVEN EXT] 🚀 Starting ${isDirectMode ? 'Direct 1-Tab' : '2-Stage (2-Tab)'} Hero Generation for "${resolvedCondoName}" in group "${groupName || 'FB Hero'}" (tabMode: ${tabMode || 'existing_tabs'}, tabs: ${requiredTabCount})...`
+    `[BOLTHAVEN EXT] 🚀 Starting ${isDirectMode ? 'Direct 1-Tab' : '2-Stage (2-Tab)'} Hero Generation for "${resolvedCondoName}" in group "${groupKey}" (tabMode: ${tabMode || 'existing_tabs'}, tabs: ${requiredTabCount})...`
   );
 
   await fetch(`${COMPANION_URL}/two-stage-status`, {
@@ -2125,8 +2178,11 @@ async function executeTwoStageStaging(payload) {
     body: JSON.stringify({
       is_running: true,
       step: 'locating_tab_group',
+      node_id: payload?.nodeId,
+      group_name: groupKey,
       condo_name: resolvedCondoName,
-      message: `Opening connected browser & ${requiredTabCount === 1 ? '1 worker tab' : `${requiredTabCount} worker tabs`} in [${groupName || 'FB Hero'}]...`,
+      prefix: payload?.prefix,
+      message: `Opening connected browser & ${requiredTabCount === 1 ? '1 worker tab' : `${requiredTabCount} worker tabs`} in [${groupKey}]...`,
     }),
   }).catch(() => {});
 
@@ -2134,7 +2190,7 @@ async function executeTwoStageStaging(payload) {
 
   // 1. Ensure the required number of tabs (1 for Direct, 2 for 2-Stage) are open and focused (regular tabs, no groups)
   const ensuredTabIds = await ensureTabGroupOpen(
-    groupName || 'FB Hero',
+    groupKey,
     Array.from({ length: requiredTabCount }, () => 'https://chatgpt.com/'),
     tabMode || 'existing_tabs',
     requiredTabCount,
@@ -2152,7 +2208,7 @@ async function executeTwoStageStaging(payload) {
   }
   if (tabs.length === 0) {
     const allTabs = await chrome.tabs.query({});
-    const reserved = await getAllReservedTabIds(groupName || 'FB Hero');
+    const reserved = await getAllReservedTabIds(groupKey);
     const freeTabs = allTabs.filter((t) => (t.url || '').includes('chatgpt.com') && !reserved.has(t.id));
     tabs = freeTabs.slice(0, requiredTabCount);
   }
@@ -2176,14 +2232,19 @@ async function executeTwoStageStaging(payload) {
 
   // 3. Step 1: Generate prompt in Tab 1 unless Direct Mode (skipTab1) is active
   if (isDirectMode) {
-    console.log('[BOLTHAVEN EXT] ⚡ Direct Mode (1 Tab): Using prompt directly in Tab 1 (id:', tab2.id, ')');
+    const totalAttachCount = (resolvedRefImg ? 1 : 0) + resolvedCondoImgs.length + resolvedEnhancedImgs.length;
+    console.log(`[BOLTHAVEN EXT] ⚡ Direct Mode (1 Tab): Using prompt directly in Tab 1 (id: ${tab2.id}, attaching ${totalAttachCount} images)`);
     await fetch(`${COMPANION_URL}/two-stage-status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         step: 'stage1_completed',
+        node_id: payload?.nodeId,
+        group_name: groupKey,
+        condo_name: resolvedCondoName,
+        prefix: payload?.prefix,
         extracted_prompt: initialPrompt,
-        message: 'Direct Mode (1 Tab): Prompt ready, attaching Reference Image + 3 Condo Photos...',
+        message: `Direct Mode (1 Tab): Prompt ready, attaching ${totalAttachCount} images...`,
       }),
     }).catch(() => {});
   } else {
@@ -2191,13 +2252,20 @@ async function executeTwoStageStaging(payload) {
     console.log('[BOLTHAVEN EXT] Focusing Tab 1:', tab1.id, tab1.title);
     await focusTab(tab1.id);
     await ensureContentScriptInjected(tab1.id);
-    await new Promise((r) => setTimeout(r, 500));
+    await delay(500);
     if (isTwoStageStopped()) return;
 
     await fetch(`${COMPANION_URL}/two-stage-status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ step: 'stage1_running', message: 'Generating and extracting prompt in Tab 1...' }),
+      body: JSON.stringify({
+        step: 'stage1_running',
+        node_id: payload?.nodeId,
+        group_name: groupKey,
+        condo_name: resolvedCondoName,
+        prefix: payload?.prefix,
+        message: 'Generating and extracting prompt in Tab 1...',
+      }),
     }).catch(() => {});
 
     const stage1Response = await new Promise((resolve, reject) => {
@@ -2221,6 +2289,10 @@ async function executeTwoStageStaging(payload) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         step: 'stage1_completed',
+        node_id: payload?.nodeId,
+        group_name: groupKey,
+        condo_name: resolvedCondoName,
+        prefix: payload?.prefix,
         extracted_prompt: extractedPrompt,
         message: 'Tab 1 prompt extracted! Switching to Tab 2...',
       }),
@@ -2229,58 +2301,74 @@ async function executeTwoStageStaging(payload) {
 
   if (isTwoStageStopped()) return;
 
-  // 4. Step 2: Focus target tab, ensure content script is injected, attach Reference Image (1st) + 3 Condo Photos (2nd) + Prompt (3rd), generate & download!
-  console.log('[BOLTHAVEN EXT] Focusing generation tab:', tab2.id, tab2.title);
-  await focusTab(tab2.id);
-  await ensureContentScriptInjected(tab2.id);
-  await new Promise((r) => setTimeout(r, 600));
-  if (isTwoStageStopped()) return;
-
-  await fetch(`${COMPANION_URL}/two-stage-status`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      step: 'stage2_running',
-      message: 'Attaching Reference Image (1st), Condo Photos 1, 2, 3 (next), and pasting prompt...',
-    }),
-  }).catch(() => {});
-
+  // 4. Step 2: Acquire attachment mutex for safe exclusive composer focus & file attachment, dispatch, and release!
+  console.log('[BOLTHAVEN EXT] Waiting for attachment lock for Hero generation tab:', tab2.id);
+  const releaseLock = await acquireAttachmentMutex();
   const heroJobId = `hero_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   let stage2Response = null;
   let lastSendError = null;
 
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    if (isTwoStageStopped()) {
-      console.log('[BOLTHAVEN EXT] Hero generation aborted by user before dispatch');
-      return;
-    }
-    try {
-      await ensureContentScriptInjected(tab2.id);
-      stage2Response = await new Promise((resolve, reject) => {
-        chrome.tabs.sendMessage(tab2.id, {
-          action: 'EXECUTE_STAGE2_STAGING',
-          heroJobId,
-          extractedPrompt: extractedPrompt || resolvedPrompt,
-          referenceImage: resolvedRefImg, // 1st: manual reference image
-          condoImages: resolvedCondoImgs, // 2nd: 1.png, 2.png, 3.png
-          enhancedImages: resolvedEnhancedImgs, // 3rd: interior/enhanced images
-          condoName: resolvedCondoName,
-        }, (res) => {
-          if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-          if (!res || !res.success) return reject(new Error(res?.error || 'Failed to submit Hero staging to ChatGPT'));
-          resolve(res);
-        });
-      });
-      if (stage2Response) break;
-    } catch (err) {
-      lastSendError = err;
+  try {
+    if (isTwoStageStopped()) return;
+    console.log('[BOLTHAVEN EXT] Acquired attachment lock! Focusing generation tab:', tab2.id, tab2.title);
+    await focusTab(tab2.id);
+    await ensureContentScriptInjected(tab2.id);
+    await delay(400);
+    if (isTwoStageStopped()) return;
+
+    const totalAttachCount = (resolvedRefImg ? 1 : 0) + resolvedCondoImgs.length + resolvedEnhancedImgs.length;
+    await fetch(`${COMPANION_URL}/two-stage-status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        step: 'stage2_running',
+        node_id: payload?.nodeId,
+        group_name: groupKey,
+        condo_name: resolvedCondoName,
+        prefix: payload?.prefix,
+        message: `Attaching ${resolvedRefImg ? 'Reference Image (1st) + ' : ''}${resolvedCondoImgs.length + resolvedEnhancedImgs.length} property/enhanced photos, and pasting prompt...`,
+      }),
+    }).catch(() => {});
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
       if (isTwoStageStopped()) {
-        console.log('[BOLTHAVEN EXT] Hero generation aborted by user during Stage 2');
+        console.log('[BOLTHAVEN EXT] Hero generation aborted by user before dispatch');
         return;
       }
-      console.warn(`[BOLTHAVEN EXT] Attempt ${attempt} to dispatch EXECUTE_STAGE2_STAGING failed:`, err.message);
-      await delay(1000);
+      try {
+        await ensureContentScriptInjected(tab2.id);
+        stage2Response = await new Promise((resolve, reject) => {
+          chrome.tabs.sendMessage(tab2.id, {
+            action: 'EXECUTE_STAGE2_STAGING',
+            heroJobId,
+            extractedPrompt: extractedPrompt || resolvedPrompt,
+            referenceImage: resolvedRefImg, // 1st: manual reference image
+            condoImages: resolvedCondoImgs, // 2nd: 1.png, 2.png, 3.png
+            enhancedImages: resolvedEnhancedImgs, // 3rd: interior/enhanced images
+            condoName: resolvedCondoName,
+            prefix: payload.prefix,
+            groupName: groupKey,
+            nodeId: payload.nodeId,
+          }, (res) => {
+            if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+            if (!res || !res.success) return reject(new Error(res?.error || 'Failed to submit Hero staging to ChatGPT'));
+            resolve(res);
+          });
+        });
+        if (stage2Response) break;
+      } catch (err) {
+        lastSendError = err;
+        if (isTwoStageStopped()) {
+          console.log('[BOLTHAVEN EXT] Hero generation aborted by user during Stage 2');
+          return;
+        }
+        console.warn(`[BOLTHAVEN EXT] Attempt ${attempt} to dispatch EXECUTE_STAGE2_STAGING failed:`, err.message);
+        await delay(1000);
+      }
     }
+  } finally {
+    // Release the attachment lock immediately so other worker tabs and groups can attach and send!
+    releaseLock();
   }
 
   if (!stage2Response) {
@@ -2306,8 +2394,12 @@ async function executeTwoStageStaging(payload) {
     body: JSON.stringify({
       is_running: false,
       step: 'completed',
+      node_id: payload?.nodeId,
+      group_name: groupKey,
+      condo_name: resolvedCondoName,
+      prefix: payload?.prefix,
       extracted_prompt: extractedPrompt,
-      images_attached: heroGenResult.imagesAttached || stage2Response.imagesAttached || 4,
+      images_attached: heroGenResult.imagesAttached || stage2Response?.imagesAttached || 4,
       result_url: heroGenResult.result_url || '',
       downloaded_file: heroGenResult.filename || '',
       message: `✓ Hero Image generated and downloaded (${heroGenResult.filename || 'fb_hero.png'})!`,
@@ -2585,6 +2677,23 @@ async function pollCompanion() {
             body: JSON.stringify({ is_running: false, step: 'error', error: err.message }),
           }).catch(() => {});
         });
+      } else if (action === 'RECOVER_HERO_IMAGE') {
+        const { condoName } = payload || {};
+        console.log('[BOLTHAVEN EXT] 🛟 Searching open ChatGPT tabs to recover generated Hero image...');
+        chrome.tabs.query({}).then(async (allTabs) => {
+          const chatTabs = allTabs.filter((t) => (t.url || '').includes('chatgpt.com'));
+          for (const cTab of chatTabs) {
+            try {
+              await ensureContentScriptInjected(cTab.id);
+              chrome.tabs.sendMessage(cTab.id, { action: 'DOWNLOAD_CURRENT_HERO_IMAGE', condoName }, (resp) => {
+                if (chrome.runtime.lastError) {}
+                if (resp && resp.success) {
+                  console.log(`[BOLTHAVEN EXT] ✓ Recovered Hero image from tab ${cTab.id}:`, resp.filename);
+                }
+              });
+            } catch (e) {}
+          }
+        });
       } else if (action === 'CLEAR_MEMORIZED_TABS') {
         const { groupName } = payload || {};
         if (groupName) {
@@ -2592,8 +2701,14 @@ async function pollCompanion() {
           console.log(`[BOLTHAVEN EXT] ✕ Cleared memorized tabs for "${groupName}"`);
         }
       } else if (action === 'STOP_AUTOMATION') {
-        await stopAllExtensionAutomation();
-        console.log('[BOLTHAVEN EXT] Automation stopped by companion: all tabs aborted');
+        const grp = payload?.groupName || payload?.group_name;
+        if (grp) {
+          await stopGroupAutomation(grp);
+          console.log(`[BOLTHAVEN EXT] Automation stopped for group "${grp}"`);
+        } else {
+          await stopAllExtensionAutomation();
+          console.log('[BOLTHAVEN EXT] Automation stopped by companion: all tabs aborted');
+        }
       } else if (action === 'FOCUS_GROUP') {
         const { groupName, tabId, groupTabUrls, tabMode, workerCount, reuseSessionTabs } = payload || {};
         console.log('[BOLTHAVEN EXT] Direct tab group focus request:', groupName, tabId, tabMode, workerCount);
@@ -2623,6 +2738,19 @@ async function pollCompanion() {
     isPollingCompanion = false;
   }
 }
+
+// Automatically ungroup any existing Chrome Tab Groups so the user has pure tabs
+async function disbandAllExistingGroups() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    const groupedTabIds = tabs.filter((t) => t.groupId && t.groupId !== -1).map((t) => t.id);
+    if (groupedTabIds.length > 0) {
+      await chrome.tabs.ungroup(groupedTabIds).catch(() => {});
+      console.log(`[BOLTHAVEN EXT] 🫧 Disbanded ${groupedTabIds.length} tab(s) into pure tabs`);
+    }
+  } catch (e) {}
+}
+disbandAllExistingGroups();
 
 // Poll every 500ms for swift reaction
 setInterval(pollCompanion, 500);

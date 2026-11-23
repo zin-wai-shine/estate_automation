@@ -237,6 +237,65 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const isEnhanceNode = currentTabGroupMode === 'enhance';
   const isHeroNode = !isEnhanceNode;
 
+  // Helper: Strictly verify that a downloaded hero/result image belongs to THIS specific node
+  const isImageRelevantToThisNode = (
+    img: { fileName?: string; condoName?: string; nodeId?: string; groupName?: string } | null,
+    config: typeof boxConfig,
+    grpName: string
+  ): boolean => {
+    if (!img || !img.fileName) return false;
+    const fileName = (img.fileName || '').toLowerCase();
+    const boxTitle = (config.title || '').toLowerCase();
+    const group = (grpName || config.browserGroupName || '').toLowerCase();
+
+    // 1. If explicit nodeId is attached and doesn't match, reject
+    if (img.nodeId && config.id && img.nodeId !== config.id) {
+      return false;
+    }
+
+    // 2. Identify node modality
+    const isTikTokNode = boxTitle.includes('tiktok') || group.includes('tiktok');
+    const isFacebookNode =
+      boxTitle.includes('facebook') ||
+      (boxTitle.includes('fb') && !boxTitle.includes('tiktok')) ||
+      (group.includes('fb') && !group.includes('tiktok'));
+
+    // 3. TikTok modality checks
+    if (isTikTokNode) {
+      // Reject any Facebook hero image
+      if (
+        fileName.startsWith('fb_hero') ||
+        fileName.includes('facebook') ||
+        (fileName.includes('fb_') && !fileName.includes('tiktok'))
+      ) {
+        return false;
+      }
+      // Brand separation: BoltHaven vs Dot
+      const isBoltHaven = boxTitle.includes('bolthaven') || group.includes('bolthaven');
+      const isDot = boxTitle.includes('dot') || group.includes('dot');
+      if (isBoltHaven && (fileName.includes('dot_') || fileName.includes('dottiktok') || fileName.includes('dot_tiktok'))) {
+        return false;
+      }
+      if (isDot && (fileName.includes('bolthaven') || fileName.includes('bh_') || fileName.includes('bolthaven_tiktok'))) {
+        return false;
+      }
+      // Must be a genuine tiktok hero image
+      if (!fileName.includes('tiktok')) {
+        return false;
+      }
+    }
+
+    // 4. Facebook modality checks
+    if (isFacebookNode) {
+      // Reject any TikTok hero image
+      if (fileName.includes('tiktok')) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
   // 1. Core Profile, Group, and Tab State
   const targetGroupName = useMemo(() => {
     if (boxConfig.title && boxConfig.title !== 'Tab Group' && !boxConfig.title.startsWith('External Browser')) {
@@ -452,7 +511,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     });
   };
   const [useEnhancedImages, setUseEnhancedImages] = useState<boolean>(() => {
-    return boxConfig.useEnhancedImages !== undefined ? boxConfig.useEnhancedImages : true;
+    return boxConfig.useEnhancedImages === true;
   });
   const [enhancedImagesSource, setEnhancedImagesSource] = useState<'enhanced' | 'get_images'>(() => {
     return boxConfig.enhancedImagesSource || 'enhanced';
@@ -587,6 +646,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     if (enhancedImages && enhancedImages.length > 0) {
       return enhancedImages.map((img, i) => ({
         url: img.url,
+        full_path: (img as any).full_path,
         index: img.position || i + 1,
         filename: img.filename || `Enhanced Photo #${img.position || i + 1}`,
       }));
@@ -601,7 +661,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     return (workflowImageSources || []).map((src) => {
       const isEnhance = src.nodeType === 'enhance' || src.title?.toLowerCase().includes('enhance') || src.id?.includes('enhance');
       if (isEnhance) {
-        const enh = availableEnhancedPhotos.length > 0 ? availableEnhancedPhotos : (src.images && src.images.length > 0 && src.images !== propertyContext?.images ? src.images : []);
+        const enh = (src.images && src.images.length > 0)
+          ? src.images
+          : (availableEnhancedPhotos.length > 0 ? availableEnhancedPhotos : []);
         return {
           ...src,
           images: enh,
@@ -611,7 +673,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       }
       return src;
     });
-  }, [workflowImageSources, availableEnhancedPhotos, propertyContext?.images]);
+  }, [workflowImageSources, availableEnhancedPhotos]);
 
   const availableSourcePhotos = useMemo(() => {
     return receivedImages;
@@ -758,20 +820,47 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     fileName?: string;
     condoName?: string;
     createdAt?: string;
+    nodeId?: string;
+    groupName?: string;
   } | null>(() => {
     try {
+      // 1. Check node-specific storage first
+      const nodeSaved = localStorage.getItem(`bolthaven_hero_image_${boxConfig.id}`);
+      if (nodeSaved) {
+        const parsedNode = JSON.parse(nodeSaved);
+        if (isImageRelevantToThisNode(parsedNode, boxConfig, targetGroupName)) {
+          return parsedNode;
+        } else {
+          localStorage.removeItem(`bolthaven_hero_image_${boxConfig.id}`);
+        }
+      }
+
+      // 2. Fall back to bolthaven_last_hero_image ONLY if strictly relevant to this node (never for TikTok nodes!)
+      const boxTitleLower = (boxConfig.title || '').toLowerCase();
+      const isTikTok = boxTitleLower.includes('tiktok') || (targetGroupName || '').toLowerCase().includes('tiktok');
+      if (isTikTok) return null;
+
       const saved = localStorage.getItem('bolthaven_last_hero_image');
       if (!saved) return null;
       const parsed = JSON.parse(saved);
+      if (!isImageRelevantToThisNode(parsed, boxConfig, targetGroupName)) {
+        return null;
+      }
       const fileNameLower = (parsed?.fileName || '').toLowerCase();
       if (!fileNameLower.includes('hero')) {
         return null;
       }
       const activeCondo = (aiExtractedCondoName || propertyContext?.title || boxConfig.browserCondoName || '').trim();
-      if (!activeCondo || activeCondo === 'Featured Property Listing' || activeCondo === 'Facebook Property Post') {
-        return null;
-      }
-      if (parsed?.condoName && (activeCondo.toLowerCase().includes(parsed.condoName.toLowerCase()) || parsed.condoName.toLowerCase().includes(activeCondo.toLowerCase()))) {
+      const normActive = activeCondo.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normFile = fileNameLower.replace(/[^a-z0-9]/g, '');
+      const normParsed = (parsed?.condoName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (
+        !normActive ||
+        normActive === 'featuredpropertylisting' ||
+        normActive === 'facebookpropertypost' ||
+        (normParsed && (normActive.includes(normParsed) || normParsed.includes(normActive))) ||
+        (normFile && normFile.includes(normActive))
+      ) {
         return parsed;
       }
       return null;
@@ -784,9 +873,14 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     setLatestHeroImage(img);
     try {
       if (img) {
-        localStorage.setItem('bolthaven_last_hero_image', JSON.stringify(img));
+        const payload = { ...img, nodeId: boxConfig.id, groupName: targetGroupName };
+        localStorage.setItem(`bolthaven_hero_image_${boxConfig.id}`, JSON.stringify(payload));
+        // Only update global bolthaven_last_hero_image if relevant to FB Hero
+        if (isImageRelevantToThisNode(img, { title: 'Facebook Hero IMG', browserGroupName: 'FB Hero' } as any, 'FB Hero')) {
+          localStorage.setItem('bolthaven_last_hero_image', JSON.stringify(payload));
+        }
       } else {
-        localStorage.removeItem('bolthaven_last_hero_image');
+        localStorage.removeItem(`bolthaven_hero_image_${boxConfig.id}`);
       }
     } catch (e) {}
     try {
@@ -797,14 +891,17 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   // Auto-fetch latest downloaded Hero image on mount or when sidebar is opened
   useEffect(() => {
     if (!isHeroNode) return;
+    let isCancelled = false;
     const fetchLatestStatus = async () => {
       try {
         const queryCondo = (condoName || condoSearchQuery || '').trim();
-        if (!queryCondo || queryCondo === 'Featured Property Listing' || queryCondo === 'Facebook Property Post') {
-          return;
-        }
-        const resp = await fetch(`http://127.0.0.1:9224/two-stage-status?condo=${encodeURIComponent(queryCondo)}`);
-        if (resp.ok) {
+        const params = new URLSearchParams();
+        if (boxConfig.id) params.set('node_id', boxConfig.id);
+        if (targetGroupName) params.set('group', targetGroupName);
+        if (queryCondo) params.set('condo', queryCondo);
+        const url = `http://127.0.0.1:9224/two-stage-status?${params.toString()}`;
+        const resp = await fetch(url);
+        if (resp.ok && !isCancelled) {
           const data = await resp.json();
           if (data?.state) {
             setTwoStageStatus(data.state);
@@ -814,19 +911,36 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               if (!fileLower.includes('hero')) {
                 return;
               }
+              // STRICTLY verify relevance to THIS specific node!
+              const candidate = {
+                fileName: file,
+                condoName: data.state.condo_name,
+                nodeId: data.state.node_id,
+                groupName: data.state.group_name,
+              };
+              if (!isImageRelevantToThisNode(candidate, boxConfig, targetGroupName)) {
+                return; // Ignore conflicting images from other nodes/generators!
+              }
               const stateCondo = (data.state.condo_name || '').trim();
-              if (
-                queryCondo && stateCondo && (
-                  stateCondo.toLowerCase().includes(queryCondo.toLowerCase()) ||
-                  queryCondo.toLowerCase().includes(stateCondo.toLowerCase())
-                )
-              ) {
+              const normQuery = queryCondo.toLowerCase().replace(/[^a-z0-9]/g, '');
+              const normFile = fileLower.replace(/[^a-z0-9]/g, '');
+              const normState = stateCondo.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+              const condoMatches = !normQuery ||
+                normQuery === 'featuredpropertylisting' ||
+                normQuery === 'facebookpropertypost' ||
+                (normState && (normState.includes(normQuery) || normQuery.includes(normState))) ||
+                (normFile && normFile.includes(normQuery));
+
+              if (condoMatches) {
                 const imgUrl = data.state.downloaded_image_url || `http://127.0.0.1:9224/hero-downloaded-image?file=${encodeURIComponent(file)}`;
                 updateLatestHeroImage({
                   url: imgUrl,
                   fileName: file,
                   condoName: stateCondo || queryCondo,
                   createdAt: data.state.updated_at,
+                  nodeId: boxConfig.id,
+                  groupName: targetGroupName,
                 });
               }
             }
@@ -835,7 +949,12 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       } catch (e) {}
     };
     fetchLatestStatus();
-  }, [isHeroNode, condoName, condoSearchQuery]);
+    const interval = setInterval(fetchLatestStatus, 2500);
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [isHeroNode, condoName, condoSearchQuery, boxConfig.id, boxConfig.title, targetGroupName]);
 
   // Restore persisted reference image on mount or box change (and keep it until changed or deleted)
   useEffect(() => {
@@ -1176,9 +1295,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   // Listen for global workflow cleared event (Clear Canvas Data & Results)
   useEffect(() => {
     const handleWorkflowCleared = () => {
-      clearPersistedReferenceImage(boxConfig?.id);
-      setReferenceImage('');
-      setReferenceImageMode('photo_1');
       setCondoSearchQuery('');
       setMatchedCondoInfo(null);
       lastScannedKeyRef.current = '';
@@ -1187,7 +1303,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         browserMatchedFolder: '',
         browserCondoImagesCount: 0,
         condoImages: [],
-        referenceImage: '',
       });
     };
     window.addEventListener('ea_workflow_cleared', handleWorkflowCleared);
@@ -1400,7 +1515,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       }
       // 3. Interior / Enhanced Photos (3rd Attached)
       let enhancedImagesToUse: any[] = [];
-      const shouldAttachEnhanced = useEnhancedImages && boxConfig.useEnhancedImages !== false;
+      const hasAttachmentSteps = Array.isArray(attachmentSteps) && attachmentSteps.length > 0;
+      // If modern attachment steps are configured, DO NOT attach legacy enhanced photos on top!
+      const shouldAttachEnhanced = !hasAttachmentSteps && boxConfig.useEnhancedImages === true && useEnhancedImages;
       const targetEnhancedCount = typeof enhancedImagesCount === 'number' ? enhancedImagesCount : 5;
       if (shouldAttachEnhanced && targetEnhancedCount > 0) {
         const isEnhancedSrc = enhancedImagesSource === 'enhanced';
@@ -1416,7 +1533,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       }
 
       const promptToUse = (resolvedPromptPreview || currentPromptText || 'Create facebook advertisement from the attached reference and building photos').trim();
-      const effectiveHeroGroupName = currentGroup?.name || targetGroupName || 'FB Hero';
+      const effectiveHeroGroupName = (boxConfig.title && boxConfig.title !== 'Tab Group' ? boxConfig.title : (boxConfig.browserGroupName || currentGroup?.name || targetGroupName || 'FB Hero'));
       const isDirectStaging = boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1 === true || (boxConfig.stagingMode !== 'two_stage' && boxConfig.stagingMode !== 'two_stage_tabs' && boxConfig.workerTabCount === 1);
 
       // 0. Instantly focus Chrome profile and ChatGPT tab
@@ -1432,12 +1549,19 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         force: true,
       }).catch(() => {});
 
+      const isTikTok = (boxConfig.title || '').toLowerCase().includes('tiktok') || effectiveHeroGroupName.toLowerCase().includes('tiktok');
+      const isBoltHaven = (boxConfig.title || '').toLowerCase().includes('bolthaven') || effectiveHeroGroupName.toLowerCase().includes('bolthaven');
+      const isDot = (boxConfig.title || '').toLowerCase().includes('dot') || effectiveHeroGroupName.toLowerCase().includes('dot');
+      const calculatedPrefix = isTikTok ? (isBoltHaven ? 'bolthaven_tiktok_hero' : (isDot ? 'dot_tiktok_hero' : 'tiktok_hero')) : 'fb_hero';
+
       const resp = await fetch('http://127.0.0.1:9224/start-two-stage-staging', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           profile_key: profKey,
           group_name: effectiveHeroGroupName,
+          node_id: boxConfig.id,
+          prefix: calculatedPrefix,
           condo_name: matchedCondoInfo?.matched_folder || aiExtractedCondoName || condoSearchQuery || condoName,
           matched_folder: matchedCondoInfo?.matched_folder || '',
           condo_images: condoImagesToUse,
@@ -1458,9 +1582,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       const data = await resp.json();
       if (isSidebarStoppedRef.current) return;
       if (data.status === 'success') {
+        const attachTotalCount = (refImgToUse ? 1 : 0) + condoImagesToUse.length + enhancedImagesToUse.length;
         setTwoStageMessage(
           isDirectStaging
-            ? `🚀 Direct Mode (1 Tab): Opening connected browser & attaching Reference + 3 Condo Photos for "${data.matched_folder || condoName}"...`
+            ? `🚀 Direct Mode (1 Tab): Opening connected browser & attaching ${attachTotalCount} images for "${data.matched_folder || condoName}"...`
             : `🚀 2-Stage Mode (2 Tabs): Tab 1 generating prompt for "${data.matched_folder || condoName}"...`
         );
 
@@ -1480,7 +1605,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             return;
           }
           try {
-            const stResp = await fetch('http://127.0.0.1:9224/two-stage-status');
+            const pollParams = new URLSearchParams();
+            if (boxConfig.id) pollParams.set('node_id', boxConfig.id);
+            if (targetGroupName) pollParams.set('group', targetGroupName);
+            if (condoName) pollParams.set('condo', condoName);
+            const stResp = await fetch(`http://127.0.0.1:9224/two-stage-status?${pollParams.toString()}`);
             const stData = await stResp.json();
             if (isSidebarStoppedRef.current) {
               clearInterval(interval);
@@ -1491,13 +1620,23 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               setTwoStageStatus(stData.state);
               if (stData.state.downloaded_image_url || stData.state.downloaded_file) {
                 const file = stData.state.downloaded_file;
-                const imgUrl = stData.state.downloaded_image_url || `http://127.0.0.1:9224/hero-downloaded-image?file=${encodeURIComponent(file)}`;
-                updateLatestHeroImage({
-                  url: imgUrl,
+                const cand = {
                   fileName: file,
-                  condoName: stData.state.condo_name || condoName,
-                  createdAt: stData.state.updated_at,
-                });
+                  condoName: stData.state.condo_name,
+                  nodeId: stData.state.node_id,
+                  groupName: stData.state.group_name,
+                };
+                if (isImageRelevantToThisNode(cand, boxConfig, targetGroupName)) {
+                  const imgUrl = stData.state.downloaded_image_url || `http://127.0.0.1:9224/hero-downloaded-image?file=${encodeURIComponent(file)}`;
+                  updateLatestHeroImage({
+                    url: imgUrl,
+                    fileName: file,
+                    condoName: stData.state.condo_name || condoName,
+                    createdAt: stData.state.updated_at,
+                    nodeId: boxConfig.id,
+                    groupName: targetGroupName,
+                  });
+                }
               }
               if (stData.state.step === 'stopped') {
                 clearInterval(interval);
@@ -1509,11 +1648,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               } else if (stData.state.step === 'stage1_completed') {
                 setTwoStageMessage(
                   isDirectStaging
-                    ? '⚡ Direct Mode (1 Tab): Prompt ready, attaching Reference Image (1st) + 3 Condo Photos...'
+                    ? `⚡ Direct Mode (1 Tab): Prompt ready, attaching ${attachTotalCount} images...`
                     : '✓ Tab 1: Extracted prompt! Focusing Tab 2...'
                 );
               } else if (stData.state.step === 'stage2_running') {
-                setTwoStageMessage('🖼️ Attaching Reference Image (1st), Condo Photos 1, 2, 3 (next), and pasting prompt...');
+                setTwoStageMessage(stData.state.message || `🖼️ Attaching ${attachTotalCount} images and pasting prompt...`);
               } else if (stData.state.step === 'generating_image') {
                 setTwoStageMessage(stData.state.message || '🎨 Generating Hero Image in ChatGPT...');
               } else if (stData.state.step === 'downloading_image') {
@@ -1527,13 +1666,23 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 );
                 if (stData.state.downloaded_image_url || stData.state.downloaded_file) {
                   const file = stData.state.downloaded_file;
-                  const imgUrl = stData.state.downloaded_image_url || `http://127.0.0.1:9224/hero-downloaded-image?file=${encodeURIComponent(file)}`;
-                  updateLatestHeroImage({
-                    url: imgUrl,
+                  const cand = {
                     fileName: file,
-                    condoName: stData.state.condo_name || condoName,
-                    createdAt: stData.state.updated_at,
-                  });
+                    condoName: stData.state.condo_name,
+                    nodeId: stData.state.node_id,
+                    groupName: stData.state.group_name,
+                  };
+                  if (isImageRelevantToThisNode(cand, boxConfig, targetGroupName)) {
+                    const imgUrl = stData.state.downloaded_image_url || `http://127.0.0.1:9224/hero-downloaded-image?file=${encodeURIComponent(file)}`;
+                    updateLatestHeroImage({
+                      url: imgUrl,
+                      fileName: file,
+                      condoName: stData.state.condo_name || condoName,
+                      createdAt: stData.state.updated_at,
+                      nodeId: boxConfig.id,
+                      groupName: targetGroupName,
+                    });
+                  }
                 }
               } else if (stData.state.step === 'error') {
                 clearInterval(interval);
@@ -1726,28 +1875,24 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         }
       } catch (e) {}
 
-      if (receivedImages.length === 0) {
-        setEnhancedImages([]);
-      } else {
-        try {
-          const enhanced = await fetchEnhancedDownloadedImages(propertyContext?.id, propertyContext?.listingCode);
-          if (enhanced && enhanced.length > 0) {
-            // Only accept images if their position matches the active received images in this session
-            const valid = enhanced.filter((img) => (img.position || 1) <= receivedImages.length);
-            if (valid.length > 0) {
-              setEnhancedImages(valid);
-              if (onEnhancedPhotosUpdate) {
-                const map: Record<number, string> = {};
-                valid.forEach((img) => {
-                  const pos0 = (img.position || 1) - 1; // 0-based index key
-                  map[pos0] = img.backend_url || img.url;
-                });
-                onEnhancedPhotosUpdate(map);
-              }
+      try {
+        const enhanced = await fetchEnhancedDownloadedImages(propertyContext?.id, propertyContext?.listingCode);
+        if (enhanced && enhanced.length > 0) {
+          const maxAllowed = receivedImages.length > 0 ? receivedImages.length : 99;
+          const valid = enhanced.filter((img) => (img.position || 1) <= maxAllowed);
+          if (valid.length > 0) {
+            setEnhancedImages(valid);
+            if (onEnhancedPhotosUpdate) {
+              const map: Record<number, string> = {};
+              valid.forEach((img) => {
+                const pos0 = (img.position || 1) - 1; // 0-based index key
+                map[pos0] = img.backend_url || img.url;
+              });
+              onEnhancedPhotosUpdate(map);
             }
           }
-        } catch (e) {}
-      }
+        }
+      } catch (e) {}
 
       loadQueue();
     };
@@ -2201,21 +2346,40 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     if (!matched && target && target !== 'tab group' && !target.startsWith('external browser')) {
       matched = tabGroups.find((g) => {
         const gn = g.name.toLowerCase();
+        const isTargetTikTok = target.includes('tiktok');
+        const isGroupTikTok = gn.includes('tiktok');
+        if (isTargetTikTok !== isGroupTikTok) return false;
+
+        const isTargetFB = (target.includes('fb') || target.includes('facebook')) && !isTargetTikTok;
+        const isGroupFB = (gn.includes('fb') || gn.includes('facebook')) && !isGroupTikTok;
+        if (isTargetFB !== isGroupFB) return false;
+
+        if (target.includes('bolthaven') && (gn.includes('dot') || gn.includes('dot_'))) return false;
+        if (target.includes('dot') && (gn.includes('bolthaven') || gn.includes('bh_'))) return false;
+
         return gn === target || target.includes(gn) || gn.includes(target);
       });
     }
 
-    // 5. Role-based fallback ONLY if the node specifically targets Enhance or FB Hero
+    // 5. Role-based fallback ONLY if the node specifically targets Enhance, TikTok, or FB Hero
     if (!matched) {
       if (isEnhanceNode) {
         matched = tabGroups.find((g) => {
           const gn = g.name.toLowerCase();
-          return gn.includes('enhance') && !gn.includes('hero') && !gn.includes('fb');
+          return gn.includes('enhance') && !gn.includes('hero') && !gn.includes('fb') && !gn.includes('tiktok');
+        });
+      } else if (target.includes('tiktok')) {
+        matched = tabGroups.find((g) => {
+          const gn = g.name.toLowerCase();
+          if (!gn.includes('tiktok')) return false;
+          if (target.includes('bolthaven') && (gn.includes('dot') || gn.includes('dot_'))) return false;
+          if (target.includes('dot') && (gn.includes('bolthaven') || gn.includes('bh_'))) return false;
+          return true;
         });
       } else if (target.includes('hero') || target.includes('fb')) {
         matched = tabGroups.find((g) => {
           const gn = g.name.toLowerCase();
-          return (gn.includes('hero') || gn.includes('fb')) && !gn.includes('enhance');
+          return (gn.includes('hero') || gn.includes('fb')) && !gn.includes('enhance') && !gn.includes('tiktok');
         });
       }
     }
@@ -2530,14 +2694,16 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               style={{
                 fontSize: '0.625rem',
                 fontWeight: 600,
-                padding: '2px 8px',
+                padding: '0 10px',
                 height: '24px',
+                lineHeight: '24px',
                 borderRadius: '6px',
                 border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid #CBD5E1',
                 backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
                 color: isDark ? '#94A3B8' : '#64748B',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
+                minWidth: 'max-content',
                 flexShrink: 0,
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -2553,7 +2719,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 e.currentTarget.style.color = isDark ? '#94A3B8' : '#64748B';
               }}
             >
-              {(imageSourceMode !== 'selected' || selectedImageIndices.length === receivedImages.length) ? 'Deselect All' : 'Select All'}
+              <span style={{ whiteSpace: 'nowrap', display: 'inline-block' }}>
+                {(imageSourceMode !== 'selected' || selectedImageIndices.length === receivedImages.length) ? 'Deselect All' : 'Select All'}
+              </span>
             </button>
           )}
           <span
@@ -4047,7 +4215,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
 
             {/* ── 4. Generated Hero Advertisement Preview Card ── */}
-            {latestHeroImage && Boolean(latestHeroImage.fileName?.toLowerCase().includes('hero')) && Boolean(condoName || condoSearchQuery) && Boolean(
+            {latestHeroImage && isImageRelevantToThisNode(latestHeroImage, boxConfig, targetGroupName) && Boolean(latestHeroImage.fileName?.toLowerCase().includes('hero')) && Boolean(condoName || condoSearchQuery) && Boolean(
               latestHeroImage.condoName && (
                 (condoName || condoSearchQuery).toLowerCase().includes(latestHeroImage.condoName.toLowerCase()) ||
                 latestHeroImage.condoName.toLowerCase().includes((condoName || condoSearchQuery).toLowerCase())
@@ -4093,7 +4261,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                           textOverflow: 'ellipsis',
                         }}
                       >
-                        Generated Hero Image
+                        {(boxConfig.title || '').toLowerCase().includes('tiktok') ? 'Generated TikTok Hero Image' : 'Generated Hero Image'}
                       </div>
                       <div
                         style={{
@@ -4104,7 +4272,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                           textOverflow: 'ellipsis',
                         }}
                       >
-                        {latestHeroImage.condoName || condoName || 'Facebook Hero'}
+                        {latestHeroImage.condoName || condoName || ((boxConfig.title || '').toLowerCase().includes('tiktok') ? 'TikTok Hero' : 'Facebook Hero')}
                       </div>
                     </div>
                   </div>
@@ -4127,6 +4295,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                       type="button"
                       onClick={() => {
                         updateLatestHeroImage(null);
+                        localStorage.removeItem(`bolthaven_hero_image_${boxConfig.id}`);
                         localStorage.removeItem('bolthaven_last_hero_image');
                         fetch('http://127.0.0.1:9224/two-stage-status', { method: 'DELETE' }).catch(() => {});
                       }}
@@ -4485,25 +4654,54 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             }}
           >
             <span>{twoStageMessage}</span>
-            {isRunningTwoStage && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
               <button
                 type="button"
-                onClick={handleStopGroupAutomation}
+                onClick={async () => {
+                  try {
+                    setTwoStageMessage('⬇️ Syncing generated Hero image from browser tab...');
+                    await fetch('http://127.0.0.1:9224/recover-hero-image', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ condo_name: condoName || aiExtractedCondoName || 'hero' }),
+                    });
+                  } catch (e) {}
+                }}
+                title="Download the completed Hero image from the active browser tab"
                 style={{
-                  background: 'transparent',
+                  background: isDark ? '#238636' : '#16A34A',
                   border: 'none',
-                  color: '#EF4444',
+                  color: '#FFFFFF',
                   cursor: 'pointer',
                   fontSize: '0.625rem',
-                  fontWeight: 700,
-                  textDecoration: 'underline',
-                  padding: 0,
+                  fontWeight: 600,
+                  padding: '3px 7px',
+                  borderRadius: '4px',
                   whiteSpace: 'nowrap',
                 }}
               >
-                Cancel
+                Download Now
               </button>
-            )}
+              {isRunningTwoStage && (
+                <button
+                  type="button"
+                  onClick={handleStopGroupAutomation}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#EF4444',
+                    cursor: 'pointer',
+                    fontSize: '0.625rem',
+                    fontWeight: 700,
+                    textDecoration: 'underline',
+                    padding: 0,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -5693,67 +5891,67 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         const allAttachedChatPhotos: Array<{ url: string; label: string; index: number; groupName?: string }> = [];
         let seq = 1;
 
-        // 1. Reference Photo (1st Attached)
-        const shouldAttachRef = useReferenceImage && boxConfig.useReferenceImage !== false;
-        const refUrl = shouldAttachRef
-          ? (activeReferenceImage?.url || referenceImage || boxConfig.referenceImage || (propertyContext?.images && propertyContext.images[0]?.url) || null)
-          : null;
-
-        if (refUrl) {
-          allAttachedChatPhotos.push({
-            url: refUrl,
-            label: 'Ref Layout (#1)',
-            index: seq++,
-            groupName: 'Reference Image',
-          });
-        }
-
-        // 2. Condo / Attached Group Photos (2nd Attached)
-        const shouldAttachCondo = useCondoImages && boxConfig.useCondoImages !== false;
-        if (shouldAttachCondo) {
-          const resolved = resolveAttachedPhotosFromSteps(
-            attachmentSteps,
-            effectiveWorkflowImageSources,
-            propertyContext?.images,
-            availableEnhancedPhotos
-          );
-          if (resolved && resolved.length > 0) {
-            resolved.forEach((p, idx) => {
-              allAttachedChatPhotos.push({
-                url: p.url || p.data_url || '',
-                label: p.filename || `Condo Photo #${idx + 1}`,
-                index: seq++,
-                groupName: `Group Photo #${idx + 1}`,
-              });
+        if (isEnhanceNode) {
+          activeImages.forEach((img, i) => {
+            const pos = typeof img.index === 'number' && img.index > 0 ? img.index : i + 1;
+            allAttachedChatPhotos.push({
+              url: img.url || (img as any).data_url || '',
+              label: img.filename || `Photo #${pos}`,
+              index: seq++,
+              groupName: `Image #${pos}`,
             });
-          } else {
-            const selectedCondoImgs = condoSlots.filter(Boolean);
-            const targetCondoCount = typeof condoImagesCount === 'number' ? condoImagesCount : 3;
-            const fallbackList = selectedCondoImgs.length > 0
-              ? selectedCondoImgs.slice(0, targetCondoCount)
-              : (propertyContext?.images || []).slice(0, targetCondoCount);
+          });
+        } else {
+          // 1. Reference Photo (1st Attached)
+          const shouldAttachRef = useReferenceImage && boxConfig.useReferenceImage !== false;
+          const refUrl = shouldAttachRef
+            ? (activeReferenceImage?.url || referenceImage || boxConfig.referenceImage || (propertyContext?.images && propertyContext.images[0]?.url) || null)
+            : null;
 
-            fallbackList.forEach((img: any, i: number) => {
-              allAttachedChatPhotos.push({
-                url: typeof img === 'string' ? img : img.url || img.data_url || '',
-                label: img.filename || `Photo #${i + 1}`,
-                index: seq++,
-                groupName: `Photo #${i + 1}`,
-              });
+          if (refUrl) {
+            allAttachedChatPhotos.push({
+              url: refUrl,
+              label: 'Ref Layout (#1)',
+              index: seq++,
+              groupName: 'Reference Image',
             });
           }
-        }
 
-        // 3. For Enhance IMG nodes, fallback to activeImages from queue
-        if (!isHeroNode && allAttachedChatPhotos.length === 0 && activeImages.length > 0) {
-          activeImages.forEach((img, i) => {
-            allAttachedChatPhotos.push({
-              url: img.url,
-              label: img.filename || `Queue Photo #${i + 1}`,
-              index: seq++,
-              groupName: `Image #${i + 1}`,
-            });
-          });
+          // 2. Condo / Attached Group Photos (2nd Attached)
+          const shouldAttachCondo = useCondoImages && boxConfig.useCondoImages !== false;
+          if (shouldAttachCondo) {
+            const resolved = resolveAttachedPhotosFromSteps(
+              attachmentSteps,
+              effectiveWorkflowImageSources,
+              propertyContext?.images,
+              availableEnhancedPhotos
+            );
+            if (resolved && resolved.length > 0) {
+              resolved.forEach((p, idx) => {
+                allAttachedChatPhotos.push({
+                  url: p.url || p.data_url || '',
+                  label: p.filename || `Condo Photo #${idx + 1}`,
+                  index: seq++,
+                  groupName: `Group Photo #${idx + 1}`,
+                });
+              });
+            } else {
+              const selectedCondoImgs = condoSlots.filter(Boolean);
+              const targetCondoCount = typeof condoImagesCount === 'number' ? condoImagesCount : 3;
+              const fallbackList = selectedCondoImgs.length > 0
+                ? selectedCondoImgs.slice(0, targetCondoCount)
+                : (propertyContext?.images || []).slice(0, targetCondoCount);
+
+              fallbackList.forEach((img: any, i: number) => {
+                allAttachedChatPhotos.push({
+                  url: typeof img === 'string' ? img : img.url || img.data_url || '',
+                  label: img.filename || `Photo #${i + 1}`,
+                  index: seq++,
+                  groupName: `Photo #${i + 1}`,
+                });
+              });
+            }
+          }
         }
 
         const runButtonContent = (
@@ -5894,60 +6092,61 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         const attachedPhotosList: Array<{ url: string; label: string; index: number }> = [];
         let pSeq = 1;
 
-        const shouldAttachRef = useReferenceImage && boxConfig.useReferenceImage !== false;
-        const refUrl = shouldAttachRef
-          ? (activeReferenceImage?.url || referenceImage || boxConfig.referenceImage || (propertyContext?.images && propertyContext.images[0]?.url) || null)
-          : null;
-
-        if (refUrl) {
-          attachedPhotosList.push({
-            url: refUrl,
-            label: 'Ref Layout (#1)',
-            index: pSeq++,
-          });
-        }
-
-        const shouldAttachCondo = useCondoImages && boxConfig.useCondoImages !== false;
-        if (shouldAttachCondo) {
-          const resolved = resolveAttachedPhotosFromSteps(
-            attachmentSteps,
-            effectiveWorkflowImageSources,
-            propertyContext?.images,
-            availableEnhancedPhotos
-          );
-          if (resolved && resolved.length > 0) {
-            resolved.forEach((p, idx) => {
-              attachedPhotosList.push({
-                url: p.url || p.data_url || '',
-                label: p.filename || `Condo Photo #${idx + 1}`,
-                index: pSeq++,
-              });
-            });
-          } else {
-            const selectedCondoImgs = condoSlots.filter(Boolean);
-            const targetCondoCount = typeof condoImagesCount === 'number' ? condoImagesCount : 3;
-            const fallbackList = selectedCondoImgs.length > 0
-              ? selectedCondoImgs.slice(0, targetCondoCount)
-              : (propertyContext?.images || []).slice(0, targetCondoCount);
-
-            fallbackList.forEach((img: any, i: number) => {
-              attachedPhotosList.push({
-                url: typeof img === 'string' ? img : img.url || img.data_url || '',
-                label: img.filename || `Photo #${i + 1}`,
-                index: pSeq++,
-              });
-            });
-          }
-        }
-
-        if (!isHeroNode && attachedPhotosList.length === 0 && activeImages.length > 0) {
+        if (isEnhanceNode) {
           activeImages.forEach((img, i) => {
+            const pos = typeof img.index === 'number' && img.index > 0 ? img.index : i + 1;
             attachedPhotosList.push({
-              url: img.url,
-              label: img.filename || `Photo #${i + 1}`,
+              url: img.url || (img as any).data_url || '',
+              label: img.filename || `Photo #${pos}`,
               index: pSeq++,
             });
           });
+        } else {
+          const shouldAttachRef = useReferenceImage && boxConfig.useReferenceImage !== false;
+          const refUrl = shouldAttachRef
+            ? (activeReferenceImage?.url || referenceImage || boxConfig.referenceImage || (propertyContext?.images && propertyContext.images[0]?.url) || null)
+            : null;
+
+          if (refUrl) {
+            attachedPhotosList.push({
+              url: refUrl,
+              label: 'Ref Layout (#1)',
+              index: pSeq++,
+            });
+          }
+
+          const shouldAttachCondo = useCondoImages && boxConfig.useCondoImages !== false;
+          if (shouldAttachCondo) {
+            const resolved = resolveAttachedPhotosFromSteps(
+              attachmentSteps,
+              effectiveWorkflowImageSources,
+              propertyContext?.images,
+              availableEnhancedPhotos
+            );
+            if (resolved && resolved.length > 0) {
+              resolved.forEach((p, idx) => {
+                attachedPhotosList.push({
+                  url: p.url || p.data_url || '',
+                  label: p.filename || `Condo Photo #${idx + 1}`,
+                  index: pSeq++,
+                });
+              });
+            } else {
+              const selectedCondoImgs = condoSlots.filter(Boolean);
+              const targetCondoCount = typeof condoImagesCount === 'number' ? condoImagesCount : 3;
+              const fallbackList = selectedCondoImgs.length > 0
+                ? selectedCondoImgs.slice(0, targetCondoCount)
+                : (propertyContext?.images || []).slice(0, targetCondoCount);
+
+              fallbackList.forEach((img: any, i: number) => {
+                attachedPhotosList.push({
+                  url: typeof img === 'string' ? img : img.url || img.data_url || '',
+                  label: img.filename || `Photo #${i + 1}`,
+                  index: pSeq++,
+                });
+              });
+            }
+          }
         }
 
         return (
@@ -6000,7 +6199,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     Chat Composer Preview
                   </div>
                   <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    {boxConfig.browserGroupName || boxConfig.title || 'Chat Model'} · {attachedPhotosList.length} Photos Attached
+                    {(boxConfig.title && boxConfig.title !== 'Tab Group' ? boxConfig.title : boxConfig.browserGroupName) || 'Chat Model'} · {attachedPhotosList.length} Photos Attached
                   </div>
                 </div>
               </div>

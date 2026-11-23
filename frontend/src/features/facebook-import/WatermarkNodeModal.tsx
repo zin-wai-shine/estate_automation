@@ -721,8 +721,11 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     }
     const next = uploadedImages.filter((img) => img.id !== idToRemove);
     setUploadedImages(next);
+    const nextSource = next.length > 0 ? 'upload' : (isHeroCropNode ? 'generate' : 'get_images');
+    setImageSource(nextSource);
     onUpdateBox(box.id, {
       uploadedImages: next,
+      imageSource: nextSource,
       selectedImageIndices: next.map((_, i) => i + 1),
     });
     try {
@@ -754,8 +757,9 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   }, [box.id, listingCode]);
 
   // Synchronize when box.uploadedImages is cleared externally
+  const prevBoxUploadsRef = useRef<any[] | undefined>(box.uploadedImages);
   useEffect(() => {
-    if (!box.uploadedImages || box.uploadedImages.length === 0) {
+    if (prevBoxUploadsRef.current && prevBoxUploadsRef.current.length > 0 && (!box.uploadedImages || box.uploadedImages.length === 0)) {
       if (uploadedImages.length > 0) {
         setUploadedImages([]);
         setFormattedPreviewItems([]);
@@ -763,7 +767,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         lastRenderedKeyRef.current = '';
       }
     }
-  }, [box.uploadedImages]);
+    prevBoxUploadsRef.current = box.uploadedImages;
+  }, [box.uploadedImages, uploadedImages.length]);
 
   // Effective images extracted from workflow run
   const effectiveImageList = useMemo(() => {
@@ -881,15 +886,30 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       isEnhanced?: boolean;
     }> = [];
 
+    // If user has uploaded images and source is upload (or explicitly uploaded), use them directly!
+    if (imageSource === 'upload' && uploadedImages.length > 0) {
+      return uploadedImages.map((img, idx) => ({
+        id: img.id || `up-${idx + 1}`,
+        index: idx + 1,
+        displayNumber: idx + 1,
+        url: img.url,
+        source: 'upload' as const,
+        label: img.name || `Uploaded #${idx + 1}`,
+        isEnhanced: false,
+      }));
+    }
+
     const isHeroSource =
-      imageSource === 'generate' ||
+      imageSource !== 'upload' &&
+      (imageSource === 'generate' ||
       (typeof imageSource === 'string' && (imageSource.includes('hero') || imageSource.includes('generator'))) ||
-      (!box.imageSource && isHeroCropNode);
+      (!box.imageSource && isHeroCropNode));
 
     const isEnhanceSource =
-      imageSource === 'enhance' ||
+      imageSource !== 'upload' &&
+      (imageSource === 'enhance' ||
       (typeof imageSource === 'string' && imageSource.includes('enhance')) ||
-      (!box.imageSource && isUpstreamEnhance);
+      (!box.imageSource && isUpstreamEnhance));
 
     // 0. Hero Crop Node (FB Hero / BG Hero): strictly wait for or use generated hero image!
     if (isHeroSource) {
@@ -1463,7 +1483,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             </div>
             <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '2px' }}>
               {currentFormat?.targetWidth} × {currentFormat?.targetHeight} px • Source:{' '}
-              {isHeroCropNode
+              {isHeroCropNode && imageSource !== 'upload'
                 ? `${heroLabel} (${effectiveHeroImage && effectiveHeroImage.url ? '1 Photo' : 'Waiting for Hero Image'})`
                 : imageSource === 'upload' || (activePhotosToFormat.length > 0 && (activePhotosToFormat[0] as any)?.source === 'upload')
                 ? `Uploaded Files (${activePhotosToFormat.length} Photos)`
@@ -1552,6 +1572,37 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
 
             {/* Quick Action Buttons: Upload More & Run Crop Process */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {imageSource === 'upload' && (isHeroCropNode || heroNode) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearCropSlicesCache();
+                    setImageSource('generate');
+                    onUpdateBox(box.id, {
+                      imageSource: 'generate',
+                    });
+                  }}
+                  title={`Switch back to waiting for ${heroLabel}`}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '3px 8px',
+                    borderRadius: '5px',
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
+                    backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : 'rgba(245, 158, 11, 0.08)',
+                    border: isDark ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid rgba(245, 158, 11, 0.3)',
+                    color: '#F59E0B',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                >
+                  <FiClock size={11} />
+                  <span>Wait for {heroLabel}</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -2065,7 +2116,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             )}
           </div>
         </div>
-      ) : isHeroCropNode ? (
+      ) : (isHeroCropNode && imageSource !== 'upload' && uploadedImages.length === 0) ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginTop: '0.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2089,9 +2140,44 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                 ⏳ Waiting for {heroLabel}
               </span>
             </div>
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              title="Upload photo manually to skip waiting"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '3px 8px',
+                borderRadius: '5px',
+                backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
+                border: isDark ? '1px solid rgba(59, 130, 246, 0.35)' : '1px solid rgba(59, 130, 246, 0.3)',
+                color: '#3B82F6',
+                fontSize: '0.6875rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'background-color 0.15s ease',
+              }}
+            >
+              <FiUpload size={11} />
+              <span>Upload Manual</span>
+            </button>
           </div>
 
           <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDraggingOver(true);
+            }}
+            onDragLeave={() => setIsDraggingOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDraggingOver(false);
+              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleFilesUpload(e.dataTransfer.files);
+              }
+            }}
             style={{
               display: 'flex',
               flexDirection: 'column',
@@ -2099,10 +2185,17 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               justifyContent: 'center',
               padding: '2.5rem 1.25rem',
               borderRadius: '10px',
-              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-              backgroundColor: isDark ? 'rgba(245, 158, 11, 0.04)' : 'rgba(245, 158, 11, 0.03)',
+              border: isDraggingOver
+                ? '2px dashed #3B82F6'
+                : isDark
+                ? '1px solid #30363D'
+                : '1px solid #E2E8F0',
+              backgroundColor: isDraggingOver
+                ? (isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.06)')
+                : (isDark ? 'rgba(245, 158, 11, 0.04)' : 'rgba(245, 158, 11, 0.03)'),
               gap: '12px',
               textAlign: 'center',
+              transition: 'all 0.2s ease',
             }}
           >
             <div
@@ -2125,7 +2218,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Waiting for {heroLabel} Image
               </span>
-              <span style={{ fontSize: '0.71875rem', color: 'var(--text-muted)', maxWidth: '320px', lineHeight: 1.5 }}>
+              <span style={{ fontSize: '0.71875rem', color: 'var(--text-muted)', maxWidth: '340px', lineHeight: 1.5 }}>
                 The upstream {heroLabel} node has not generated an image yet. Once {heroLabel} generates and downloads the image, this node will automatically set up the crop tiles without showing other photos.
               </span>
             </div>
@@ -2153,6 +2246,56 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                 }}
               />
               <span>Awaiting Hero generation</span>
+            </div>
+
+            {/* Manual Upload Option if User Doesn't Want to Wait */}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '8px',
+                marginTop: '4px',
+                width: '100%',
+                maxWidth: '340px',
+                paddingTop: '14px',
+                borderTop: isDark ? '1px dashed #30363D' : '1px dashed #E2E8F0',
+              }}
+            >
+              <span style={{ fontSize: '0.71875rem', color: 'var(--text-muted)' }}>
+                Don't want to wait? You can upload manually:
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fileInputRef.current?.click();
+                }}
+                disabled={isProcessingCrop}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 16px',
+                  borderRadius: '6px',
+                  backgroundColor: 'var(--accent-primary, #3B82F6)',
+                  color: '#FFFFFF',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  border: 'none',
+                  cursor: isProcessingCrop ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)',
+                  transition: 'opacity 0.15s ease',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+              >
+                <FiUploadCloud size={15} />
+                <span>{isProcessingCrop ? 'Uploading...' : 'Upload Photo Manually'}</span>
+              </button>
+              <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                or drag & drop your image here
+              </span>
             </div>
           </div>
         </div>

@@ -428,17 +428,25 @@
     );
     if (byAttr && !byAttr.disabled && byAttr.getAttribute('aria-disabled') !== 'true') return byAttr;
 
-    // 2. Button with aria-label or testid containing "stop" (excluding voice/mic/speech)
+    // 2. Button with aria-label or testid containing "stop" (excluding voice/mic/speech/tools)
     const composerButtons = Array.from(composer.querySelectorAll('button:not(:disabled)'));
     for (const b of composerButtons) {
       const aria = (b.getAttribute('aria-label') || '').toLowerCase();
       const testid = (b.getAttribute('data-testid') || '').toLowerCase();
-      if ((aria.includes('stop') || testid.includes('stop')) && !aria.includes('voice') && !aria.includes('speech')) {
+      const isVoiceOrTool = aria.includes('voice') || aria.includes('speech') || aria.includes('mic') || aria.includes('tool') || aria.includes('search') || aria.includes('canvas') || aria.includes('reason');
+      if (isVoiceOrTool) continue;
+
+      if (aria.includes('stop') || testid.includes('stop')) {
         return b;
       }
-      // Check for square stop icon (SVG rect or square path)
-      const rect = b.querySelector('rect, [class*="square"]');
-      if (rect) return b;
+      // Check for square stop icon (SVG rect with filled square) specifically in send button or active submit wrapper
+      const isSendOrAction = aria.includes('send') || testid.includes('send') || Boolean(b.closest('[data-testid*="send"], form'));
+      if (isSendOrAction) {
+        const rect = b.querySelector('svg rect, svg [class*="square"]');
+        if (rect && (rect.getAttribute('width') || rect.getAttribute('height'))) {
+          return b;
+        }
+      }
     }
 
     return null;
@@ -466,6 +474,24 @@
     const composer = getComposerContainer() || document.querySelector('form');
     const sendBtn = composer?.querySelector('button[data-testid="send-button"], button[aria-label*="Send" i]');
     if (sendBtn && sendBtn.querySelector('svg.animate-spin, rect')) return true;
+
+    // 4. Check for active generation percentage or progress status (e.g. "84%", "Created and finalized the composite layout", or dots matrix)
+    const assistantTurns = Array.from(document.querySelectorAll('div[data-message-author-role="assistant"], article'));
+    if (assistantTurns.length > 0) {
+      const latestTurn = assistantTurns[assistantTurns.length - 1];
+      const text = (latestTurn.textContent || '').trim();
+      if (/\b\d{1,2}%\b/.test(text)) return true;
+      if (
+        text.includes('Created and finalized') ||
+        text.includes('Creating image') ||
+        text.includes('Generating image') ||
+        text.includes('Creating composite') ||
+        text.includes('Analyzing')
+      ) {
+        const hasCard = latestTurn.querySelector('button:has(svg), a[download]');
+        if (!hasCard) return true;
+      }
+    }
 
     return false;
   }
@@ -663,7 +689,9 @@
   }
 
   // ── Locate the latest generated/enhanced image rendered in this ChatGPT tab ──
-  function findLatestGeneratedImageInTab() {
+  function findLatestGeneratedImageInTab(preExistingUrls) {
+    const preUrls = preExistingUrls || new Set();
+
     // 0. Priority 0: Look for image with an "Edit" button adjacent or inside its card
     const editButtons = Array.from(document.querySelectorAll('button')).filter((b) => (b.textContent || '').trim() === 'Edit');
     for (let i = editButtons.length - 1; i >= 0; i--) {
@@ -672,7 +700,10 @@
       if (card) {
         const cardImg = card.querySelector('img');
         if (cardImg && cardImg.complete) {
-          const s = (cardImg.src || cardImg.getAttribute('src') || '').toLowerCase();
+          const src = cardImg.src || cardImg.getAttribute('src') || '';
+          const cleanSrc = src.split('?')[0];
+          if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) continue;
+          const s = src.toLowerCase();
           if (s && !s.includes('avatar') && !s.includes('icon')) {
             if ((cardImg.naturalWidth >= 100 || cardImg.width >= 100)) return cardImg;
           }
@@ -697,8 +728,11 @@
       }
 
       const imgs = Array.from(latestTurn.querySelectorAll('img')).filter((img) => {
-        const s = (img.src || img.getAttribute('src') || '').toLowerCase();
-        if (!s || s.includes('avatar') || s.includes('icon') || s.includes('profile') || s.includes('logo')) return false;
+        const src = img.src || img.getAttribute('src') || '';
+        const cleanSrc = src.split('?')[0];
+        if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) return false;
+        const s = src.toLowerCase();
+        if (s.includes('avatar') || s.includes('icon') || s.includes('profile') || s.includes('logo')) return false;
         if (img.closest('form, div[class*="composer"], header, nav')) return false;
         const w = img.naturalWidth || img.width || 0;
         const h = img.naturalHeight || img.height || 0;
@@ -708,10 +742,13 @@
       if (imgs.length > 0) return imgs[imgs.length - 1];
     }
 
-    // 2. Fallback: Any complete oaiusercontent or large image on page outside composer
+    // 2. Fallback: Any complete oaiusercontent or large image on page outside composer (STRICTLY NOT PRE-EXISTING)
     const anyOai = Array.from(document.querySelectorAll('img')).filter((img) => {
-      const s = (img.src || img.getAttribute('src') || '').toLowerCase();
-      if (!s || s.includes('avatar') || s.includes('icon')) return false;
+      const src = img.src || img.getAttribute('src') || '';
+      const cleanSrc = src.split('?')[0];
+      if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) return false;
+      const s = src.toLowerCase();
+      if (s.includes('avatar') || s.includes('icon')) return false;
       if (img.closest('form, div[class*="composer"], header, nav, [data-message-author-role="user"]')) return false;
       return img.complete && (s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:') || (img.naturalWidth >= 150 && img.naturalHeight >= 150));
     });
@@ -942,7 +979,8 @@
   function findGeneratedHeroImage(preExistingUrls) {
     const preUrls = preExistingUrls || new Set();
 
-    // 0. Locate any image with an "Edit" button adjacent or inside its card that was NOT pre-existing
+    // 0. Locate any image with an "Edit" button adjacent or inside its card (STRICTLY NOT PRE-EXISTING)
+    // AI generated images in ChatGPT are the ONLY images that receive the "Edit" button!
     const editButtons = Array.from(document.querySelectorAll('button')).filter((b) => (b.textContent || '').trim() === 'Edit');
     for (let i = editButtons.length - 1; i >= 0; i--) {
       const editBtn = editButtons[i];
@@ -951,7 +989,9 @@
         const cardImg = card.querySelector('img');
         if (cardImg) {
           const src = cardImg.src || cardImg.getAttribute('src') || '';
-          if (src && !preUrls.has(src) && !src.toLowerCase().includes('avatar') && !src.toLowerCase().includes('icon')) {
+          const cleanSrc = src.split('?')[0];
+          if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) continue;
+          if (!src.toLowerCase().includes('avatar') && !src.toLowerCase().includes('icon')) {
             if (cardImg.complete && (cardImg.naturalWidth >= 100 || cardImg.width >= 100)) {
               return cardImg;
             }
@@ -970,20 +1010,22 @@
       return !c.includes('user-turn') && !c.includes('user-message');
     });
 
-    if (assistantTurns.length > preAssistantCount) {
-      const latestTurn = assistantTurns[assistantTurns.length - 1];
-      const turnImgs = Array.from(latestTurn.querySelectorAll('img')).filter((img) => {
+    for (let i = assistantTurns.length - 1; i >= 0; i--) {
+      const turn = assistantTurns[i];
+      const imgs = Array.from(turn.querySelectorAll('img')).filter((img) => {
         const src = img.src || img.getAttribute('src') || '';
-        if (!src || preUrls.has(src)) return false;
+        if (!src) return false;
+        const cleanSrc = src.split('?')[0];
+        if (preUrls.has(src) || preUrls.has(cleanSrc)) return false;
         const s = src.toLowerCase();
         if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('logo')) return false;
-        if (img.closest('form, div[class*="composer"], [data-message-author-role="user"], header, nav')) return false;
+        if (img.closest('form, div[class*="composer"], header, nav')) return false;
         const rect = img.getBoundingClientRect();
         const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
         return (hasSize || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
       });
-      if (turnImgs.length > 0) {
-        return turnImgs[turnImgs.length - 1];
+      if (imgs.length > 0) {
+        return imgs[imgs.length - 1];
       }
     }
 
@@ -991,7 +1033,9 @@
     // These cards have a small circular share button (⬆) in bottom-right corner of the image
     const allImgCards = Array.from(document.querySelectorAll('img')).filter((img) => {
       const src = img.src || img.getAttribute('src') || '';
-      if (!src || preUrls.has(src)) return false;
+      if (!src) return false;
+      const cleanSrc = src.split('?')[0];
+      if (preUrls.has(src) || preUrls.has(cleanSrc)) return false;
       const s = src.toLowerCase();
       if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('favicon') || s.includes('logo')) return false;
       if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
@@ -1016,58 +1060,6 @@
         if (hasActionBtn) return img;
       }
     }
-    // Final fallback: any new fully-loaded large image in the document (not in user/composer areas)
-    if (allImgCards.length > 0) return allImgCards[allImgCards.length - 1];
-
-    // 1. Assistant turns (from newest to oldest)
-    const allAssistantTurns = Array.from(document.querySelectorAll(
-      'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
-    ));
-
-    for (let i = allAssistantTurns.length - 1; i >= 0; i--) {
-      const turn = allAssistantTurns[i];
-      if (turn.getAttribute('data-message-author-role') === 'user') continue;
-      if (turn.querySelector('[data-message-author-role="user"]')) continue;
-
-      const imgs = Array.from(turn.querySelectorAll('img')).filter((img) => {
-        const src = img.src || img.getAttribute('src') || '';
-        if (!src || preUrls.has(src)) return false;
-        if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
-
-        const s = src.toLowerCase();
-        if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('favicon') || s.includes('logo')) {
-          return false;
-        }
-        const rect = img.getBoundingClientRect();
-        const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
-        const isOai = s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:');
-        return hasSize || isOai;
-      });
-
-      if (imgs.length > 0) {
-        const newImg = imgs.find((img) => !preUrls.has(img.src || img.getAttribute('src') || ''));
-        if (newImg) return newImg;
-      }
-    }
-
-    // 2. Global fallback across document (strictly NEW images only!)
-    const allImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
-      if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
-      const src = img.src || img.getAttribute('src') || '';
-      if (!src || preUrls.has(src)) return false;
-      const s = src.toLowerCase();
-      if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('favicon') || s.includes('logo')) {
-        return false;
-      }
-      const rect = img.getBoundingClientRect();
-      const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
-      const isOai = s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:');
-      return (hasSize || isOai) && img.complete;
-    });
-
-    if (allImgs.length > 0) {
-      return allImgs[allImgs.length - 1];
-    }
 
     return null;
   }
@@ -1076,7 +1068,8 @@
   function findGeneratedEnhancedImage(preExistingUrls, preAssistantCount = 0) {
     const preUrls = preExistingUrls || new Set();
 
-    // METHOD 0 (Primary - 100% Reliable): Locate any image with an "Edit" button adjacent or inside its card that was NOT pre-existing
+    // METHOD 0 (Primary - 100% Reliable): Locate any image with an "Edit" button adjacent or inside its card (STRICTLY NOT PRE-EXISTING)
+    // Note: Only AI-generated assistant images in ChatGPT have the native "Edit" button.
     const editButtons = Array.from(document.querySelectorAll('button')).filter((b) => (b.textContent || '').trim() === 'Edit');
     for (let i = editButtons.length - 1; i >= 0; i--) {
       const editBtn = editButtons[i];
@@ -1085,12 +1078,11 @@
         const cardImg = card.querySelector('img');
         if (cardImg) {
           const src = cardImg.src || cardImg.getAttribute('src') || '';
-          if (src && !preUrls.has(src)) {
-            const clean = src.split('?')[0];
-            if (!preUrls.has(clean) && !src.toLowerCase().includes('avatar') && !src.toLowerCase().includes('icon')) {
-              if (cardImg.complete && (cardImg.naturalWidth >= 100 || cardImg.width >= 100)) {
-                return cardImg;
-              }
+          const cleanSrc = src.split('?')[0];
+          if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) continue;
+          if (!src.toLowerCase().includes('avatar') && !src.toLowerCase().includes('icon')) {
+            if (cardImg.complete && (cardImg.naturalWidth >= 100 || cardImg.width >= 100)) {
+              return cardImg;
             }
           }
         }
@@ -1811,7 +1803,9 @@
     // Method 5: MAIN world async injection via background script (bypasses Chrome isolated world for ProseMirror)
     try {
       console.log('[BOLTHAVEN] Triggering INSERT_PROMPT_MAIN_WORLD via background script...');
-      chrome.runtime.sendMessage({ action: 'INSERT_PROMPT_MAIN_WORLD', text: cleanText }, () => {});
+      chrome.runtime.sendMessage({ action: 'INSERT_PROMPT_MAIN_WORLD', text: cleanText }, () => {
+        if (chrome.runtime.lastError) {}
+      });
     } catch (e) {}
 
     // NOTE: MAIN world is async — caller must wait and re-check isPromptActuallyInserted
@@ -1838,7 +1832,9 @@
       }
       // Re-trigger MAIN world injection if still not inserted
       try {
-        chrome.runtime.sendMessage({ action: 'INSERT_PROMPT_MAIN_WORLD', text }, () => {});
+        chrome.runtime.sendMessage({ action: 'INSERT_PROMPT_MAIN_WORLD', text }, () => {
+          if (chrome.runtime.lastError) {}
+        });
       } catch (e) {}
     }
     return isPromptActuallyInserted(text, inputEl || findPromptInput());
@@ -1865,13 +1861,22 @@
 
   // Fetch image blob from primary or fallback URL (preferring local storage via background)
   async function fetchImageBlob(primaryUrl, fallbackUrl) {
+    const convertDataUrlToBlob = async (dataUrl) => {
+      if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) return null;
+      try {
+        const res = await fetch(dataUrl);
+        if (res.ok) return await res.blob();
+      } catch (e) {}
+      return dataUrlToBlob(dataUrl);
+    };
+
     // 0. Instant direct conversion if URL is already a data: URI
     if (primaryUrl && primaryUrl.startsWith('data:')) {
-      const blob = dataUrlToBlob(primaryUrl);
+      const blob = await convertDataUrlToBlob(primaryUrl);
       if (blob) return blob;
     }
     if (fallbackUrl && fallbackUrl.startsWith('data:')) {
-      const blob = dataUrlToBlob(fallbackUrl);
+      const blob = await convertDataUrlToBlob(fallbackUrl);
       if (blob) return blob;
     }
 
@@ -1902,11 +1907,16 @@
       console.warn('[BOLTHAVEN] Background image fetch warning:', e.message);
     }
 
+    if (b64DataUrl) {
+      const blob = await convertDataUrlToBlob(b64DataUrl);
+      if (blob) return blob;
+    }
+
     if (!b64DataUrl) {
       const candidates = [primaryUrl, fallbackUrl].filter(Boolean);
       for (const u of candidates) {
         if (u.startsWith('data:')) {
-          const b = dataUrlToBlob(u);
+          const b = await convertDataUrlToBlob(u);
           if (b) return b;
         }
         try {
@@ -2126,22 +2136,22 @@
       const checkInterval = setInterval(async () => {
         if (activeJobAborted) {
           clearInterval(checkInterval);
-          chrome.runtime.sendMessage({
+          safeSendMessage({
             action: 'JOB_GENERATION_FAILED',
             jobId: job.job_id,
             error: 'Job stopped by user',
-          }, () => { if (chrome.runtime.lastError) {} });
+          });
           return resolve({ success: false, error: 'Job stopped by user' });
         }
 
         const elapsed = Date.now() - startTime;
         if (elapsed > maxWaitMs) {
           clearInterval(checkInterval);
-          chrome.runtime.sendMessage({
+          safeSendMessage({
             action: 'JOB_GENERATION_FAILED',
             jobId: job.job_id,
             error: 'ChatGPT image generation timed out (6 min)',
-          }, () => { if (chrome.runtime.lastError) {} });
+          });
           return resolve({ success: false, error: 'ChatGPT image generation timed out (6 min)' });
         }
 
@@ -2166,22 +2176,21 @@
               return;
             } else {
               clearInterval(checkInterval);
-              chrome.runtime.sendMessage({
+              safeSendMessage({
                 action: 'JOB_GENERATION_FAILED',
                 jobId: job.job_id,
                 error: 'ChatGPT generation failed: "Error in message stream" persisted after 3 retries.',
-              }, () => { if (chrome.runtime.lastError) {} });
+              });
               return resolve({ success: false, error: 'ChatGPT generation failed: "Error in message stream" persisted after 3 retries.' });
             }
           }
         }
 
-        const generating = isThinkingOrGenerating();
-        let enhancedImg = findGeneratedEnhancedImage(preExistingImageUrls, preAssistantCount);
-        const isImageReady = enhancedImg && enhancedImg.complete && (enhancedImg.naturalWidth >= 100 || enhancedImg.width >= 100);
+        const generating = isThinkingOrGenerating() || Boolean(findStopButton());
 
-        // 1. If actively generating and image is not ready yet, or minimum buffer hasn't passed:
-        if ((generating && !isImageReady) || elapsed < 10000) {
+        // 1. If actively generating / thinking / working, or minimum buffer hasn't passed:
+        // STRICT RULE: NEVER attempt to inspect or download images while ChatGPT is actively generating!
+        if (generating || elapsed < 4000) {
           consecutiveCalmChecks = 0;
           if (elapsed % 5000 < 1000) {
             console.log(
@@ -2191,18 +2200,27 @@
           return;
         }
 
-        if (!isImageReady) {
+        // 2. Only AFTER generation has completely finished, locate the newly generated enhanced image:
+        let enhancedImg = findGeneratedEnhancedImage(preExistingImageUrls, preAssistantCount);
+        if (!enhancedImg) {
+          enhancedImg = findLatestGeneratedImageInTab(preExistingImageUrls);
+        }
+        const isImageReady = Boolean(
+          enhancedImg && enhancedImg.complete && ((enhancedImg.naturalWidth && enhancedImg.naturalWidth >= 100) || (enhancedImg.width && enhancedImg.width >= 100))
+        );
+
+        if (!enhancedImg || !isImageReady) {
           consecutiveCalmChecks = 0;
           return;
         }
 
-        // 3. Image detected and generation calm
+        // 3. Image detected and generation calm (require 2 consecutive checks for stability)
         consecutiveCalmChecks++;
         console.log(
-          `[BOLTHAVEN] Enhanced Image #${job.original_position || 1} detected on screen (calm check ${consecutiveCalmChecks}/${REQUIRED_CALM_CHECKS})...`
+          `[BOLTHAVEN] Enhanced Image #${job.original_position || 1} detected on screen (calm check ${consecutiveCalmChecks}/2)...`
         );
 
-        if (consecutiveCalmChecks >= REQUIRED_CALM_CHECKS) {
+        if (consecutiveCalmChecks >= 2) {
           clearInterval(checkInterval);
           const finalUrl = enhancedImg.src || enhancedImg.getAttribute('src') || '';
           console.log(`[BOLTHAVEN] ✓ Generation fully finished! Enhanced Image #${job.original_position || 1}:`, finalUrl);
@@ -2218,13 +2236,13 @@
           // Memorize the ChatGPT chat thread URL for this exact image position
           const currentChatUrl = window.location.href;
           if (currentChatUrl && (currentChatUrl.includes('chatgpt.com') || currentChatUrl.includes('chat.openai.com'))) {
-            chrome.runtime.sendMessage({
+            safeSendMessage({
               action: 'MEMORIZE_IMAGE_THREAD',
               position: pos,
               threadUrl: currentChatUrl,
               filename: fileName,
               listingCode: cleanCode,
-            }, () => { if (chrome.runtime.lastError) {} });
+            });
           }
 
           // Trigger native download button click if present on the image card
@@ -2232,7 +2250,8 @@
             const nativeBtn = findGeneratedImageDownloadButton(enhancedImg);
             if (nativeBtn) {
               console.log('[BOLTHAVEN] Clicking native ChatGPT image download button...');
-              nativeBtn.click();
+              clickElementSafely(nativeBtn);
+              await new Promise((r) => setTimeout(r, 600));
             }
           } catch (e) {
             console.warn('[BOLTHAVEN] Native download button click notice:', e.message);
@@ -2240,15 +2259,15 @@
 
           // Download using serialized multi-tier downloader
           await downloadEnhancedImage(enhancedImg, finalUrl, fileName);
-          await new Promise((r) => setTimeout(r, 1500));
+          await new Promise((r) => setTimeout(r, 1000));
 
           // Notify background that generation & download succeeded
-          chrome.runtime.sendMessage({
+          safeSendMessage({
             action: 'JOB_GENERATION_COMPLETE',
             jobId: job.job_id,
             original_position: job.original_position,
             result_url: finalUrl,
-          }, () => { if (chrome.runtime.lastError) {} });
+          });
 
           return resolve({
             success: true,
@@ -2857,7 +2876,7 @@
   // 7. Monitors ChatGPT in background for finished Hero image & triggers download
   let activeHeroJobId = null;
 
-  async function executeStage2Staging({ heroJobId, extractedPrompt, referenceImage, condoImages, enhancedImages, condoName }) {
+  async function executeStage2Staging({ heroJobId, extractedPrompt, referenceImage, condoImages, enhancedImages, condoName, prefix, groupName, nodeId }) {
     if (activeHeroJobId && activeHeroJobId === heroJobId) {
       console.log('[BOLTHAVEN] Hero staging already in progress for job:', heroJobId);
       return { success: true, heroJobId, status: 'already_running' };
@@ -2870,11 +2889,17 @@
     if (!input) throw new Error('Could not locate ChatGPT prompt input textarea');
 
     // Snapshot existing images on page BEFORE sending so we only detect the newly generated Hero image
-    const preExistingImageUrls = new Set(
-      Array.from(document.querySelectorAll('img'))
-        .map((img) => img.src || img.getAttribute('src') || '')
-        .filter(Boolean)
-    );
+    const preExistingImageUrls = new Set();
+    document.querySelectorAll('img').forEach((img) => {
+      const src = img.src || img.getAttribute('src') || '';
+      if (src) {
+        preExistingImageUrls.add(src);
+        try {
+          const clean = src.split('?')[0];
+          if (clean) preExistingImageUrls.add(clean);
+        } catch (_) {}
+      }
+    });
 
     // 0. RESET COMPOSER: Completely purge any residual text, chips, and leftover attachments
     console.log('[BOLTHAVEN] Resetting composer: thoroughly purging any leftover text, chips, and attachments...');
@@ -2891,7 +2916,7 @@
 
     // Prepare files in the exact sequence requested:
     // 1st: Reference design image (0_reference_design.png)
-    // 2nd, 3rd, 4th: Condo building photos 1, 2, 3 (strictly at most 3, total strictly at most 4!)
+    // 2nd, 3rd, 4th: Condo building photos 1, 2, 3 (strictly at most 3, total strictly at most 4 when Ref is present!)
     const filesToAttach = [];
 
     if (referenceImage) {
@@ -2906,7 +2931,7 @@
     }
 
     if (Array.isArray(condoImages) && condoImages.length > 0) {
-      console.log(`[BOLTHAVEN] Stage 2: Preparing ${condoImages.length} condo building images (2nd)...`);
+      console.log(`[BOLTHAVEN] Stage 2: Preparing ${condoImages.length} selected group/condo building images (2nd)...`);
       for (let i = 0; i < condoImages.length; i++) {
         const img = condoImages[i];
         const imgUrl = img.data_url || img.url || img.full_path;
@@ -2922,12 +2947,14 @@
       }
     }
 
+    // Attach any enhanced/interior images provided if not already included in condoImages
     if (Array.isArray(enhancedImages) && enhancedImages.length > 0) {
-      console.log(`[BOLTHAVEN] Stage 2: Preparing ${enhancedImages.length} enhanced/interior images (3rd)...`);
+      const existingUrls = new Set((condoImages || []).map((img) => img.data_url || img.url || img.full_path).filter(Boolean));
+      console.log(`[BOLTHAVEN] Stage 2: Preparing ${enhancedImages.length} selected enhanced/interior images (3rd)...`);
       for (let i = 0; i < enhancedImages.length; i++) {
         const img = enhancedImages[i];
         const imgUrl = img.data_url || img.url || img.full_path;
-        if (!imgUrl) continue;
+        if (!imgUrl || existingUrls.has(imgUrl)) continue;
         try {
           const blob = await fetchImageBlob(imgUrl, '');
           const mimeType = blob.type || 'image/png';
@@ -3037,7 +3064,7 @@
     // STRICT ATTACHMENT VERIFICATION:
     const confirmedCount = getAttachedImagesCount(input);
     if (targetTotalImages > 0 && confirmedCount === 0) {
-      throw new Error(`Failed to attach images: expected ${targetTotalImages} images (1 Reference + 3 Condo Photos), but 0 were attached to ChatGPT. Aborting to prevent sending prompt without photos.`);
+      throw new Error(`Failed to attach images: expected ${targetTotalImages} images, but 0 were attached to ChatGPT. Aborting to prevent sending prompt without photos.`);
     }
 
     // 3. Clear prompt input first, then insert prompt text cleanly
@@ -3069,7 +3096,13 @@
     // Snapshot all images on page now (includes uploaded/pasted images in user bubble)
     document.querySelectorAll('img').forEach((img) => {
       const src = img.src || img.getAttribute('src') || '';
-      if (src) preExistingImageUrls.add(src);
+      if (src) {
+        preExistingImageUrls.add(src);
+        try {
+          const clean = src.split('?')[0];
+          if (clean) preExistingImageUrls.add(clean);
+        } catch (_) {}
+      }
     });
 
     // Launch background generation monitor (does NOT block sendMessage response!)
@@ -3078,6 +3111,9 @@
       preExistingImageUrls,
       totalImagesPasted,
       condoName,
+      prefix,
+      groupName,
+      nodeId,
     });
 
     // Return immediately to background script so message port never closes early!
@@ -3089,7 +3125,7 @@
   }
 
   // Monitor ChatGPT in background for finished Hero image & download it
-  async function watchHeroGenerationAndNotify({ heroJobId, preExistingImageUrls, totalImagesPasted, condoName }) {
+  async function watchHeroGenerationAndNotify({ heroJobId, preExistingImageUrls, totalImagesPasted, condoName, prefix, groupName, nodeId }) {
     console.log(`[BOLTHAVEN] Background monitoring started for Hero Image generation (Job: ${heroJobId})...`);
     const startTime = Date.now();
     const maxWaitMs = 360000; // 6 minutes max
@@ -3154,13 +3190,28 @@
         }
       }
 
-      // 1. Locate newly generated Hero image (Multi-method escalation)
+      // 0. CHECK IF GENERATION IS IN PROGRESS
+      const generating = isThinkingOrGenerating() || Boolean(findStopButton());
+
+      // If ChatGPT is actively generating / thinking / rendering (e.g. at 84%), WE MUST WAIT!
+      // STRICT RULE: NEVER attempt to inspect or download images while ChatGPT is actively generating!
+      if (generating || elapsed < 5000) {
+        consecutiveCalmChecks = 0;
+        if (elapsed % 5000 < 1000) {
+          console.log(`[BOLTHAVEN] ChatGPT is generating Hero Image (${condoName || 'Hero'})... Working (elapsed: ${Math.round(elapsed / 1000)}s)`);
+        }
+        return;
+      }
+
+      // 1. Only AFTER generation has completely finished, locate the newly generated Hero image
       let heroImg = findGeneratedHeroImage(preExistingImageUrls);
 
       if (!heroImg && elapsed > MIN_HERO_WAIT_MS + 10000) {
         const oaiImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
           const src = img.src || img.getAttribute('src') || '';
-          if (!src || preExistingImageUrls.has(src)) return false;
+          if (!src) return false;
+          const cleanSrc = src.split('?')[0];
+          if (preExistingImageUrls.has(src) || preExistingImageUrls.has(cleanSrc)) return false;
           if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
           const s = src.toLowerCase();
           return (s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
@@ -3171,70 +3222,56 @@
         }
       }
 
-      if (!heroImg && elapsed > MIN_HERO_WAIT_MS + 20000) {
-        const anyLargeImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
-          const src = img.src || img.getAttribute('src') || '';
-          if (!src || preExistingImageUrls.has(src)) return false;
-          if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
-          const s = src.toLowerCase();
-          if (s.includes('avatar') || s.includes('icon') || s.includes('logo') || s.includes('favicon')) return false;
-          const rect = img.getBoundingClientRect();
-          const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
-          return hasSize && img.complete;
-        });
-        if (anyLargeImgs.length > 0) {
-          heroImg = anyLargeImgs[anyLargeImgs.length - 1];
-          console.log('[BOLTHAVEN] Hero Method C (any large img): detected image:', heroImg.src);
-        }
-      }
+      const isImageReady = Boolean(
+        heroImg && heroImg.complete && ((heroImg.naturalWidth && heroImg.naturalWidth >= 100) || (heroImg.width && heroImg.width >= 100))
+      );
 
-      const generating = isThinkingOrGenerating();
-      const isImageReady = heroImg && (heroImg.complete || (heroImg.naturalWidth && heroImg.naturalWidth >= 100) || (heroImg.width && heroImg.width >= 100));
-
-      if (generating || !isImageReady || elapsed < MIN_HERO_WAIT_MS) {
+      if (!heroImg || !isImageReady) {
         consecutiveCalmChecks = 0;
         return;
       }
 
-      if (isImageReady) {
-        consecutiveCalmChecks++;
-        console.log(`[BOLTHAVEN] Hero image detected on screen (calm check ${consecutiveCalmChecks}/${REQUIRED_CALM_CHECKS})...`);
-        if (consecutiveCalmChecks >= REQUIRED_CALM_CHECKS) {
-          clearInterval(checkInterval);
-          activeHeroJobId = null;
-          const finalUrl = heroImg.src || heroImg.getAttribute('src') || '';
-          console.log('[BOLTHAVEN] ✓ Hero Image generation complete! Downloading:', finalUrl);
+      consecutiveCalmChecks++;
+      console.log(`[BOLTHAVEN] Hero image detected on screen (calm check ${consecutiveCalmChecks}/${REQUIRED_CALM_CHECKS})...`);
+      if (consecutiveCalmChecks >= REQUIRED_CALM_CHECKS) {
+        clearInterval(checkInterval);
+        activeHeroJobId = null;
+        const finalUrl = heroImg.src || heroImg.getAttribute('src') || '';
+        console.log('[BOLTHAVEN] ✓ Hero Image generation complete! Downloading:', finalUrl);
 
-          preExistingImageUrls.add(finalUrl);
-          const safeCondoSlug = String(condoName || 'hero')
-            .replace(/[^a-zA-Z0-9_-]+/g, '_')
-            .replace(/^_+|_+$/g, '')
-            .slice(0, 40) || 'hero';
-          const randomId = Math.random().toString(36).slice(2, 8).toUpperCase();
-          const fileName = `fb_hero_${safeCondoSlug}_${randomId}_${Date.now()}.png`;
+        preExistingImageUrls.add(finalUrl);
+        const safeCondoSlug = String(condoName || 'hero')
+          .replace(/[^a-zA-Z0-9_-]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+          .slice(0, 40) || 'hero';
+        const randomId = Math.random().toString(36).slice(2, 8).toUpperCase();
+        const filePrefix = prefix || (groupName && groupName.toLowerCase().includes('tiktok') ? 'tiktok_hero' : 'fb_hero');
+        const fileName = `${filePrefix}_${safeCondoSlug}_${randomId}_${Date.now()}.png`;
 
-          try {
-            const nativeBtn = findGeneratedImageDownloadButton(heroImg);
-            if (nativeBtn) {
-              console.log('[BOLTHAVEN] Clicking native ChatGPT image download button...');
-              clickElementSafely(nativeBtn);
-              await new Promise((r) => setTimeout(r, 800));
-            }
-          } catch (e) {
-            console.warn('[BOLTHAVEN] Native download button click notice:', e.message);
+        try {
+          const nativeBtn = findGeneratedImageDownloadButton(heroImg);
+          if (nativeBtn) {
+            console.log('[BOLTHAVEN] Clicking native ChatGPT image download button...');
+            clickElementSafely(nativeBtn);
+            await new Promise((r) => setTimeout(r, 600));
           }
-
-          await downloadEnhancedImage(heroImg, finalUrl, fileName);
-          await new Promise((r) => setTimeout(r, 1500));
-
-          chrome.runtime.sendMessage({
-            action: 'HERO_GENERATION_COMPLETE',
-            heroJobId,
-            result_url: finalUrl,
-            filename: fileName,
-            imagesAttached: totalImagesPasted,
-          }).catch(() => {});
+        } catch (e) {
+          console.warn('[BOLTHAVEN] Native download button click notice:', e.message);
         }
+
+        await downloadEnhancedImage(heroImg, finalUrl, fileName);
+        await new Promise((r) => setTimeout(r, 1000));
+
+        safeSendMessage({
+          action: 'HERO_GENERATION_COMPLETE',
+          heroJobId,
+          result_url: finalUrl,
+          filename: fileName,
+          imagesAttached: totalImagesPasted,
+          prefix: filePrefix,
+          groupName,
+          nodeId,
+        });
       }
     }, 1000);
   }
@@ -3440,6 +3477,61 @@
           // Trigger serialized multi-tier download
           const downloaded = await downloadEnhancedImage(img, finalUrl, fileName);
           sendResponse({ success: Boolean(downloaded), url: finalUrl, filename: fileName });
+        } catch (err) {
+          sendResponse({ success: false, error: err.message });
+        }
+      })();
+      return true;
+    }
+
+    // On-demand recovery: download Hero image currently displayed in this tab
+    if (request.action === 'DOWNLOAD_CURRENT_HERO_IMAGE') {
+      (async () => {
+        try {
+          const condoName = request.condoName || 'hero';
+          console.log('[BOLTHAVEN] 📥 Received on-demand recovery download request for Hero image...');
+          let heroImg = findGeneratedHeroImage(new Set());
+          if (!heroImg) {
+            for (let retry = 0; retry < 10; retry++) {
+              await new Promise((r) => setTimeout(r, 400));
+              heroImg = findGeneratedHeroImage(new Set());
+              if (heroImg) break;
+            }
+          }
+
+          if (!heroImg) {
+            console.warn('[BOLTHAVEN] No generated Hero image found on screen in this tab');
+            return sendResponse({ success: false, error: 'No generated Hero image found on screen' });
+          }
+
+          const finalUrl = heroImg.src || heroImg.getAttribute('src') || '';
+          const safeCondoSlug = String(condoName)
+            .replace(/[^a-zA-Z0-9_-]+/g, '_')
+            .replace(/^_+|_+$/g, '')
+            .slice(0, 40) || 'hero';
+          const randomId = Math.random().toString(36).slice(2, 8).toUpperCase();
+          const filePrefix = request.prefix || (request.groupName && request.groupName.toLowerCase().includes('tiktok') ? 'tiktok_hero' : 'fb_hero');
+          const fileName = `${filePrefix}_${safeCondoSlug}_${randomId}_${Date.now()}.png`;
+
+          try {
+            const nativeBtn = findGeneratedImageDownloadButton(heroImg);
+            if (nativeBtn) {
+              clickElementSafely(nativeBtn);
+              await new Promise((r) => setTimeout(r, 600));
+            }
+          } catch (e) {}
+
+          const downloaded = await downloadEnhancedImage(heroImg, finalUrl, fileName);
+
+          safeSendMessage({
+            action: 'HERO_GENERATION_COMPLETE',
+            heroJobId: request.heroJobId || `hero_recovered_${Date.now()}`,
+            result_url: finalUrl,
+            filename: fileName,
+            imagesAttached: 4,
+          });
+
+          sendResponse({ success: Boolean(downloaded), filename: fileName, result_url: finalUrl });
         } catch (err) {
           sendResponse({ success: false, error: err.message });
         }

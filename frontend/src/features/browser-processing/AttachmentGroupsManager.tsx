@@ -38,6 +38,7 @@ export interface ResolvedAttachedPhoto {
   filename: string;
   url: string;
   data_url: string;
+  full_path?: string;
 }
 
 export function resolveAttachedPhotosFromSteps(
@@ -82,6 +83,7 @@ export function resolveAttachedPhotosFromSteps(
             filename: chosen[i].filename || `Condo Photo #${i + 1}`,
             url: u,
             data_url: u,
+            full_path: chosen[i].full_path || '',
           });
         }
       }
@@ -108,6 +110,7 @@ export function resolveAttachedPhotosFromSteps(
             filename: chosen[i].filename || `Workflow Photo #${i + 1}`,
             url: u,
             data_url: u,
+            full_path: (chosen[i] as any).full_path || '',
           });
         }
       }
@@ -1024,7 +1027,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
 
                 {/* Source 2: Upload */}
                 {step.sourceType === 'upload' && (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'nowrap', minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flexShrink: 0 }}>
                       <label
                         style={{
@@ -1041,12 +1044,13 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                           alignItems: 'center',
                           gap: '6px',
                           whiteSpace: 'nowrap',
+                          minWidth: 'max-content',
                           flexShrink: 0,
                           userSelect: 'none',
                         }}
                       >
                         <FiUpload size={11} style={{ color: '#58A6FF', flexShrink: 0 }} />
-                        <span style={{ whiteSpace: 'nowrap' }}>{step.uploadedUrls?.length ? `${step.uploadedUrls.length}/${step.count} Selected` : 'Choose Files'}</span>
+                        <span style={{ whiteSpace: 'nowrap', display: 'inline-block' }}>{step.uploadedUrls?.length ? `${step.uploadedUrls.length}/${step.count} Selected` : 'Choose Files'}</span>
                         <input
                           type="file"
                           multiple
@@ -1071,7 +1075,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                           }}
                         />
                       </label>
-                      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', whiteSpace: 'nowrap', minWidth: 'max-content', flexShrink: 0 }}>
                         Max {step.count} image(s)
                       </span>
                     </div>
