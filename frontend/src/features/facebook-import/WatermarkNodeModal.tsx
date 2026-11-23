@@ -422,8 +422,31 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     return base;
   }, [savedFormats, selectedFormatId, box.cropFormatId, box.templateId, box.watermarkPresetId, box.templateText, box.title, box.watermarkConfig]);
 
-  // Dynamically resolve Hero / Generator node title from workflow boxes
+  // Dynamically resolve Hero / Generator node title from workflow boxes (prefer direct incoming connection, then matching node)
+  const connectedUpstreamHero = useMemo(() => {
+    const incoming = (connections || []).filter((c) => c.toNodeId === box.id);
+    for (const conn of incoming) {
+      const upBox = (workflowBoxes || []).find((b: any) => b.id === conn.fromNodeId);
+      if (
+        upBox &&
+        (upBox.tabGroupMode === 'generate' ||
+          upBox.processKind === 'generate_image' ||
+          upBox.title?.toLowerCase().includes('hero') ||
+          upBox.browserGroupName?.toLowerCase().includes('hero'))
+      ) {
+        return upBox;
+      }
+    }
+    return null;
+  }, [connections, box.id, workflowBoxes]);
+
   const heroNode = useMemo(() => {
+    if (connectedUpstreamHero) return connectedUpstreamHero;
+    if (box.imageSource && box.imageSource.startsWith('node:')) {
+      const targetId = box.imageSource.replace('node:', '');
+      const found = (workflowBoxes || []).find((b) => b.id === targetId);
+      if (found) return found;
+    }
     return workflowBoxes?.find(
       (b) =>
         b.title?.toLowerCase().includes('hero') ||
@@ -431,17 +454,40 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         b.tabGroupMode === 'generate' ||
         b.processKind === 'generate_image'
     );
-  }, [workflowBoxes]);
+  }, [connectedUpstreamHero, box.imageSource, workflowBoxes]);
 
   const heroLabel = useMemo(() => {
     if (heroNode) {
-      return (heroNode.browserGroupName || heroNode.title || 'FB Hero').trim();
+      return (heroNode.title || heroNode.browserGroupName || 'FB Hero').trim();
     }
     return 'FB Hero';
   }, [heroNode]);
 
   // Dynamically resolve Enhance node title from workflow boxes
+  const connectedUpstreamEnhance = useMemo(() => {
+    const incoming = (connections || []).filter((c) => c.toNodeId === box.id);
+    for (const conn of incoming) {
+      const upBox = (workflowBoxes || []).find((b: any) => b.id === conn.fromNodeId);
+      if (
+        upBox &&
+        (upBox.tabGroupMode === 'enhance' ||
+          upBox.processKind === 'enhance_images' ||
+          upBox.title?.toLowerCase().includes('enhance') ||
+          upBox.browserGroupName?.toLowerCase().includes('enhance'))
+      ) {
+        return upBox;
+      }
+    }
+    return null;
+  }, [connections, box.id, workflowBoxes]);
+
   const enhanceNode = useMemo(() => {
+    if (connectedUpstreamEnhance) return connectedUpstreamEnhance;
+    if (box.imageSource && box.imageSource.startsWith('node:')) {
+      const targetId = box.imageSource.replace('node:', '');
+      const found = (workflowBoxes || []).find((b) => b.id === targetId);
+      if (found) return found;
+    }
     return workflowBoxes?.find(
       (b) =>
         (b.title?.toLowerCase().includes('enhance') ||
@@ -449,17 +495,22 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
          b.tabGroupMode === 'enhance') &&
         b.id !== box.id
     );
-  }, [workflowBoxes, box.id]);
+  }, [connectedUpstreamEnhance, box.imageSource, workflowBoxes, box.id]);
 
   const enhanceLabel = useMemo(() => {
     if (enhanceNode) {
-      return (enhanceNode.browserGroupName || enhanceNode.title || 'Enhance Image').trim();
+      return (enhanceNode.title || enhanceNode.browserGroupName || 'Enhance Image').trim();
     }
     return 'Enhance Image';
   }, [enhanceNode]);
 
   // Detect if this crop box is configured or wired for FB Hero
   const isHeroCropNode = useMemo(() => {
+    // If user explicitly chose another image source in the dropdown, respect their selection!
+    if (box.imageSource && box.imageSource !== 'generate' && !box.imageSource.includes('hero')) {
+      return false;
+    }
+
     const boxTitle = (box.title || '').toLowerCase();
     const template = (box.templateText || '').toLowerCase();
     const source = box.imageSource;
@@ -469,6 +520,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
 
     const matchesHero =
       source === 'generate' ||
+      (typeof source === 'string' && source.includes('hero')) ||
       boxTitle.includes('hero') ||
       template.includes('hero') ||
       cropFmtId.includes('hero') ||
@@ -602,21 +654,14 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
   const [isProcessingCrop, setIsProcessingCrop] = useState<boolean>(false);
 
-  // Image Source Selection: 'get_images' | 'enhance' | 'generate' | 'all' | 'upload'
-  const [imageSource, setImageSource] = useState<'get_images' | 'enhance' | 'generate' | 'all' | 'upload'>(() => {
-    if (box.imageSource) return box.imageSource as any;
+  // Image Source Selection: 'get_images' | 'enhance' | 'generate' | 'all' | 'upload' | string
+  const [imageSource, setImageSource] = useState<string>(() => {
+    if (box.imageSource) return box.imageSource;
     if (isHeroCropNode) return 'generate';
     if (box.uploadedImages && box.uploadedImages.length > 0) return 'upload';
     if (isUpstreamEnhance) return 'enhance';
     return 'get_images';
   });
-
-  useEffect(() => {
-    if (isHeroCropNode && imageSource !== 'generate') {
-      setImageSource('generate');
-      onUpdateBox(box.id, { imageSource: 'generate' });
-    }
-  }, [isHeroCropNode]);
 
   // Upload handler for image files
   const handleFilesUpload = async (files: FileList | File[]) => {
@@ -829,8 +874,18 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       isEnhanced?: boolean;
     }> = [];
 
+    const isHeroSource =
+      imageSource === 'generate' ||
+      (typeof imageSource === 'string' && (imageSource.includes('hero') || imageSource.includes('generator'))) ||
+      (!box.imageSource && isHeroCropNode);
+
+    const isEnhanceSource =
+      imageSource === 'enhance' ||
+      (typeof imageSource === 'string' && imageSource.includes('enhance')) ||
+      (!box.imageSource && isUpstreamEnhance);
+
     // 0. Hero Crop Node (FB Hero / BG Hero): strictly wait for or use generated hero image!
-    if (isHeroCropNode || imageSource === 'generate') {
+    if (isHeroSource) {
       if (effectiveHeroImage && effectiveHeroImage.url) {
         return [{
           id: 'hero-1',
@@ -842,17 +897,17 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         }];
       }
       // If hero image has NOT been generated yet:
-      // Strictly wait for FB Hero image! Do NOT load get_images, do NOT load enhance photos, do NOT fallback to uploaded files!
+      // Strictly wait for Hero image! Do NOT load get_images, do NOT load enhance photos, do NOT fallback to uploaded files!
       return [];
     }
 
     const hasEnhancedPhotos = Object.keys(mergedEnhancedPhotos).length > 0;
-    const isEnhanceEmpty = isUpstreamEnhance || imageSource === 'enhance';
+    const isEnhanceEmpty = isEnhanceSource;
     const shouldUseUploaded =
       imageSource === 'upload' ||
       (uploadedImages.length > 0 &&
         ((isEnhanceEmpty && !hasEnhancedPhotos) ||
-         (!isUpstreamEnhance && (!effectiveImageList || effectiveImageList.length === 0))));
+         (!isEnhanceSource && (!effectiveImageList || effectiveImageList.length === 0))));
 
     if (shouldUseUploaded && uploadedImages.length > 0) {
       uploadedImages.forEach((img, idx) => {
@@ -871,7 +926,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     }
 
     // When upstream is an Enhance node, merge with the first step's photos!
-    if (isUpstreamEnhance || imageSource === 'enhance') {
+    if (isEnhanceSource) {
       if (!hasEnhancedPhotos) {
         return [];
       }
@@ -1169,24 +1224,87 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     onUpdateBox(box.id, { title: val });
   };
 
-  const handleSourceChange = (newSrc: 'get_images' | 'enhance' | 'generate' | 'all') => {
+  const handleSourceChange = (newSrc: string) => {
     setImageSource(newSrc);
     onUpdateBox(box.id, { imageSource: newSrc });
+    lastRenderedKeyRef.current = '';
+    setSelectedPhotoIndex(1);
   };
 
   const sourceOptions: SelectOption[] = useMemo(() => {
+    const opts: SelectOption[] = [];
     const getImagesCount = effectiveImageList.length;
     const enhanceCount = Object.keys(mergedEnhancedPhotos).length;
     const heroCount = (effectiveHeroImage && effectiveHeroImage.url) ? 1 : 0;
-    const totalCount = (enhanceCount > 0 ? enhanceCount : getImagesCount) + heroCount;
 
-    return [
-      { value: 'get_images', label: `Get Images (${getImagesCount} ${getImagesCount === 1 ? 'Photo' : 'Photos'})` },
-      { value: 'enhance', label: `${enhanceLabel} (${enhanceCount} ${enhanceCount === 1 ? 'Photo' : 'Photos'})` },
-      { value: 'generate', label: `${heroLabel} (${heroCount} ${heroCount === 1 ? 'Photo' : 'Photos'})` },
-      { value: 'all', label: `All Photos (${totalCount} ${totalCount === 1 ? 'Photo' : 'Photos'})` },
-    ];
-  }, [effectiveImageList.length, mergedEnhancedPhotos, effectiveHeroImage, heroLabel, enhanceLabel]);
+    const heroNodes = (workflowBoxes || []).filter(
+      (b) =>
+        b.id !== box.id &&
+        (b.tabGroupMode === 'generate' ||
+          b.processKind === 'generate_image' ||
+          b.title?.toLowerCase().includes('hero') ||
+          b.browserGroupName?.toLowerCase().includes('hero'))
+    );
+
+    if (heroNodes.length > 0) {
+      heroNodes.forEach((hn) => {
+        const title = (hn.title || hn.browserGroupName || 'Hero').trim();
+        opts.push({
+          value: heroNodes.length === 1 ? 'generate' : `node:${hn.id}`,
+          label: `${title} (${heroCount > 0 ? `${heroCount} Photo` : 'Waiting for Hero'})`,
+        });
+      });
+    } else if (heroNode || isHeroCropNode) {
+      opts.push({
+        value: 'generate',
+        label: `${heroLabel} (${heroCount > 0 ? `${heroCount} Photo` : 'Waiting for Hero'})`,
+      });
+    }
+
+    const enhanceNodes = (workflowBoxes || []).filter(
+      (b) =>
+        b.id !== box.id &&
+        (b.tabGroupMode === 'enhance' ||
+          b.processKind === 'enhance_images' ||
+          b.title?.toLowerCase().includes('enhance') ||
+          b.browserGroupName?.toLowerCase().includes('enhance'))
+    );
+
+    if (enhanceNodes.length > 0) {
+      enhanceNodes.forEach((en) => {
+        const title = (en.title || en.browserGroupName || 'Enhance Image').trim();
+        opts.push({
+          value: enhanceNodes.length === 1 ? 'enhance' : `node:${en.id}`,
+          label: `${title} (${enhanceCount} ${enhanceCount === 1 ? 'Photo' : 'Photos'})`,
+        });
+      });
+    } else if (isUpstreamEnhance || enhanceNode) {
+      opts.push({
+        value: 'enhance',
+        label: `${enhanceLabel} (${enhanceCount} ${enhanceCount === 1 ? 'Photo' : 'Photos'})`,
+      });
+    }
+
+    opts.push({
+      value: 'get_images',
+      label: `Get Images (${getImagesCount} ${getImagesCount === 1 ? 'Photo' : 'Photos'})`,
+    });
+
+    const totalCount = (enhanceCount > 0 ? enhanceCount : getImagesCount) + heroCount;
+    opts.push({
+      value: 'all',
+      label: `All Photos (${totalCount} ${totalCount === 1 ? 'Photo' : 'Photos'})`,
+    });
+
+    if (uploadedImages.length > 0) {
+      opts.push({
+        value: 'upload',
+        label: `Uploaded Files (${uploadedImages.length} ${uploadedImages.length === 1 ? 'Photo' : 'Photos'})`,
+      });
+    }
+
+    return opts;
+  }, [effectiveImageList.length, mergedEnhancedPhotos, effectiveHeroImage, heroLabel, enhanceLabel, workflowBoxes, box.id, heroNode, isHeroCropNode, enhanceNode, isUpstreamEnhance, uploadedImages.length]);
 
   const photoOptions: SelectOption[] = useMemo(() => {
     if (currentSourceList.length === 0) {

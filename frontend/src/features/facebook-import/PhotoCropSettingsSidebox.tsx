@@ -119,8 +119,31 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     );
   }, [savedFormats, selectedFormatId, box.cropFormatId, box.templateId, box.templateText, box.title]);
 
-  // Resolve generator / hero node title
+  // Dynamically resolve Hero / Generator node title from workflow boxes (prefer direct incoming connection, then matching node)
+  const connectedUpstreamHero = useMemo(() => {
+    const incoming = (connections || []).filter((c) => c.toNodeId === box.id);
+    for (const conn of incoming) {
+      const upBox = (workflowBoxes || []).find((b: any) => b.id === conn.fromNodeId);
+      if (
+        upBox &&
+        (upBox.tabGroupMode === 'generate' ||
+          upBox.processKind === 'generate_image' ||
+          upBox.title?.toLowerCase().includes('hero') ||
+          upBox.browserGroupName?.toLowerCase().includes('hero'))
+      ) {
+        return upBox;
+      }
+    }
+    return null;
+  }, [connections, box.id, workflowBoxes]);
+
   const heroNode = useMemo(() => {
+    if (connectedUpstreamHero) return connectedUpstreamHero;
+    if (box.imageSource && box.imageSource.startsWith('node:')) {
+      const targetId = box.imageSource.replace('node:', '');
+      const found = (workflowBoxes || []).find((b) => b.id === targetId);
+      if (found) return found;
+    }
     return workflowBoxes.find(
       (b) =>
         b.title?.toLowerCase().includes('hero') ||
@@ -128,17 +151,40 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
         b.tabGroupMode === 'generate' ||
         b.processKind === 'generate_image'
     );
-  }, [workflowBoxes]);
+  }, [connectedUpstreamHero, box.imageSource, workflowBoxes]);
 
   const heroLabel = useMemo(() => {
     if (heroNode) {
-      return (heroNode.browserGroupName || heroNode.title || 'FB Hero').trim();
+      return (heroNode.title || heroNode.browserGroupName || 'FB Hero').trim();
     }
     return 'FB Hero';
   }, [heroNode]);
 
-  // Resolve enhance node title
+  // Dynamically resolve Enhance node title from workflow boxes
+  const connectedUpstreamEnhance = useMemo(() => {
+    const incoming = (connections || []).filter((c) => c.toNodeId === box.id);
+    for (const conn of incoming) {
+      const upBox = (workflowBoxes || []).find((b: any) => b.id === conn.fromNodeId);
+      if (
+        upBox &&
+        (upBox.tabGroupMode === 'enhance' ||
+          upBox.processKind === 'enhance_images' ||
+          upBox.title?.toLowerCase().includes('enhance') ||
+          upBox.browserGroupName?.toLowerCase().includes('enhance'))
+      ) {
+        return upBox;
+      }
+    }
+    return null;
+  }, [connections, box.id, workflowBoxes]);
+
   const enhanceNode = useMemo(() => {
+    if (connectedUpstreamEnhance) return connectedUpstreamEnhance;
+    if (box.imageSource && box.imageSource.startsWith('node:')) {
+      const targetId = box.imageSource.replace('node:', '');
+      const found = (workflowBoxes || []).find((b) => b.id === targetId);
+      if (found) return found;
+    }
     return workflowBoxes.find(
       (b) =>
         (b.title?.toLowerCase().includes('enhance') ||
@@ -146,17 +192,22 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
           b.tabGroupMode === 'enhance') &&
         b.id !== box.id
     );
-  }, [workflowBoxes, box.id]);
+  }, [connectedUpstreamEnhance, box.imageSource, workflowBoxes, box.id]);
 
   const enhanceLabel = useMemo(() => {
     if (enhanceNode) {
-      return (enhanceNode.browserGroupName || enhanceNode.title || 'Enhance Image').trim();
+      return (enhanceNode.title || enhanceNode.browserGroupName || 'Enhance Image').trim();
     }
     return 'Enhance Image';
   }, [enhanceNode]);
 
   // Detect if this crop box is configured or wired for FB Hero
   const isHeroCropNode = useMemo(() => {
+    // If user explicitly chose another image source in the dropdown, respect their selection!
+    if (box.imageSource && box.imageSource !== 'generate' && !box.imageSource.includes('hero')) {
+      return false;
+    }
+
     const boxTitle = (box.title || '').toLowerCase();
     const template = (box.templateText || '').toLowerCase();
     const source = box.imageSource;
@@ -166,6 +217,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
 
     const matchesHero =
       source === 'generate' ||
+      (typeof source === 'string' && source.includes('hero')) ||
       boxTitle.includes('hero') ||
       template.includes('hero') ||
       cropFmtId.includes('hero') ||
@@ -272,9 +324,9 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     });
   }, [connections, workflowBoxes, box.id]);
 
-  // Image source: 'get_images' | 'enhance' | 'generate' | 'all'
-  const [imageSource, setImageSource] = useState<'get_images' | 'enhance' | 'generate' | 'all'>(() => {
-    if (box.imageSource) return box.imageSource as any;
+  // Image source: 'get_images' | 'enhance' | 'generate' | 'all' | string
+  const [imageSource, setImageSource] = useState<string>(() => {
+    if (box.imageSource) return box.imageSource;
     if (isHeroCropNode) return 'generate';
     if (isUpstreamEnhance) return 'enhance';
     return 'get_images';
@@ -282,16 +334,9 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
 
   useEffect(() => {
     if (box.imageSource && box.imageSource !== imageSource) {
-      setImageSource(box.imageSource as any);
+      setImageSource(box.imageSource);
     }
   }, [box.imageSource]);
-
-  useEffect(() => {
-    if (isHeroCropNode && imageSource !== 'generate') {
-      setImageSource('generate');
-      onUpdateBox(box.id, { imageSource: 'generate' });
-    }
-  }, [isHeroCropNode]);
 
   // Source list calculation
   const currentSourceList = useMemo(() => {
@@ -305,8 +350,18 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
       isEnhanced?: boolean;
     }> = [];
 
+    const isHeroSource =
+      imageSource === 'generate' ||
+      (typeof imageSource === 'string' && (imageSource.includes('hero') || imageSource.includes('generator'))) ||
+      (!box.imageSource && isHeroCropNode);
+
+    const isEnhanceSource =
+      imageSource === 'enhance' ||
+      (typeof imageSource === 'string' && imageSource.includes('enhance')) ||
+      (!box.imageSource && isUpstreamEnhance);
+
     // 0. Hero / Generator Crop Node: strictly waiting or using generated hero image
-    if (isHeroCropNode || imageSource === 'generate') {
+    if (isHeroSource) {
       if (effectiveHeroImage && effectiveHeroImage.url) {
         return [{
           id: 'hero-1',
@@ -318,12 +373,12 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
         }];
       }
       // If hero image has NOT been generated yet:
-      // Strictly wait for FB Hero image! Do NOT load get_images, do NOT load enhance photos!
+      // Strictly wait for Hero image! Do NOT load get_images, do NOT load enhance photos!
       return [];
     }
 
     // When upstream is an Enhance node, merge with the first step's photos!
-    if (isUpstreamEnhance || imageSource === 'enhance') {
+    if (isEnhanceSource) {
       const hasEnhanced = Object.keys(enhancedPhotos || {}).length > 0;
       if (!hasEnhanced) {
         return [];
@@ -360,7 +415,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     }
 
     // 1. Get Images
-    if (!isUpstreamEnhance && (imageSource === 'get_images' || imageSource === 'all')) {
+    if (!isEnhanceSource && (imageSource === 'get_images' || imageSource === 'all')) {
       images.forEach((img, idx) => {
         const photoNum = idx + 1;
         const url =
@@ -381,7 +436,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     }
 
     // 3. Generate Image
-    if (!isUpstreamEnhance && (imageSource as any) === 'all') {
+    if (!isEnhanceSource && (imageSource as any) === 'all') {
       if (effectiveHeroImage && effectiveHeroImage.url) {
         rawList.push({
           id: 'hero-1',
@@ -395,7 +450,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     }
 
     return rawList;
-  }, [isHeroCropNode, imageSource, isUpstreamEnhance, images, enhancedPhotos, effectiveHeroImage, heroLabel, watermarkedPhotos]);
+  }, [isHeroCropNode, imageSource, isUpstreamEnhance, images, enhancedPhotos, effectiveHeroImage, heroLabel, watermarkedPhotos, box.imageSource]);
 
   const [selectedIndices, setSelectedIndices] = useState<number[]>(() => {
     if (Array.isArray(box.selectedImageIndices) && box.selectedImageIndices.length > 0) {
@@ -437,20 +492,58 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
       (c) => c.toNodeId === box.id && (c.fromNodeId.includes('enhance') || workflowBoxes.some((b) => b.id === c.fromNodeId && (b.title?.toLowerCase().includes('enhance') || b.browserGroupName?.toLowerCase().includes('enhance'))))
     );
 
-    if (hasIncomingHero || heroNode || isHeroCropNode) {
+    const heroNodes = (workflowBoxes || []).filter(
+      (b) =>
+        b.id !== box.id &&
+        (b.tabGroupMode === 'generate' ||
+          b.processKind === 'generate_image' ||
+          b.title?.toLowerCase().includes('hero') ||
+          b.browserGroupName?.toLowerCase().includes('hero'))
+    );
+
+    if (heroNodes.length > 0) {
+      heroNodes.forEach((hn) => {
+        const title = (hn.title || hn.browserGroupName || 'Hero').trim();
+        const heroCount = (effectiveHeroImage && effectiveHeroImage.url) ? 1 : 0;
+        opts.push({
+          value: heroNodes.length === 1 ? 'generate' : `node:${hn.id}`,
+          label: `${title} (${heroCount > 0 ? `${heroCount} Photo` : 'Waiting for Hero'})`,
+        });
+      });
+    } else if (hasIncomingHero || heroNode || isHeroCropNode) {
       const heroCount = (effectiveHeroImage && effectiveHeroImage.url) ? 1 : 0;
       opts.push({
         value: 'generate',
         label: `${heroLabel} (${heroCount > 0 ? `${heroCount} Photo` : 'Waiting for Hero'})`,
       });
     }
-    if (isUpstreamEnhance || hasIncomingEnhance || enhanceNode) {
+
+    const enhanceNodes = (workflowBoxes || []).filter(
+      (b) =>
+        b.id !== box.id &&
+        (b.tabGroupMode === 'enhance' ||
+          b.processKind === 'enhance_images' ||
+          b.title?.toLowerCase().includes('enhance') ||
+          b.browserGroupName?.toLowerCase().includes('enhance'))
+    );
+
+    if (enhanceNodes.length > 0) {
+      const enhanceCount = Object.keys(enhancedPhotos || {}).length;
+      enhanceNodes.forEach((en) => {
+        const title = (en.title || en.browserGroupName || 'Enhance Image').trim();
+        opts.push({
+          value: enhanceNodes.length === 1 ? 'enhance' : `node:${en.id}`,
+          label: `${title} (${enhanceCount} Photo${enhanceCount === 1 ? '' : 's'})`,
+        });
+      });
+    } else if (isUpstreamEnhance || hasIncomingEnhance || enhanceNode) {
       const enhanceCount = Object.keys(enhancedPhotos || {}).length;
       opts.push({
         value: 'enhance',
         label: `${enhanceLabel} (${enhanceCount} Photo${enhanceCount === 1 ? '' : 's'})`,
       });
     }
+
     opts.push({
       value: 'get_images',
       label: `Get Images (${images.length || 12} Photos)`,
@@ -475,7 +568,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     });
   };
 
-  const handleSourceChange = (newSource: 'get_images' | 'enhance' | 'generate' | 'all') => {
+  const handleSourceChange = (newSource: string) => {
     setImageSource(newSource);
     onUpdateBox(box.id, { imageSource: newSource });
   };
