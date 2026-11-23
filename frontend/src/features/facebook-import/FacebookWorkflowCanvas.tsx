@@ -13517,9 +13517,64 @@ export const FacebookWorkflowCanvas = forwardRef<
           const currentCombineBox = isCombine
             ? (config.combineBoxes || []).find((b) => b.id === combineId) || config.combineBoxes?.[0]
             : null;
-          const combineInputs = isCombine && currentCombineBox
+          const rawCombineInputs = isCombine && currentCombineBox
             ? (config.connections || []).filter((c) => c.toNodeId === currentCombineBox.id && isNodeEffectivelyEnabled(c.fromNodeId))
             : [];
+
+          // Expand Crop Studio boxes into their connected child format boxes so each format box appears as its own card with relative preview box
+          const combineInputs: typeof rawCombineInputs = [];
+          for (const c of rawCombineInputs) {
+            const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
+            if (fromBox && isCropStudioBox(fromBox)) {
+              let childCropBoxes = config.aiBoxes.filter((b) => {
+                if (!isNodeEffectivelyEnabled(b.id)) return false;
+                if (!isWatermarkAIBox(b)) return false;
+                return (config.connections || []).some(
+                  (conn) =>
+                    (conn.fromNodeId === c.fromNodeId && conn.toNodeId === b.id) ||
+                    (conn.toNodeId === c.fromNodeId && conn.fromNodeId === b.id)
+                );
+              });
+              if (childCropBoxes.length === 0) {
+                childCropBoxes = config.aiBoxes.filter((b) => isNodeEffectivelyEnabled(b.id) && isWatermarkAIBox(b));
+              }
+
+              const savedCropOrder: string[] = ((currentCombineBox as any)?.presetOrder || (fromBox as any)?.presetOrder || (() => {
+                try {
+                  const raw = localStorage.getItem(`combine_preset_order_${fromBox?.id}`) ||
+                    (currentCombineBox ? localStorage.getItem(`combine_preset_order_${currentCombineBox.id}`) : null);
+                  return raw ? JSON.parse(raw) : null;
+                } catch {
+                  return null;
+                }
+              })());
+
+              if (savedCropOrder && Array.isArray(savedCropOrder) && savedCropOrder.length > 0) {
+                childCropBoxes = [...childCropBoxes].sort((a, b) => {
+                  const idxA = savedCropOrder.indexOf(a.id);
+                  const idxB = savedCropOrder.indexOf(b.id);
+                  if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                  if (idxA !== -1) return -1;
+                  if (idxB !== -1) return 1;
+                  return 0;
+                });
+              }
+
+              if (childCropBoxes.length > 0) {
+                for (const ch of childCropBoxes) {
+                  combineInputs.push({
+                    id: `${c.id}-${ch.id}`,
+                    fromNodeId: ch.id,
+                    toNodeId: c.toNodeId,
+                  } as any);
+                }
+              } else {
+                combineInputs.push(c);
+              }
+            } else {
+              combineInputs.push(c);
+            }
+          }
 
           // Compute ordered combine inputs:
           // General group (Text AI / Content) is placed FIRST (top), and image format / watermark / crop boxes appear UNDER General!
@@ -15536,49 +15591,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   }).filter((a) => a.url)
                                 : [];
 
-                              const childCropIds = new Set((config.aiBoxes || []).filter((b) => isWatermarkAIBox(b)).map((b) => b.id));
                               const matchedAssets = fromBox
-                                ? combineMediaAssets.filter((a) => a.formatId === fromBox.id || (isCropStudio && childCropIds.has(a.formatId)))
+                                ? combineMediaAssets.filter((a) => a.formatId === fromBox.id)
                                 : (isImages ? combineMediaAssets.filter((a) => a.formatId === 'get-images') : []);
-
-                              let childCropBoxes = isCropStudio
-                                ? config.aiBoxes.filter((b) => {
-                                    if (!isNodeEffectivelyEnabled(b.id)) return false;
-                                    if (!isWatermarkAIBox(b)) return false;
-                                    return (config.connections || []).some(
-                                      (conn) =>
-                                        (conn.fromNodeId === c.fromNodeId && conn.toNodeId === b.id) ||
-                                        (conn.toNodeId === c.fromNodeId && conn.fromNodeId === b.id)
-                                    );
-                                  })
-                                : [];
-
-                              if (isCropStudio && childCropBoxes.length === 0) {
-                                childCropBoxes = config.aiBoxes.filter((b) => isNodeEffectivelyEnabled(b.id) && isWatermarkAIBox(b));
-                              }
-
-                              const savedCropOrder: string[] = isCropStudio
-                                ? ((currentCombineBox as any)?.presetOrder || (fromBox as any)?.presetOrder || (() => {
-                                    try {
-                                      const raw = localStorage.getItem(`combine_preset_order_${fromBox?.id}`) ||
-                                        (currentCombineBox ? localStorage.getItem(`combine_preset_order_${currentCombineBox.id}`) : null);
-                                      return raw ? JSON.parse(raw) : null;
-                                    } catch {
-                                      return null;
-                                    }
-                                  })())
-                                : null;
-
-                              if (savedCropOrder && Array.isArray(savedCropOrder) && savedCropOrder.length > 0) {
-                                childCropBoxes = [...childCropBoxes].sort((a, b) => {
-                                  const idxA = savedCropOrder.indexOf(a.id);
-                                  const idxB = savedCropOrder.indexOf(b.id);
-                                  if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-                                  if (idxA !== -1) return -1;
-                                  if (idxB !== -1) return 1;
-                                  return 0;
-                                });
-                              }
 
                               const boxAssets: CombineMediaAssetItem[] = matchedAssets.length > 0
                                 ? matchedAssets
@@ -15606,6 +15621,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   }
                                 }
                               }
+
+                              const chFmt = savedCropFormatsList.find((f) => f.id === fromBox?.cropFormatId || f.id === fromBox?.templateId);
+                              const boxSubtitle = fromBox?.subtitle || (chFmt ? `${chFmt.targetWidth}×${chFmt.targetHeight}${(chFmt as any).aspectRatio ? ` (${(chFmt as any).aspectRatio})` : ''}` : (fromBox?.targetWidth && fromBox?.targetHeight ? `${fromBox.targetWidth}×${fromBox.targetHeight}` : ''));
 
                               const isHovered = hoveredStackId === c.fromNodeId;
                               const isCardBeingDragged = draggedCardId === c.fromNodeId;
@@ -15727,7 +15745,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                         >
                                           {fromTitle}
                                         </div>
-                                        {isCropStudio && childCropBoxes.length > 0 && (
+                                        {boxSubtitle && (
                                           <div
                                             style={{
                                               fontSize: '0.5625rem',
@@ -15737,7 +15755,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                               textOverflow: 'ellipsis',
                                             }}
                                           >
-                                            Crop & Cut Studio · {childCropBoxes.length} Formats
+                                            {boxSubtitle}
                                           </div>
                                         )}
                                       </div>
@@ -15759,382 +15777,142 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     </span>
                                   </div>
 
-                                  {/* If Crop Studio has child format boxes, show clean list of connected format presets just like General */}
-                                  {isCropStudio && childCropBoxes.length > 0 ? (
-                                    <div
-                                      style={{
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        borderRadius: '6px',
-                                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                        backgroundColor: isDark ? '#161B22' : '#F8FAFC',
-                                        overflow: 'hidden',
-                                      }}
-                                    >
-                                      {childCropBoxes.map((chBox, idx) => {
-                                        const chTitle = chBox.title || 'Format Preset';
-                                        const chFmt = savedCropFormatsList.find((f) => f.id === chBox.cropFormatId || f.id === chBox.templateId);
-                                        const chSubtitle = chBox.subtitle || (chFmt ? `${chFmt.targetWidth}×${chFmt.targetHeight}${(chFmt as any).aspectRatio ? ` (${(chFmt as any).aspectRatio})` : ''}` : (chBox.targetWidth && chBox.targetHeight ? `${chBox.targetWidth}×${chBox.targetHeight}` : ''));
-                                        const chAssets = combineMediaAssets.filter((a) => a.formatId === chBox.id);
-                                        const chCount = chAssets.length;
-
-                                        const isPresetBeingDragged = draggedPresetId === chBox.id;
-                                        const isPresetOverThis = dragOverPresetId === chBox.id;
-
-                                        return (
-                                          <div
-                                            key={chBox.id}
-                                            draggable={true}
-                                            onDragStart={(e) => {
-                                              e.stopPropagation();
-                                              setDraggedPresetId(chBox.id);
-                                              e.dataTransfer.effectAllowed = 'move';
-                                              e.dataTransfer.setData('text/preset-id', chBox.id);
-                                            }}
-                                            onDragOver={(e) => {
-                                              e.preventDefault();
-                                              e.stopPropagation();
-                                              e.dataTransfer.dropEffect = 'move';
-                                              const rect = e.currentTarget.getBoundingClientRect();
-                                              const midY = rect.top + rect.height / 2;
-                                              const pos = e.clientY < midY ? 'top' : 'bottom';
-                                              if (dragOverPresetId !== chBox.id || dragOverPresetPos !== pos) {
-                                                setDragOverPresetId(chBox.id);
-                                                setDragOverPresetPos(pos);
-                                              }
-                                            }}
-                                            onDragLeave={(e) => {
-                                              e.stopPropagation();
-                                              if (dragOverPresetId === chBox.id) {
-                                                setDragOverPresetId(null);
-                                                setDragOverPresetPos(null);
-                                              }
-                                            }}
-                                            onDrop={(e) => {
-                                              e.preventDefault();
-                                              e.stopPropagation();
-                                              if (draggedPresetId && draggedPresetId !== chBox.id && dragOverPresetPos) {
-                                                handleReorderPresets(draggedPresetId, chBox.id, dragOverPresetPos, childCropBoxes, c.fromNodeId);
-                                              }
-                                              setDraggedPresetId(null);
-                                              setDragOverPresetId(null);
-                                              setDragOverPresetPos(null);
-                                            }}
-                                            onDragEnd={(e) => {
-                                              e.stopPropagation();
-                                              setDraggedPresetId(null);
-                                              setDragOverPresetId(null);
-                                              setDragOverPresetPos(null);
-                                            }}
-                                            style={{
-                                              display: 'flex',
-                                              alignItems: 'center',
-                                              justifyContent: 'space-between',
-                                              padding: '0.45rem 0.65rem',
-                                              borderTop: isPresetOverThis && dragOverPresetPos === 'top' ? '2px solid #6366F1' : 'none',
-                                              borderBottom: isPresetOverThis && dragOverPresetPos === 'bottom'
-                                                ? '2px solid #6366F1'
-                                                : (idx < childCropBoxes.length - 1
-                                                  ? (isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0')
-                                                  : 'none'),
-                                              backgroundColor: isPresetOverThis
-                                                ? (isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.08)')
-                                                : isPresetBeingDragged
-                                                  ? (isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)')
-                                                  : 'transparent',
-                                              opacity: isPresetBeingDragged ? 0.4 : 1,
-                                              cursor: isPresetBeingDragged ? 'grabbing' : 'grab',
-                                              transition: 'background-color 0.15s ease, opacity 0.15s ease, border-color 0.15s ease',
-                                              userSelect: 'none',
-                                            }}
-                                            onMouseEnter={(e) => {
-                                              if (!draggedPresetId && !isPresetOverThis) {
-                                                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)';
-                                              }
-                                            }}
-                                            onMouseLeave={(e) => {
-                                              if (!draggedPresetId && !isPresetOverThis) {
-                                                e.currentTarget.style.backgroundColor = 'transparent';
-                                              }
-                                            }}
-                                          >
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, flex: 1, paddingRight: '6px' }}>
-                                              {/* 6-dot Drag Grip Handle */}
-                                              <div
-                                                style={{
-                                                  display: 'flex',
-                                                  alignItems: 'center',
-                                                  justifyContent: 'center',
-                                                  width: '12px',
-                                                  height: '14px',
-                                                  color: isPresetOverThis ? '#6366F1' : 'var(--text-muted)',
-                                                  opacity: isPresetOverThis ? 1 : 0.6,
-                                                  cursor: 'grab',
-                                                  flexShrink: 0,
-                                                  transition: 'opacity 0.15s ease, color 0.15s ease',
-                                                }}
-                                                title="Click and drag to reorder format"
-                                              >
-                                                <svg width="8" height="12" viewBox="0 0 8 14" fill="currentColor">
-                                                  <circle cx="2" cy="2" r="1.3" />
-                                                  <circle cx="6" cy="2" r="1.3" />
-                                                  <circle cx="2" cy="7" r="1.3" />
-                                                  <circle cx="6" cy="7" r="1.3" />
-                                                  <circle cx="2" cy="12" r="1.3" />
-                                                  <circle cx="6" cy="12" r="1.3" />
-                                                </svg>
-                                              </div>
-                                              <FiScissors style={{ fontSize: '12px', color: 'var(--text-muted)', flexShrink: 0 }} />
-                                              <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-                                                <span
-                                                  style={{
-                                                    fontSize: '0.75rem',
-                                                    fontWeight: 500,
-                                                    color: 'var(--text-primary)',
-                                                    overflow: 'hidden',
-                                                    textOverflow: 'ellipsis',
-                                                    whiteSpace: 'nowrap',
-                                                  }}
-                                                >
-                                                  {chTitle}
-                                                </span>
-                                                {chSubtitle && (
-                                                  <span
-                                                    style={{
-                                                      fontSize: '0.5625rem',
-                                                      color: 'var(--text-muted)',
-                                                      overflow: 'hidden',
-                                                      textOverflow: 'ellipsis',
-                                                      whiteSpace: 'nowrap',
-                                                    }}
-                                                  >
-                                                    {chSubtitle}
-                                                  </span>
-                                                )}
-                                              </div>
-                                            </div>
-
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                                              <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                                                {chCount} {chCount === 1 ? 'photo' : 'photos'}
-                                              </span>
-
-                                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                <button
-                                                  type="button"
-                                                  onMouseDown={(e) => e.stopPropagation()}
-                                                  onClick={() => {
-                                                    setCombineMediaSideboxFormatFilter(chBox.id);
-                                                    setShowCombineMediaSidebox(true);
-                                                  }}
-                                                  style={{
-                                                    height: '24px',
-                                                    padding: '0 8px',
-                                                    borderRadius: '4px',
-                                                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
-                                                    color: 'var(--text-primary)',
-                                                    fontSize: '0.625rem',
-                                                    fontWeight: 500,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '4px',
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.15s ease',
-                                                  }}
-                                                  onMouseEnter={(e) => {
-                                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.06)';
-                                                    e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
-                                                  }}
-                                                  onMouseLeave={(e) => {
-                                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF';
-                                                    e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
-                                                  }}
-                                                  title={`View ${chTitle} photos`}
-                                                >
-                                                  <FiEye size={10} style={{ color: 'var(--text-secondary)' }} />
-                                                  <span>View</span>
-                                                </button>
-
-                                                {chCount > 0 && (
-                                                  <button
-                                                    type="button"
-                                                    disabled={isDownloadingCombineFormat === chTitle}
-                                                    onMouseDown={(e) => e.stopPropagation()}
-                                                    onClick={() => handleDownloadCombineFormatDirectly(chAssets, chTitle)}
-                                                    style={{
-                                                      height: '24px',
-                                                      padding: '0 8px',
-                                                      borderRadius: '4px',
-                                                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
-                                                      color: 'var(--text-primary)',
-                                                      fontSize: '0.625rem',
-                                                      fontWeight: 500,
-                                                      display: 'flex',
-                                                      alignItems: 'center',
-                                                      gap: '4px',
-                                                      cursor: isDownloadingCombineFormat === chTitle ? 'wait' : 'pointer',
-                                                      transition: 'all 0.15s ease',
-                                                    }}
-                                                    onMouseEnter={(e) => {
-                                                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.06)';
-                                                      e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
-                                                    }}
-                                                    onMouseLeave={(e) => {
-                                                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF';
-                                                      e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
-                                                    }}
-                                                    title={`Download ${chTitle} photos`}
-                                                  >
-                                                    <FiDownload size={10} style={{ color: 'var(--text-secondary)' }} />
-                                                    <span>Download</span>
-                                                  </button>
-                                                )}
-                                              </div>
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : (
-                                    /* Cool 3-Image Stack directly in the card without extra container */
-                                    <div
-                                      onClick={() => {
-                                        if (fromBox) {
-                                          setCombineMediaSideboxFormatFilter(fromBox.id);
-                                        } else {
-                                          setCombineMediaSideboxFormatFilter(isImages ? 'get-images' : 'all');
-                                        }
-                                        setShowCombineMediaSidebox(true);
-                                      }}
-                                      onMouseEnter={() => setHoveredStackId(c.fromNodeId)}
-                                      onMouseLeave={() => setHoveredStackId(null)}
-                                      style={{
-                                        position: 'relative',
-                                        width: '100%',
-                                        height: '95px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        cursor: 'pointer',
-                                      }}
-                                    >
-                                      {boxThumbnails.length > 0 ? (
-                                        <div
-                                          style={{
-                                            position: 'relative',
-                                            width: '110px',
-                                            height: '80px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                          }}
-                                        >
-                                          {/* Layer 1 (Left Tilt) */}
-                                          {boxThumbnails[1] && (
-                                            <div
-                                              style={{
-                                                position: 'absolute',
-                                                width: '64px',
-                                                height: '64px',
-                                                borderRadius: '6px',
-                                                overflow: 'hidden',
-                                                border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(0, 0, 0, 0.12)',
-                                                boxShadow: '0 4px 10px rgba(0, 0, 0, 0.4)',
-                                                backgroundColor: '#000000',
-                                                transform: isHovered
-                                                  ? 'rotate(-14deg) translate(-24px, -3px) scale(0.96)'
-                                                  : 'rotate(-7deg) translate(-12px, 1px) scale(0.93)',
-                                                opacity: 0.8,
-                                                zIndex: 1,
-                                                transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                                              }}
-                                            >
-                                              <img
-                                                src={boxThumbnails[1]}
-                                                alt="Thumb 1"
-                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                              />
-                                            </div>
-                                          )}
-
-                                          {/* Layer 2 (Right Tilt) */}
-                                          {boxThumbnails[2] && (
-                                            <div
-                                              style={{
-                                                position: 'absolute',
-                                                width: '64px',
-                                                height: '64px',
-                                                borderRadius: '6px',
-                                                overflow: 'hidden',
-                                                border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(0, 0, 0, 0.12)',
-                                                boxShadow: '0 4px 10px rgba(0, 0, 0, 0.4)',
-                                                backgroundColor: '#000000',
-                                                transform: isHovered
-                                                  ? 'rotate(14deg) translate(24px, -3px) scale(0.96)'
-                                                  : 'rotate(7deg) translate(12px, 1px) scale(0.93)',
-                                                opacity: 0.8,
-                                                zIndex: 2,
-                                                transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                                              }}
-                                            >
-                                              <img
-                                                src={boxThumbnails[2]}
-                                                alt="Thumb 2"
-                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                              />
-                                            </div>
-                                          )}
-
-                                          {/* Layer 3 (Center Front) */}
+                                  {/* Cool 3-Image Stack directly in the card without extra container */}
+                                  <div
+                                    onClick={() => {
+                                      if (fromBox) {
+                                        setCombineMediaSideboxFormatFilter(fromBox.id);
+                                      } else {
+                                        setCombineMediaSideboxFormatFilter(isImages ? 'get-images' : 'all');
+                                      }
+                                      setShowCombineMediaSidebox(true);
+                                    }}
+                                    onMouseEnter={() => setHoveredStackId(c.fromNodeId)}
+                                    onMouseLeave={() => setHoveredStackId(null)}
+                                    style={{
+                                      position: 'relative',
+                                      width: '100%',
+                                      height: '95px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    {boxThumbnails.length > 0 ? (
+                                      <div
+                                        style={{
+                                          position: 'relative',
+                                          width: '110px',
+                                          height: '80px',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                        }}
+                                      >
+                                        {/* Layer 1 (Left Tilt) */}
+                                        {boxThumbnails[1] && (
                                           <div
                                             style={{
-                                              position: 'relative',
-                                              width: '72px',
-                                              height: '72px',
+                                              position: 'absolute',
+                                              width: '64px',
+                                              height: '64px',
                                               borderRadius: '6px',
                                               overflow: 'hidden',
-                                              border: isDark ? '1px solid rgba(255, 255, 255, 0.25)' : '1px solid rgba(0, 0, 0, 0.18)',
-                                              boxShadow: isHovered
-                                                ? '0 8px 18px rgba(0, 0, 0, 0.6)'
-                                                : '0 4px 12px rgba(0, 0, 0, 0.4)',
+                                              border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(0, 0, 0, 0.12)',
+                                              boxShadow: '0 4px 10px rgba(0, 0, 0, 0.4)',
                                               backgroundColor: '#000000',
-                                              transform: isHovered ? 'scale(1.06) translateY(-3px)' : 'scale(1)',
-                                              zIndex: 3,
-                                              transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease',
+                                              transform: isHovered
+                                                ? 'rotate(-14deg) translate(-24px, -3px) scale(0.96)'
+                                                : 'rotate(-7deg) translate(-12px, 1px) scale(0.93)',
+                                              opacity: 0.8,
+                                              zIndex: 1,
+                                              transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                                             }}
                                           >
                                             <img
-                                              src={boxThumbnails[0]}
-                                              alt="Front thumb"
+                                              src={boxThumbnails[1]}
+                                              alt="Thumb 1"
                                               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                             />
-                                            <div
-                                              style={{
-                                                position: 'absolute',
-                                                bottom: '2px',
-                                                right: '2px',
-                                                fontSize: '0.5rem',
-                                                fontWeight: 600,
-                                                padding: '1px 4px',
-                                                borderRadius: '3px',
-                                                backgroundColor: 'rgba(0, 0, 0, 0.75)',
-                                                color: '#FFFFFF',
-                                              }}
-                                            >
-                                              +{boxCount}
-                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Layer 2 (Right Tilt) */}
+                                        {boxThumbnails[2] && (
+                                          <div
+                                            style={{
+                                              position: 'absolute',
+                                              width: '64px',
+                                              height: '64px',
+                                              borderRadius: '6px',
+                                              overflow: 'hidden',
+                                              border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(0, 0, 0, 0.12)',
+                                              boxShadow: '0 4px 10px rgba(0, 0, 0, 0.4)',
+                                              backgroundColor: '#000000',
+                                              transform: isHovered
+                                                ? 'rotate(14deg) translate(24px, -3px) scale(0.96)'
+                                                : 'rotate(7deg) translate(12px, 1px) scale(0.93)',
+                                              opacity: 0.8,
+                                              zIndex: 2,
+                                              transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                                            }}
+                                          >
+                                            <img
+                                              src={boxThumbnails[2]}
+                                              alt="Thumb 2"
+                                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                            />
+                                          </div>
+                                        )}
+
+                                        {/* Layer 3 (Center Front) */}
+                                        <div
+                                          style={{
+                                            position: 'relative',
+                                            width: '72px',
+                                            height: '72px',
+                                            borderRadius: '6px',
+                                            overflow: 'hidden',
+                                            border: isDark ? '1px solid rgba(255, 255, 255, 0.25)' : '1px solid rgba(0, 0, 0, 0.18)',
+                                            boxShadow: isHovered
+                                              ? '0 8px 18px rgba(0, 0, 0, 0.6)'
+                                              : '0 4px 12px rgba(0, 0, 0, 0.4)',
+                                            backgroundColor: '#000000',
+                                            transform: isHovered ? 'scale(1.06) translateY(-3px)' : 'scale(1)',
+                                            zIndex: 3,
+                                            transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease',
+                                          }}
+                                        >
+                                          <img
+                                            src={boxThumbnails[0]}
+                                            alt="Front thumb"
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                          />
+                                          <div
+                                            style={{
+                                              position: 'absolute',
+                                              bottom: '2px',
+                                              right: '2px',
+                                              fontSize: '0.5rem',
+                                              fontWeight: 600,
+                                              padding: '1px 4px',
+                                              borderRadius: '3px',
+                                              backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                                              color: '#FFFFFF',
+                                            }}
+                                          >
+                                            +{boxCount}
                                           </div>
                                         </div>
-                                      ) : (
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', color: 'var(--text-muted)' }}>
-                                          <FiImage size={20} style={{ opacity: 0.4 }} />
-                                          <span style={{ fontSize: '0.625rem' }}>No photos available</span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
+                                      </div>
+                                    ) : (
+                                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', color: 'var(--text-muted)' }}>
+                                        <FiImage size={20} style={{ opacity: 0.4 }} />
+                                        <span style={{ fontSize: '0.625rem' }}>No photos available</span>
+                                      </div>
+                                    )}
+                                  </div>
 
                                   {/* Clean Neutral Download Action Button with Dropdown (matching Image 4) */}
                                   <div style={{ position: 'relative', marginTop: '2px' }}>
@@ -16176,9 +15954,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       <span>
                                         {isDownloadingCombineFormat === fromTitle
                                           ? 'Downloading...'
-                                          : isCropStudio && childCropBoxes.length > 0
-                                            ? `Download All Formats (${boxCount})`
-                                            : 'Download'}
+                                          : 'Download'}
                                       </span>
                                       {combineDownloadDropdownFormatId === c.fromNodeId ? <FiChevronUp size={12} /> : <FiChevronDown size={12} />}
                                     </button>
