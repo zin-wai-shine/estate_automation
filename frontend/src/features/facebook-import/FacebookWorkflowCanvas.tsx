@@ -13775,21 +13775,29 @@ export const FacebookWorkflowCanvas = forwardRef<
               }}
             >
               {/* ── LEFT EXPANDED PANE (Settings / Details / Prompt Template) ── */}
-              {isSideboxActive && (
-                <div
-                  style={{
-                    flex: '1 1 50%',
-                    minWidth: '380px',
-                    height: '100%',
-                    borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
-                    backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    animation: 'sidebarFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
-                  }}
-                >
+              <div
+                style={{
+                  width: isSideboxActive ? 'calc(100% - 380px)' : '0px',
+                  minWidth: 0,
+                  maxWidth: isSideboxActive ? 'calc(100% - 380px)' : '0px',
+                  flex: isSideboxActive ? 1 : '0 0 0px',
+                  height: '100%',
+                  borderRight: isSideboxActive
+                    ? (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)')
+                    : 'none',
+                  backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  opacity: isSideboxActive ? 1 : 0,
+                  pointerEvents: isSideboxActive ? 'auto' : 'none',
+                  visibility: isSideboxActive ? 'visible' : 'hidden',
+                  transition: 'opacity 0.22s ease, border-color 0.2s ease',
+                }}
+              >
+                {isSideboxActive && (
+                  <>
                   {/* 1. FB Hero / Enhance IMG Settings */}
                   {showFBHeroSettingsSidebox && currentModalAIBox && (
                     <FBHeroSettingsSidebox
@@ -14206,21 +14214,23 @@ export const FacebookWorkflowCanvas = forwardRef<
                       )}
                     </div>
                   )}
-                </div>
-              )}
+                  </>
+                )}
+              </div>
 
               {/* ── RIGHT MAIN INSPECTOR PANE ── */}
               <div
                 style={{
-                  flex: isSideboxActive ? '1 1 50%' : '1 1 100%',
-                  width: isSideboxActive ? '50%' : '100%',
-                  minWidth: isSideboxActive ? '360px' : '380px',
+                  width: isSideboxActive ? 'clamp(380px, 48%, 440px)' : '380px',
+                  minWidth: '380px',
+                  flexShrink: 0,
                   height: '100%',
                   display: 'flex',
                   flexDirection: 'column',
                   position: 'relative',
                   backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                   overflow: 'hidden',
+                  transition: 'width 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
                 }}
               >
                 {/* Header */}
@@ -19885,7 +19895,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 boxShadow: isDark
                   ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
                   : '-3px 0 16px rgba(0, 0, 0, 0.06)',
-                transition: 'width 0.32s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s ease',
+                transition: 'width 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s ease',
                 zIndex: 170,
                 display: 'flex',
                 flexDirection: 'row',
@@ -19894,21 +19904,28 @@ export const FacebookWorkflowCanvas = forwardRef<
               }}
             >
               {/* ── LEFT EXPANDED PANE (Photo Format & Crop Settings) ── */}
-              {isPhotoCropSideboxActive && (
-                <div
-                  style={{
-                    flex: '1 1 50%',
-                    minWidth: '380px',
-                    height: '100%',
-                    borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
-                    backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    animation: 'sidebarFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
-                  }}
-                >
+              <div
+                style={{
+                  width: isPhotoCropSideboxActive ? 'calc(100% - 380px)' : '0px',
+                  minWidth: 0,
+                  maxWidth: isPhotoCropSideboxActive ? 'calc(100% - 380px)' : '0px',
+                  flex: isPhotoCropSideboxActive ? 1 : '0 0 0px',
+                  height: '100%',
+                  borderRight: isPhotoCropSideboxActive
+                    ? (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)')
+                    : 'none',
+                  backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  opacity: isPhotoCropSideboxActive ? 1 : 0,
+                  pointerEvents: isPhotoCropSideboxActive ? 'auto' : 'none',
+                  visibility: isPhotoCropSideboxActive ? 'visible' : 'hidden',
+                  transition: 'opacity 0.22s ease, border-color 0.2s ease',
+                }}
+              >
+                {isPhotoCropSideboxActive && (
                   <PhotoCropSettingsSidebox
                     embedded
                     key={currentModalAIBox.id}
@@ -19925,21 +19942,22 @@ export const FacebookWorkflowCanvas = forwardRef<
                     heroImage={heroImage}
                     listingCode={executionState?.listingCode || previewSampleCode}
                   />
-                </div>
-              )}
+                )}
+              </div>
 
               {/* ── RIGHT MAIN INSPECTOR PANE (Photo Format & Crop Studio) ── */}
               <div
                 style={{
-                  flex: isPhotoCropSideboxActive ? '1 1 50%' : '1 1 100%',
-                  width: isPhotoCropSideboxActive ? '50%' : '100%',
-                  minWidth: isPhotoCropSideboxActive ? '360px' : '380px',
+                  width: isPhotoCropSideboxActive ? 'clamp(380px, 48%, 440px)' : '380px',
+                  minWidth: '380px',
+                  flexShrink: 0,
                   height: '100%',
                   display: 'flex',
                   flexDirection: 'column',
                   position: 'relative',
                   backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                   overflow: 'hidden',
+                  transition: 'width 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
                 }}
               >
                 {/* Top Navigation Bar with Title & Close [X] */}
