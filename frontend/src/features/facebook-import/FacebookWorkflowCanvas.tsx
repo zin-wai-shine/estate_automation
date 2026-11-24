@@ -5374,9 +5374,15 @@ export const FacebookWorkflowCanvas = forwardRef<
     const enhancedCount = Object.keys(allEnhancedPhotos || {}).length;
     const photoList = effectiveImages || [];
     if (photoList.length === 0 && enhancedCount === 0) {
-      // Try hero image fallback for generate-source boxes
-      const hasGenerate = watermarkBoxes.some((b) => b.imageSource === 'generate');
-      if (!hasGenerate) {
+      // Try hero image fallback for generate-source or hero-cut boxes
+      const hasHeroOrGenerate = watermarkBoxes.some((b) =>
+        b.imageSource === 'generate' ||
+        (typeof b.imageSource === 'string' && (b.imageSource.includes('hero') || b.imageSource.includes('generate'))) ||
+        (b.cropFormatId || '').toLowerCase() === 'format-grid-2split' ||
+        (b.templateId || '').toLowerCase() === 'format-grid-2split' ||
+        (b.title || '').toLowerCase().includes('hero cut')
+      );
+      if (!hasHeroOrGenerate) {
         setCombineCropSlices([]);
         setCombineMediaAssets([]);
         return;
@@ -5447,44 +5453,100 @@ export const FacebookWorkflowCanvas = forwardRef<
         });
 
         const isFromEnhance = cropBox.imageSource === 'enhance' || isConnectedFromEnhance;
-        // isHeroCropBox: ONLY mark as hero if explicitly set to 'generate' source, or if there's an
-        // actual direct incoming connection from a hero generator node. Never use title/format name matching
-        // because "Format: FB Hero Cut" has 'hero' in its name but is NOT a hero generator — it's a
-        // regular crop format that uses connected enhance/raw photos.
-        const isHeroCropBox =
+        const isHeroCutFormat =
+          (cropBox.cropFormatId || '').toLowerCase() === 'format-grid-2split' ||
+          (cropBox.templateId || '').toLowerCase() === 'format-grid-2split' ||
+          (cropBox.title || '').toLowerCase().includes('hero cut') ||
+          (cropBox.templateText || '').toLowerCase().includes('hero cut') ||
+          (fmt?.id || '').toLowerCase() === 'format-grid-2split' ||
+          (fmt?.name || '').toLowerCase().includes('hero cut');
+
+        const isExplicitHeroSource =
           cropBox.imageSource === 'generate' ||
-          (typeof cropBox.imageSource === 'string' && cropBox.imageSource.includes('hero') && cropBox.imageSource !== 'get_images') ||
-          (config.connections || []).some((c: any) => {
-            if (c.toNodeId !== cropBox.id) return false;
-            if (c.fromNodeId === 'get-images' || c.fromNodeId === 'get-content') return false;
-            const upBox = (config.aiBoxes || []).find((b) => b.id === c.fromNodeId);
-            if (!upBox) return false;
-            // Only match if the upstream node is a true hero GENERATOR (not just a crop/format box with 'hero' in name)
-            const upTitle = (upBox.title || '').toLowerCase();
-            const upGroup = (upBox.browserGroupName || '').toLowerCase();
-            const upMode = (upBox as any).tabGroupMode;
-            const upSubtitle = (upBox.subtitle || '').toLowerCase();
-            return (
-              upMode === 'generate' ||
-              upSubtitle.includes('hero img') ||
-              (upTitle.includes('hero') && (upTitle.includes('img') || upTitle.includes('image') || upTitle.includes('generator') || upTitle.includes('gen'))) ||
-              (upGroup.includes('hero') && upGroup.includes('img'))
-            );
-          });
+          (typeof cropBox.imageSource === 'string' && (cropBox.imageSource.includes('hero') || cropBox.imageSource.includes('generate')) && cropBox.imageSource !== 'get_images');
+
+        const hasIncomingHeroConn = (config.connections || []).some((c: any) => {
+          if (c.toNodeId !== cropBox.id) return false;
+          if (c.fromNodeId === 'get-images' || c.fromNodeId === 'get-content') return false;
+          const upBox = (config.aiBoxes || []).find((b) => b.id === c.fromNodeId);
+          if (!upBox) return false;
+          const upTitle = (upBox.title || '').toLowerCase();
+          const upGroup = (upBox.browserGroupName || '').toLowerCase();
+          const upMode = (upBox as any).tabGroupMode;
+          const upSubtitle = (upBox.subtitle || '').toLowerCase();
+          return (
+            upMode === 'generate' ||
+            upSubtitle.includes('hero img') ||
+            (upTitle.includes('hero') && (upTitle.includes('img') || upTitle.includes('image') || upTitle.includes('generator') || upTitle.includes('gen'))) ||
+            (upGroup.includes('hero') && upGroup.includes('img'))
+          );
+        });
+
+        const isHeroCropBox = isExplicitHeroSource || hasIncomingHeroConn || isHeroCutFormat;
 
         if (isHeroCropBox) {
-          const heroUrl = heroImage?.url || (() => {
+          const selectedSourceNode = (typeof cropBox.imageSource === 'string' && cropBox.imageSource.startsWith('node:'))
+            ? (config.aiBoxes || []).find((b: any) => b.id === (cropBox.imageSource as string).replace('node:', ''))
+            : null;
+
+          const heroNode = selectedSourceNode || (config.aiBoxes || []).find(
+            (b) =>
+              b.title?.toLowerCase().includes('hero') ||
+              b.browserGroupName?.toLowerCase().includes('hero') ||
+              (b as any).tabGroupMode === 'generate' ||
+              b.processKind === 'generate_image'
+          );
+
+          const activeListingCode = executionState?.listingCode || previewSampleCode || '';
+          const isImageMatchingListing = (fileName?: string, code?: string) => {
+            if (!code || !code.trim()) return true;
+            if (!fileName) return false;
+            const cleanCode = code.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const cleanFile = fileName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return cleanFile.includes(cleanCode);
+          };
+
+          let resolvedHeroUrl: string | null = null;
+
+          // 1. Check target node specific storage (where Facebook Hero IMG saves its result)
+          if (heroNode) {
+            try {
+              const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(`bolthaven_hero_image_${heroNode.id}`) : null;
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed?.url && isImageMatchingListing(parsed.fileName, activeListingCode)) {
+                  resolvedHeroUrl = parsed.url;
+                }
+              }
+            } catch (_) {}
+          }
+
+          // 2. Check heroImage state / prop
+          if (!resolvedHeroUrl && heroImage && heroImage.url && isImageMatchingListing(heroImage.fileName, activeListingCode)) {
+            resolvedHeroUrl = heroImage.url;
+          }
+
+          // 3. Fallback to bolthaven_last_hero_image in localStorage
+          if (!resolvedHeroUrl) {
             try {
               const savedHero = localStorage.getItem('bolthaven_last_hero_image');
               if (savedHero) {
                 const parsed = JSON.parse(savedHero);
-                return parsed?.url;
+                const fn = (parsed?.fileName || '').toLowerCase();
+                const isTikTok = (cropBox.title || '').toLowerCase().includes('tiktok') || (heroNode?.title || '').toLowerCase().includes('tiktok');
+                const matchesListing = isImageMatchingListing(parsed?.fileName, activeListingCode);
+                if (parsed?.url && matchesListing) {
+                  if (isTikTok && fn.includes('tiktok')) resolvedHeroUrl = parsed.url;
+                  if (!isTikTok && !fn.includes('tiktok')) resolvedHeroUrl = parsed.url;
+                } else if (parsed?.url && !activeListingCode) {
+                  resolvedHeroUrl = parsed.url;
+                }
               }
-            } catch (e) {}
-            return null;
-          })();
-          if (heroUrl) {
-            sourcePhotos.push({ url: heroUrl, photoIndex: 0, isEnhanced: false });
+            } catch (_) {}
+          }
+
+          if (resolvedHeroUrl) {
+            sourcePhotos.push({ url: resolvedHeroUrl, photoIndex: 0, isEnhanced: false });
           }
           // If hero has NOT been generated yet, do NOT fallback to raw post images or enhance photos!
         } else if (isFromEnhance) {
@@ -5602,7 +5664,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       isCancelled = true;
       clearTimeout(debounceTimer);
     };
-  }, [config.aiBoxes, config.connections, effectiveImages, allEnhancedPhotos]);
+  }, [config.aiBoxes, config.connections, effectiveImages, allEnhancedPhotos, heroImage, executionState?.listingCode, previewSampleCode]);
 
   const [isDraggingTriggerFiles, setIsDraggingTriggerFiles] = useState(false);
   const triggerFileInputRef = useRef<HTMLInputElement>(null);
@@ -12082,11 +12144,48 @@ export const FacebookWorkflowCanvas = forwardRef<
                       seenPhotos.add(a.photoIndex);
                       return true;
                     }).slice(0, 4);
-                    // Fallback: use effectiveImages if no processed assets yet
+                    // Check if this box is a hero crop box
+                    const isHeroBox =
+                      box.imageSource === 'generate' ||
+                      (typeof box.imageSource === 'string' && (box.imageSource.includes('hero') || box.imageSource.includes('generate'))) ||
+                      (box.cropFormatId || '').toLowerCase() === 'format-grid-2split' ||
+                      (box.templateId || '').toLowerCase() === 'format-grid-2split' ||
+                      (box.title || '').toLowerCase().includes('hero cut');
+
+                    // Fallback for hero box: use resolved hero image if no boxAssets yet
+                    let heroFallbackUrl: string | null = null;
+                    if (isHeroBox && thumbAssets.length === 0) {
+                      const heroNode = (config.aiBoxes || []).find((b) => (b.title || '').toLowerCase().includes('hero'));
+                      if (heroNode) {
+                        try {
+                          const raw = localStorage.getItem(`bolthaven_hero_image_${heroNode.id}`);
+                          if (raw) {
+                            const p = JSON.parse(raw);
+                            if (p?.url) heroFallbackUrl = p.url;
+                          }
+                        } catch (_) {}
+                      }
+                      if (!heroFallbackUrl && heroImage?.url) {
+                        heroFallbackUrl = heroImage.url;
+                      }
+                      if (!heroFallbackUrl) {
+                        try {
+                          const raw = localStorage.getItem('bolthaven_last_hero_image');
+                          if (raw) {
+                            const p = JSON.parse(raw);
+                            if (p?.url) heroFallbackUrl = p.url;
+                          }
+                        } catch (_) {}
+                      }
+                    }
+
+                    // Fallback: use effectiveImages ONLY if NOT a hero box
                     const fallbackUrls: string[] = thumbAssets.length === 0
-                      ? (effectiveImages || []).slice(0, 4).map((img: any) =>
-                          normalizeMediaUrl(img.stored_url || img.source_url || img.url) || ''
-                        ).filter(Boolean)
+                      ? (isHeroBox
+                          ? (heroFallbackUrl ? [heroFallbackUrl] : [])
+                          : (effectiveImages || []).slice(0, 4).map((img: any) =>
+                              normalizeMediaUrl(img.stored_url || img.source_url || img.url) || ''
+                            ).filter(Boolean))
                       : [];
                     const thumbUrls = thumbAssets.length > 0
                       ? thumbAssets.map((a) => a.url)

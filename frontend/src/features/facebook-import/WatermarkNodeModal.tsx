@@ -615,14 +615,30 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       return true;
     }
 
-    // Only if the box itself is a standalone Hero Image generator node (e.g. titled "Facebook Hero IMG"), NOT just a format preset!
+    // Check if this box is explicitly the FB Hero Cut format preset (format-grid-2split)
+    const cropFmtId = (box.cropFormatId || box.templateId || '').toLowerCase();
+    const formatName = (currentFormat?.name || '').toLowerCase();
+    const currentFmtId = (currentFormat?.id || '').toLowerCase();
     const boxTitle = (box.title || '').toLowerCase();
+    const template = (box.templateText || '').toLowerCase();
+
+    if (
+      cropFmtId === 'format-grid-2split' ||
+      currentFmtId === 'format-grid-2split' ||
+      boxTitle.includes('hero cut') ||
+      template.includes('hero cut') ||
+      formatName.includes('hero cut')
+    ) {
+      return true;
+    }
+
+    // Only if the box itself is a standalone Hero Image generator node (e.g. titled "Facebook Hero IMG"), NOT just a format preset!
     if (boxTitle === 'facebook hero img' || boxTitle.includes('hero generator')) {
       return true;
     }
 
     return false;
-  }, [box.title, box.imageSource, connections, workflowBoxes, box.id]);
+  }, [box.title, box.imageSource, box.cropFormatId, box.templateId, box.templateText, currentFormat, connections, workflowBoxes, box.id]);
 
   // Live hero image from prop, localStorage or event
   const [liveHeroImage, setLiveHeroImage] = useState<{ url: string; fileName?: string; condoName?: string } | null>(() => {
