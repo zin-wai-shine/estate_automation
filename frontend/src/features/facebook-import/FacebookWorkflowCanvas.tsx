@@ -3862,7 +3862,22 @@ export const FacebookWorkflowCanvas = forwardRef<
     try {
       const activeCode = executionState?.listingCode || previewSampleCode || 'current';
       const saved = localStorage.getItem(`bolthaven_canvas_enhanced_${activeCode}`);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const normalized: Record<number, string> = {};
+        for (const [k, v] of Object.entries(parsed)) {
+          let clean = String(v);
+          if (clean.includes('/storage/uploads/facebook-import/enhanced/')) {
+            const fname = clean.split('/').pop();
+            if (fname) clean = `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(fname)}`;
+          } else if (clean.includes('localhost:8085/storage/')) {
+            const fname = clean.split('/').pop();
+            if (fname) clean = `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(fname)}`;
+          }
+          normalized[Number(k)] = clean;
+        }
+        return normalized;
+      }
     } catch { }
     return {};
   });
@@ -3926,7 +3941,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             const cleanBackend = img.backend_url
               ? img.backend_url.replace(/^https?:\/\/localhost:8085/, '')
               : (img.filename ? `/storage/uploads/facebook-import/enhanced/${encodeURIComponent(img.filename)}` : '');
-            map[pos0] = cleanBackend || img.url;
+            map[pos0] = img.url || (img.filename ? `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(img.filename)}` : cleanBackend);
           });
           setCompanionEnhancedMap((prev) => {
             let hasChange = false;
@@ -19928,12 +19943,17 @@ export const FacebookWorkflowCanvas = forwardRef<
                 {isPhotoCropSideboxActive && (
                   <PhotoCropSettingsSidebox
                     embedded
-                    key={currentModalAIBox.id}
+                    key={effectiveTargetFormatBox.id}
                     isOpen={showPhotoCropSettingsSidebox}
                     onClose={() => setShowPhotoCropSettingsSidebox(false)}
                     isDark={isDark}
-                    box={currentModalAIBox}
-                    onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
+                    box={effectiveTargetFormatBox}
+                    onUpdateBox={(id, updates) => {
+                      handleUpdateAIBox(id, updates);
+                      if (currentModalAIBox && currentModalAIBox.id !== id) {
+                        handleUpdateAIBox(currentModalAIBox.id, updates);
+                      }
+                    }}
                     images={effectiveImages}
                     workflowBoxes={config.aiBoxes}
                     connections={config.connections}

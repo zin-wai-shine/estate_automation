@@ -13,19 +13,16 @@ export const loadImageElement = async (src: string): Promise<HTMLImageElement> =
     });
   }
 
-  // Normalize localhost:8085 backend URLs and companion download URLs to relative /storage to leverage same-origin Vite proxy
+  // Normalize URLs: prefer direct companion download endpoint on port 9224 for enhanced photos
   let cleanSrc = src;
   if (typeof window !== 'undefined') {
-    if (cleanSrc.includes('localhost:8085/storage')) {
+    if (cleanSrc.includes('/storage/uploads/facebook-import/enhanced/')) {
+      const fname = cleanSrc.split('/').pop();
+      if (fname) cleanSrc = `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(fname)}`;
+    } else if (cleanSrc.includes('localhost:8085/storage')) {
       cleanSrc = cleanSrc.replace(/^https?:\/\/localhost:8085/, '');
-    } else if (cleanSrc.includes('/downloaded-image?file=')) {
-      try {
-        const u = new URL(cleanSrc, window.location.origin);
-        const fname = u.searchParams.get('file');
-        if (fname) {
-          cleanSrc = `/storage/uploads/facebook-import/enhanced/${encodeURIComponent(fname)}`;
-        }
-      } catch (_) {}
+    } else if (cleanSrc.startsWith('/downloaded-image')) {
+      cleanSrc = `http://127.0.0.1:9224${cleanSrc}`;
     }
   }
 

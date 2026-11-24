@@ -480,15 +480,46 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     return 'FB Hero';
   }, [heroNode]);
 
+  const isRunnerBox = (b: any): boolean => {
+    if (!b) return false;
+    return (
+      b.processType === 'external_browser' ||
+      b.processType === 'chrome_profile' ||
+      Boolean(b.id?.includes('external-browser')) ||
+      Boolean(b.id?.includes('chrome-')) ||
+      Boolean(b.title?.toLowerCase().includes('external browser'))
+    );
+  };
+
+  const resolveActualImageNode = (candidate: any): any => {
+    if (!candidate) return null;
+    if (isRunnerBox(candidate)) {
+      const match = (workflowBoxes || []).find(
+        (b) =>
+          b.id !== candidate.id &&
+          !isRunnerBox(b) &&
+          (b.processType === 'chrome_tab_group' || b.id?.includes('tabgroup')) &&
+          (b.browserGroupName === candidate.browserGroupName ||
+            (candidate.browserGroupName && b.title === candidate.browserGroupName) ||
+            b.title?.toLowerCase().includes('enhance') ||
+            b.title?.toLowerCase().includes('hero'))
+      );
+      if (match) return match;
+    }
+    return candidate;
+  };
+
   // Dynamically resolve Enhance node title from workflow boxes
   const connectedUpstreamEnhance = useMemo(() => {
     const incoming = (connections || []).filter((c) => c.toNodeId === box.id);
     for (const conn of incoming) {
-      const upBox = (workflowBoxes || []).find((b: any) => b.id === conn.fromNodeId);
+      const rawUpBox = (workflowBoxes || []).find((b: any) => b.id === conn.fromNodeId);
+      const upBox = resolveActualImageNode(rawUpBox);
       if (
         upBox &&
         (upBox.tabGroupMode === 'enhance' ||
           upBox.processKind === 'enhance_images' ||
+          upBox.processType === 'chrome_tab_group' ||
           upBox.title?.toLowerCase().includes('enhance') ||
           upBox.browserGroupName?.toLowerCase().includes('enhance'))
       ) {
@@ -502,19 +533,33 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     if (connectedUpstreamEnhance) return connectedUpstreamEnhance;
     if (box.imageSource && box.imageSource.startsWith('node:')) {
       const targetId = box.imageSource.replace('node:', '');
-      const found = (workflowBoxes || []).find((b) => b.id === targetId);
+      const rawFound = (workflowBoxes || []).find((b) => b.id === targetId);
+      const found = resolveActualImageNode(rawFound);
       if (
         found &&
         (found.tabGroupMode === 'enhance' ||
           found.processKind === 'enhance_images' ||
+          found.processType === 'chrome_tab_group' ||
           found.title?.toLowerCase().includes('enhance') ||
           found.browserGroupName?.toLowerCase().includes('enhance'))
       ) {
         return found;
       }
     }
-    return workflowBoxes?.find(
+    const directTabGroup = (workflowBoxes || []).find(
       (b) =>
+        !isRunnerBox(b) &&
+        (b.processType === 'chrome_tab_group' || b.id?.includes('tabgroup')) &&
+        (b.title?.toLowerCase().includes('enhance') ||
+          b.browserGroupName?.toLowerCase().includes('enhance') ||
+          b.tabGroupMode === 'enhance') &&
+        b.id !== box.id
+    );
+    if (directTabGroup) return directTabGroup;
+
+    return (workflowBoxes || []).find(
+      (b) =>
+        !isRunnerBox(b) &&
         (b.title?.toLowerCase().includes('enhance') ||
          b.browserGroupName?.toLowerCase().includes('enhance') ||
          b.tabGroupMode === 'enhance') &&
@@ -894,11 +939,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           valid.forEach((img) => {
             const pos = img.position || 1;
             const pos0 = pos - 1; // 0-based index key
-            // Prefer clean relative /storage URL to leverage same-origin Vite proxy
-            const cleanBackend = img.backend_url
-              ? img.backend_url.replace(/^https?:\/\/localhost:8085/, '')
-              : (img.filename ? `/storage/uploads/facebook-import/enhanced/${encodeURIComponent(img.filename)}` : '');
-            map[pos0] = cleanBackend || img.url;
+            // Prefer companion direct downloaded-image URL which is served with CORS on port 9224
+            map[pos0] = img.url || (img.filename ? `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(img.filename)}` : '');
           });
           setCompanionEnhanced((prev) => {
             let hasChange = false;
@@ -946,15 +988,15 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       // Strictly ignore any image index beyond valid bounds
       if (isNaN(num) || num < 0 || num > maxAllowed) return;
       if (!url) return;
-      let clean = url;
-      if (clean.includes('localhost:8085/storage/')) {
-        clean = clean.replace(/^https?:\/\/localhost:8085/, '');
-      } else if (clean.includes('/downloaded-image?file=')) {
-        try {
-          const u = new URL(clean, typeof window !== 'undefined' ? window.location.origin : undefined);
-          const f = u.searchParams.get('file');
-          if (f) clean = `/storage/uploads/facebook-import/enhanced/${encodeURIComponent(f)}`;
-        } catch (_) {}
+      let clean = String(url);
+      if (clean.includes('/storage/uploads/facebook-import/enhanced/')) {
+        const fname = clean.split('/').pop();
+        if (fname) clean = `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(fname)}`;
+      } else if (clean.includes('localhost:8085/storage/')) {
+        const fname = clean.split('/').pop();
+        if (fname) clean = `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(fname)}`;
+      } else if (clean.startsWith('/downloaded-image')) {
+        clean = `http://127.0.0.1:9224${clean}`;
       }
       merged[num] = clean;
     });
@@ -1463,9 +1505,12 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     const enhanceNodes = (workflowBoxes || []).filter(
       (b) =>
         b.id !== box.id &&
+        !isRunnerBox(b) &&
         (b.tabGroupMode === 'enhance' ||
           b.processKind === 'enhance_images' ||
-          b.title?.toLowerCase().includes('enhance') ||
+          b.processType === 'chrome_tab_group' ||
+          b.id?.includes('tabgroup') ||
+          (b.title?.toLowerCase().includes('enhance') && !b.title?.toLowerCase().includes('crop')) ||
           b.browserGroupName?.toLowerCase().includes('enhance'))
     );
 
