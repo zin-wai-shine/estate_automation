@@ -688,8 +688,19 @@
     return false;
   }
 
+  // Helper to determine if a DOM node occurs strictly after a reference node (e.g. sent user turn)
+  function isNodeAfterSentTurn(node, sentTurn) {
+    if (!sentTurn || !node) return true;
+    try {
+      if (node === sentTurn || sentTurn.contains(node)) return false;
+      return Boolean(sentTurn.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING);
+    } catch (e) {
+      return true;
+    }
+  }
+
   // ── Locate the latest generated/enhanced image rendered in this ChatGPT tab ──
-  function findLatestGeneratedImageInTab(preExistingUrls) {
+  function findLatestGeneratedImageInTab(preExistingUrls, sentUserTurnEl = null) {
     const preUrls = preExistingUrls || new Set();
 
     // 0. Priority 0: Look for image with an "Edit" button adjacent or inside its card
@@ -698,6 +709,9 @@
       const editBtn = editButtons[i];
       const card = editBtn.closest('div[class*="group"], div[class*="relative"], article, section') || editBtn.parentElement;
       if (card) {
+        if (sentUserTurnEl && !isNodeAfterSentTurn(card, sentUserTurnEl)) {
+          continue; // Older turn: strictly skip!
+        }
         const cardImg = card.querySelector('img');
         if (cardImg && cardImg.complete) {
           const src = cardImg.src || cardImg.getAttribute('src') || '';
@@ -716,7 +730,9 @@
       'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
     )).filter((turn) => {
       if (turn.getAttribute('data-message-author-role') === 'user') return false;
-      return !turn.querySelector('[data-message-author-role="user"]');
+      if (turn.querySelector('[data-message-author-role="user"]')) return false;
+      if (sentUserTurnEl && !isNodeAfterSentTurn(turn, sentUserTurnEl)) return false;
+      return true;
     });
 
     if (assistantTurns.length > 0) {
@@ -744,6 +760,7 @@
 
     // 2. Fallback: Any complete oaiusercontent or large image on page outside composer (STRICTLY NOT PRE-EXISTING)
     const anyOai = Array.from(document.querySelectorAll('img')).filter((img) => {
+      if (sentUserTurnEl && !isNodeAfterSentTurn(img, sentUserTurnEl)) return false;
       const src = img.src || img.getAttribute('src') || '';
       const cleanSrc = src.split('?')[0];
       if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) return false;
@@ -975,37 +992,119 @@
     return null;
   }
 
-  // Find generated image element in assistant turn (strictly NEW images only!)
-  function findGeneratedHeroImage(preExistingUrls) {
+  // Helper to verify if an image element is an uploaded/input user attachment rather than an AI output
+  function isUserAttachment(img, sentUserTurnEl = null) {
+    if (!img) return true;
+    if (img.closest('form, div[class*="composer"], header, nav, aside')) return true;
+    if (img.closest('[data-message-author-role="user"], div[class*="user-message"], div[class*="user-turn"]')) return true;
+    const article = img.closest('article');
+    if (article) {
+      if (article.querySelector('[data-message-author-role="user"]')) return true;
+      if (article.querySelector('button[aria-label*="Edit message" i]')) return true;
+      const hasAssistantAction = article.querySelector(
+        '[data-message-author-role="assistant"], button[aria-label*="Good response" i], button[aria-label*="Copy" i]'
+      );
+      if (!hasAssistantAction) return true;
+    }
+    if (sentUserTurnEl) {
+      if (img === sentUserTurnEl || sentUserTurnEl.contains(img)) return true;
+      if (!isNodeAfterSentTurn(img, sentUserTurnEl)) return true;
+    }
+    return false;
+  }
+
+  // Find generated image element in assistant turn (strictly NEW images generated AFTER this send turn!)
+  function findGeneratedHeroImage(preExistingUrls, sentUserTurnEl = null) {
     const preUrls = preExistingUrls || new Set();
 
-    // 0. Locate any image with an "Edit" button adjacent or inside its card (STRICTLY NOT PRE-EXISTING)
-    // AI generated images in ChatGPT are the ONLY images that receive the "Edit" button!
-    const editButtons = Array.from(document.querySelectorAll('button')).filter((b) => (b.textContent || '').trim() === 'Edit');
-    for (let i = editButtons.length - 1; i >= 0; i--) {
-      const editBtn = editButtons[i];
-      const card = editBtn.closest('div[class*="group"], div[class*="relative"], article, section') || editBtn.parentElement;
-      if (card) {
-        const cardImg = card.querySelector('img');
-        if (cardImg) {
-          const src = cardImg.src || cardImg.getAttribute('src') || '';
-          const cleanSrc = src.split('?')[0];
-          if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) continue;
-          if (!src.toLowerCase().includes('avatar') && !src.toLowerCase().includes('icon')) {
-            if (cardImg.complete && (cardImg.naturalWidth >= 100 || cardImg.width >= 100)) {
-              return cardImg;
-            }
+    // 0. Primary ChatGPT 2024-2026 selector: native button[data-testid*="generated-image"] img or button[aria-label*="Generated image"] img
+    const previewButtons = Array.from(document.querySelectorAll(
+      'button[data-testid*="generated-image"], button[aria-label*="Generated image" i], div[data-testid*="generated-image"]'
+    ));
+    for (let i = previewButtons.length - 1; i >= 0; i--) {
+      const btn = previewButtons[i];
+      if (sentUserTurnEl && !isNodeAfterSentTurn(btn, sentUserTurnEl)) continue;
+      if (sentUserTurnEl && sentUserTurnEl.contains(btn)) continue;
+      const img = btn.querySelector('img') || btn.parentElement?.querySelector('img');
+      if (img) {
+        if (isUserAttachment(img, sentUserTurnEl)) continue;
+        const src = img.src || img.getAttribute('src') || '';
+        const cleanSrc = src.split('?')[0];
+        if (src && !preUrls.has(src) && !preUrls.has(cleanSrc)) {
+          if (img.complete && (img.naturalWidth >= 100 || img.width >= 100)) {
+            console.log('[BOLTHAVEN] ✓ Located Hero Image via generated-image-preview button:', src.slice(0, 80));
+            return img;
           }
         }
       }
     }
 
-    // 0.1. Inspect newest assistant turn directly for output image
+    // 0.1. Locate any image with an "Edit" button adjacent or inside its card
+    // AI generated images in ChatGPT are the ONLY images that receive the "Edit" button!
+    const editButtons = Array.from(document.querySelectorAll('button')).filter((b) => {
+      const txt = (b.textContent || '').trim();
+      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+      return txt === 'Edit' || aria.includes('edit generated image');
+    });
+    for (let i = editButtons.length - 1; i >= 0; i--) {
+      const editBtn = editButtons[i];
+      if (sentUserTurnEl && !isNodeAfterSentTurn(editBtn, sentUserTurnEl)) continue;
+      if (sentUserTurnEl && sentUserTurnEl.contains(editBtn)) continue;
+
+      let container = editBtn.parentElement;
+      for (let depth = 0; depth < 5 && container && container !== document.body; depth++) {
+        const imgs = Array.from(container.querySelectorAll('img')).filter((img) => {
+          if (isUserAttachment(img, sentUserTurnEl)) return false;
+          const src = img.src || img.getAttribute('src') || '';
+          const cleanSrc = src.split('?')[0];
+          if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) return false;
+          const s = src.toLowerCase();
+          if (s.includes('avatar') || s.includes('icon') || s.includes('logo')) return false;
+          return img.complete && (img.naturalWidth >= 100 || img.width >= 100);
+        });
+        if (imgs.length > 0) {
+          console.log('[BOLTHAVEN] ✓ Located Hero Image via Edit button container:', imgs[imgs.length - 1].src.slice(0, 80));
+          return imgs[imgs.length - 1];
+        }
+        container = container.parentElement;
+      }
+    }
+
+    // 0.2. Locate image via action bar buttons (e.g. "Copy image", "Like this image")
+    const copyImgButtons = Array.from(document.querySelectorAll('button[aria-label="Copy image" i], button[aria-label*="Share generated image" i]'));
+    for (let i = copyImgButtons.length - 1; i >= 0; i--) {
+      const actionBtn = copyImgButtons[i];
+      if (sentUserTurnEl && !isNodeAfterSentTurn(actionBtn, sentUserTurnEl)) continue;
+      let container = actionBtn.parentElement;
+      for (let depth = 0; depth < 6 && container && container !== document.body; depth++) {
+        const imgs = Array.from(container.querySelectorAll('img')).filter((img) => {
+          if (isUserAttachment(img, sentUserTurnEl)) return false;
+          const src = img.src || img.getAttribute('src') || '';
+          const cleanSrc = src.split('?')[0];
+          if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) return false;
+          return img.complete && (img.naturalWidth >= 100 || img.width >= 100);
+        });
+        if (imgs.length > 0) {
+          console.log('[BOLTHAVEN] ✓ Located Hero Image via Copy Image action bar:', imgs[imgs.length - 1].src.slice(0, 80));
+          return imgs[imgs.length - 1];
+        }
+        container = container.parentElement;
+      }
+    }
+
+    // 0.3. Inspect newest assistant turn directly for output image (STRICTLY Assistant Turns with output actions!)
     const assistantTurns = Array.from(document.querySelectorAll(
       'div[data-message-author-role="assistant"], article[data-testid*="conversation-turn"], article'
     )).filter((turn) => {
       if (turn.getAttribute('data-message-author-role') === 'user') return false;
       if (turn.querySelector('[data-message-author-role="user"]')) return false;
+      if (turn.querySelector('button[aria-label*="Edit message" i]')) return false;
+      // Must be an assistant turn
+      const isAssistant = turn.getAttribute('data-message-author-role') === 'assistant' ||
+        Boolean(turn.querySelector('[data-message-author-role="assistant"], button[aria-label*="Good response" i], button[aria-label*="Copy" i]'));
+      if (!isAssistant) return false;
+      if (sentUserTurnEl && !isNodeAfterSentTurn(turn, sentUserTurnEl)) return false;
+      if (sentUserTurnEl && sentUserTurnEl.contains(turn)) return false;
       const c = (turn.className || '').toLowerCase();
       return !c.includes('user-turn') && !c.includes('user-message');
     });
@@ -1013,13 +1112,13 @@
     for (let i = assistantTurns.length - 1; i >= 0; i--) {
       const turn = assistantTurns[i];
       const imgs = Array.from(turn.querySelectorAll('img')).filter((img) => {
+        if (isUserAttachment(img, sentUserTurnEl)) return false;
         const src = img.src || img.getAttribute('src') || '';
         if (!src) return false;
         const cleanSrc = src.split('?')[0];
         if (preUrls.has(src) || preUrls.has(cleanSrc)) return false;
         const s = src.toLowerCase();
         if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('logo')) return false;
-        if (img.closest('form, div[class*="composer"], header, nav')) return false;
         const rect = img.getBoundingClientRect();
         const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
         return (hasSize || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
@@ -1029,43 +1128,11 @@
       }
     }
 
-    // 0.5. Locate image card that has a share/export button (ChatGPT new UI: Edit button is hover-only or absent)
-    // These cards have a small circular share button (⬆) in bottom-right corner of the image
-    const allImgCards = Array.from(document.querySelectorAll('img')).filter((img) => {
-      const src = img.src || img.getAttribute('src') || '';
-      if (!src) return false;
-      const cleanSrc = src.split('?')[0];
-      if (preUrls.has(src) || preUrls.has(cleanSrc)) return false;
-      const s = src.toLowerCase();
-      if (s.includes('avatar') || s.includes('profile') || s.includes('icon') || s.includes('emoji') || s.includes('favicon') || s.includes('logo')) return false;
-      if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
-      const rect = img.getBoundingClientRect();
-      const hasSize = (rect.width >= 100 && rect.height >= 100) || (img.naturalWidth >= 100 && img.naturalHeight >= 100);
-      const isOai = s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:');
-      return (hasSize || isOai) && img.complete;
-    });
-    // Prefer images that have a nearby share/download button (confirms it's a generated image card)
-    for (let i = allImgCards.length - 1; i >= 0; i--) {
-      const img = allImgCards[i];
-      const card = img.closest('div[class*="group"], div[class*="relative"], article, section') || img.parentElement;
-      if (card) {
-        const btns = Array.from(card.querySelectorAll('button, a[download]'));
-        const hasActionBtn = btns.some((b) => {
-          const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-          const title = (b.getAttribute('title') || '').toLowerCase();
-          return aria.includes('share') || aria.includes('download') || aria.includes('export') ||
-                 title.includes('share') || title.includes('download') || title.includes('export') ||
-                 (b.textContent || '').trim() === 'Edit';
-        });
-        if (hasActionBtn) return img;
-      }
-    }
-
     return null;
   }
 
   // Find newly generated enhanced photo for the Enhance IMG pipeline (Multi-method escalation)
-  function findGeneratedEnhancedImage(preExistingUrls, preAssistantCount = 0) {
+  function findGeneratedEnhancedImage(preExistingUrls, preAssistantCount = 0, sentUserTurnEl = null) {
     const preUrls = preExistingUrls || new Set();
 
     // METHOD 0 (Primary - 100% Reliable): Locate any image with an "Edit" button adjacent or inside its card (STRICTLY NOT PRE-EXISTING)
@@ -1075,6 +1142,9 @@
       const editBtn = editButtons[i];
       const card = editBtn.closest('div[class*="group"], div[class*="relative"], article, section') || editBtn.parentElement;
       if (card) {
+        if (sentUserTurnEl && !isNodeAfterSentTurn(card, sentUserTurnEl)) {
+          continue; // Older turn: strictly skip!
+        }
         const cardImg = card.querySelector('img');
         if (cardImg) {
           const src = cardImg.src || cardImg.getAttribute('src') || '';
@@ -1099,6 +1169,7 @@
       if (turn.querySelector('[data-message-author-role="user"]')) return false;
       const c = (turn.className || '').toLowerCase();
       if (c.includes('user-turn') || c.includes('user-message')) return false;
+      if (sentUserTurnEl && !isNodeAfterSentTurn(turn, sentUserTurnEl)) return false;
       return true;
     });
 
@@ -1138,6 +1209,7 @@
 
     // METHOD 2: Look for any new oaiusercontent / file-service / blob image on page not in composer/nav
     const oaiImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+      if (sentUserTurnEl && !isNodeAfterSentTurn(img, sentUserTurnEl)) return false;
       const src = img.src || img.getAttribute('src') || '';
       if (!src || preUrls.has(src)) return false;
       const cleanSrc = src.split('?')[0];
@@ -1152,6 +1224,7 @@
 
     // METHOD 3: Look for any new large completed image on page (>= 150px) not in user/composer
     const largeImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+      if (sentUserTurnEl && !isNodeAfterSentTurn(img, sentUserTurnEl)) return false;
       const src = img.src || img.getAttribute('src') || '';
       if (!src || preUrls.has(src)) return false;
       const cleanSrc = src.split('?')[0];
@@ -2117,7 +2190,7 @@
   }
 
   // ── Watch ChatGPT Generation & Auto-Download Enhanced Result ────────────
-  async function watchGenerationAndDownload(job, preExistingImageUrls, preAssistantCount) {
+  async function watchGenerationAndDownload(job, preExistingImageUrls, preAssistantCount, sentUserTurnEl = null) {
     console.log(`[BOLTHAVEN] [Generation Phase] Monitoring ChatGPT generation for Image #${job.original_position || 1}...`);
 
     // Wait 2s for prompt dispatch
@@ -2139,6 +2212,7 @@
           safeSendMessage({
             action: 'JOB_GENERATION_FAILED',
             jobId: job.job_id,
+            original_position: job.original_position || 1,
             error: 'Job stopped by user',
           });
           return resolve({ success: false, error: 'Job stopped by user' });
@@ -2150,6 +2224,7 @@
           safeSendMessage({
             action: 'JOB_GENERATION_FAILED',
             jobId: job.job_id,
+            original_position: job.original_position || 1,
             error: 'ChatGPT image generation timed out (6 min)',
           });
           return resolve({ success: false, error: 'ChatGPT image generation timed out (6 min)' });
@@ -2179,6 +2254,7 @@
               safeSendMessage({
                 action: 'JOB_GENERATION_FAILED',
                 jobId: job.job_id,
+                original_position: job.original_position || 1,
                 error: 'ChatGPT generation failed: "Error in message stream" persisted after 3 retries.',
               });
               return resolve({ success: false, error: 'ChatGPT generation failed: "Error in message stream" persisted after 3 retries.' });
@@ -2201,9 +2277,10 @@
         }
 
         // 2. Only AFTER generation has completely finished, locate the newly generated enhanced image:
-        let enhancedImg = findGeneratedEnhancedImage(preExistingImageUrls, preAssistantCount);
+        // Anchor to the specific sentUserTurnEl so we NEVER select any pre-existing or other turn's image!
+        let enhancedImg = findGeneratedEnhancedImage(preExistingImageUrls, preAssistantCount, sentUserTurnEl);
         if (!enhancedImg) {
-          enhancedImg = findLatestGeneratedImageInTab(preExistingImageUrls);
+          enhancedImg = findLatestGeneratedImageInTab(preExistingImageUrls, sentUserTurnEl);
         }
         const isImageReady = Boolean(
           enhancedImg && enhancedImg.complete && ((enhancedImg.naturalWidth && enhancedImg.naturalWidth >= 100) || (enhancedImg.width && enhancedImg.width >= 100))
@@ -2226,12 +2303,15 @@
           console.log(`[BOLTHAVEN] ✓ Generation fully finished! Enhanced Image #${job.original_position || 1}:`, finalUrl);
 
           preExistingImageUrls.add(finalUrl);
-          const pos = job.original_position || 1;
-          const rawCode = job.listing_code || (job.property_metadata && job.property_metadata.listing_code) || '';
+
+          // Strictly use the memorized fixed filename and position
+          const activeMem = window.__currentBoltHavenJob;
+          const pos = (activeMem && activeMem.position) || job.original_position || 1;
+          const rawCode = (activeMem && activeMem.cleanCode) || job.listing_code || (job.property_metadata && job.property_metadata.listing_code) || '';
           const cleanCode = rawCode ? rawCode.replace(/[\/\\?%*:|"<>]/g, '').trim() : '';
-          const fileName = cleanCode
+          const fileName = (activeMem && activeMem.fileName) || (cleanCode
             ? `${cleanCode}-${pos}.png`
-            : `enhanced_${pos}_${job.job_id || Date.now()}.png`;
+            : `enhanced_${pos}_${job.job_id || Date.now()}.png`);
 
           // Memorize the ChatGPT chat thread URL for this exact image position
           const currentChatUrl = window.location.href;
@@ -2257,7 +2337,7 @@
             console.warn('[BOLTHAVEN] Native download button click notice:', e.message);
           }
 
-          // Download using serialized multi-tier downloader
+          // Download using serialized multi-tier downloader strictly with frozen fileName
           await downloadEnhancedImage(enhancedImg, finalUrl, fileName);
           await new Promise((r) => setTimeout(r, 1000));
 
@@ -2265,14 +2345,16 @@
           safeSendMessage({
             action: 'JOB_GENERATION_COMPLETE',
             jobId: job.job_id,
-            original_position: job.original_position,
+            original_position: pos,
+            filename: fileName,
             result_url: finalUrl,
           });
 
           return resolve({
             success: true,
             job_id: job.job_id,
-            original_position: job.original_position,
+            original_position: pos,
+            filename: fileName,
             result_url: finalUrl,
           });
         }
@@ -2569,7 +2651,23 @@
   async function _setupAndSendJobInternal(job) {
     activeJobAborted = false;
     dismissVoiceOrAudioModeIfActive();
-    console.log(`[BOLTHAVEN] [Setup Phase] Setting up Image #${job.original_position || 1} (Job ${job.job_id})...`);
+
+    // Freeze job parameters and immutable filename strictly upfront
+    const pos = job.original_position || 1;
+    const rawCode = job.listing_code || (job.property_metadata && job.property_metadata.listing_code) || '';
+    const cleanCode = rawCode ? rawCode.replace(/[\/\\?%*:|"<>]/g, '').trim() : '';
+    const fixedFileName = cleanCode
+      ? `${cleanCode}-${pos}.png`
+      : `enhanced_${pos}_${job.job_id || Date.now()}.png`;
+
+    window.__currentBoltHavenJob = {
+      jobId: job.job_id,
+      position: pos,
+      cleanCode,
+      fileName: fixedFileName,
+      sendTime: Date.now(),
+    };
+    console.log(`[BOLTHAVEN] [Setup Phase] MEMORIZED Job ${job.job_id} strictly for Image #${pos} as "${fixedFileName}"`);
 
     // Detect Temporary Chat mode — image generation is blocked by ChatGPT in temporary chat!
     if (window.location.search.includes('temporary-chat') || window.location.href.includes('temporary-chat')) {
@@ -2711,8 +2809,17 @@
     const sendSuccess = await triggerSendRobustly(liveInput);
     console.log(`[BOLTHAVEN] Send triggered (status: ${sendSuccess}). Launching watcher...`);
 
-    // Launch background generation watcher asynchronously
-    watchGenerationAndDownload(job, preExistingImageUrls, preAssistantCount);
+    // Capture the exact sent user turn element in the DOM to anchor assistant search
+    let sentUserTurnEl = null;
+    try {
+      const userTurns = Array.from(document.querySelectorAll(
+        'div[data-message-author-role="user"], article:not(:has([data-message-author-role="assistant"]))'
+      ));
+      sentUserTurnEl = userTurns[userTurns.length - 1] || null;
+    } catch (_) {}
+
+    // Launch background generation watcher asynchronously anchored strictly to this send turn
+    watchGenerationAndDownload(job, preExistingImageUrls, preAssistantCount, sentUserTurnEl);
 
     return { success: true };
   }
@@ -2876,7 +2983,7 @@
   // 7. Monitors ChatGPT in background for finished Hero image & triggers download
   let activeHeroJobId = null;
 
-  async function executeStage2Staging({ heroJobId, extractedPrompt, referenceImage, condoImages, enhancedImages, condoName, prefix, groupName, nodeId }) {
+  async function executeStage2Staging({ heroJobId, extractedPrompt, referenceImage, condoImages, enhancedImages, condoName, prefix, groupName, nodeId, listingCode }) {
     if (activeHeroJobId && activeHeroJobId === heroJobId) {
       console.log('[BOLTHAVEN] Hero staging already in progress for job:', heroJobId);
       return { success: true, heroJobId, status: 'already_running' };
@@ -3090,6 +3197,15 @@
     const sendSuccess = await triggerSendRobustly(liveInput);
     console.log(`[BOLTHAVEN] ✓ Stage 2: Send triggered (status: ${sendSuccess}). Launching background generation watcher...`);
 
+    // Capture the exact sent user turn element in the DOM to anchor assistant search
+    let sentUserTurnEl = null;
+    try {
+      const userTurns = Array.from(document.querySelectorAll(
+        'div[data-message-author-role="user"], article:not(:has([data-message-author-role="assistant"]))'
+      ));
+      sentUserTurnEl = userTurns[userTurns.length - 1] || null;
+    } catch (_) {}
+
     // Give ChatGPT 2s to accept input and begin streaming
     await new Promise((r) => setTimeout(r, 2000));
 
@@ -3114,6 +3230,8 @@
       prefix,
       groupName,
       nodeId,
+      sentUserTurnEl,
+      listingCode,
     });
 
     // Return immediately to background script so message port never closes early!
@@ -3125,7 +3243,7 @@
   }
 
   // Monitor ChatGPT in background for finished Hero image & download it
-  async function watchHeroGenerationAndNotify({ heroJobId, preExistingImageUrls, totalImagesPasted, condoName, prefix, groupName, nodeId }) {
+  async function watchHeroGenerationAndNotify({ heroJobId, preExistingImageUrls, totalImagesPasted, condoName, prefix, groupName, nodeId, sentUserTurnEl, listingCode }) {
     console.log(`[BOLTHAVEN] Background monitoring started for Hero Image generation (Job: ${heroJobId})...`);
     const startTime = Date.now();
     const maxWaitMs = 360000; // 6 minutes max
@@ -3195,7 +3313,7 @@
 
       // If ChatGPT is actively generating / thinking / rendering (e.g. at 84%), WE MUST WAIT!
       // STRICT RULE: NEVER attempt to inspect or download images while ChatGPT is actively generating!
-      if (generating || elapsed < 5000) {
+      if (generating || elapsed < MIN_HERO_WAIT_MS) {
         consecutiveCalmChecks = 0;
         if (elapsed % 5000 < 1000) {
           console.log(`[BOLTHAVEN] ChatGPT is generating Hero Image (${condoName || 'Hero'})... Working (elapsed: ${Math.round(elapsed / 1000)}s)`);
@@ -3204,23 +3322,8 @@
       }
 
       // 1. Only AFTER generation has completely finished, locate the newly generated Hero image
-      let heroImg = findGeneratedHeroImage(preExistingImageUrls);
-
-      if (!heroImg && elapsed > MIN_HERO_WAIT_MS + 10000) {
-        const oaiImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
-          const src = img.src || img.getAttribute('src') || '';
-          if (!src) return false;
-          const cleanSrc = src.split('?')[0];
-          if (preExistingImageUrls.has(src) || preExistingImageUrls.has(cleanSrc)) return false;
-          if (img.closest('form, div[class*="composer"], nav, header, [data-message-author-role="user"]')) return false;
-          const s = src.toLowerCase();
-          return (s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) && img.complete;
-        });
-        if (oaiImgs.length > 0) {
-          heroImg = oaiImgs[oaiImgs.length - 1];
-          console.log('[BOLTHAVEN] Hero Method B (oaiusercontent): detected image:', heroImg.src);
-        }
-      }
+      // Strictly pass sentUserTurnEl so we only inspect assistant turns that follow this exact prompt!
+      let heroImg = findGeneratedHeroImage(preExistingImageUrls, sentUserTurnEl);
 
       const isImageReady = Boolean(
         heroImg && heroImg.complete && ((heroImg.naturalWidth && heroImg.naturalWidth >= 100) || (heroImg.width && heroImg.width >= 100))
@@ -3246,7 +3349,9 @@
           .slice(0, 40) || 'hero';
         const randomId = Math.random().toString(36).slice(2, 8).toUpperCase();
         const filePrefix = prefix || (groupName && groupName.toLowerCase().includes('tiktok') ? 'tiktok_hero' : 'fb_hero');
-        const fileName = `${filePrefix}_${safeCondoSlug}_${randomId}_${Date.now()}.png`;
+        const rawListingCode = (listingCode || '').trim();
+        const codePrefix = rawListingCode ? `${rawListingCode}_` : '';
+        const fileName = `${codePrefix}${filePrefix}_${safeCondoSlug}_${randomId}_${Date.now()}.png`;
 
         try {
           const nativeBtn = findGeneratedImageDownloadButton(heroImg);
@@ -3267,6 +3372,7 @@
           heroJobId,
           result_url: finalUrl,
           filename: fileName,
+          listingCode: rawListingCode,
           imagesAttached: totalImagesPasted,
           prefix: filePrefix,
           groupName,
@@ -3375,6 +3481,10 @@
         condoImages: request.condoImages,
         enhancedImages: request.enhancedImages,
         condoName: request.condoName,
+        prefix: request.prefix,
+        groupName: request.groupName,
+        nodeId: request.nodeId,
+        listingCode: request.listingCode || request.listing_code,
       })
         .then((result) => sendResponse(result))
         .catch((err) => sendResponse({ success: false, error: err.message }));
@@ -3490,11 +3600,34 @@
         try {
           const condoName = request.condoName || 'hero';
           console.log('[BOLTHAVEN] 📥 Received on-demand recovery download request for Hero image...');
-          let heroImg = findGeneratedHeroImage(new Set());
+
+          // Guardrail: reject if this tab is an Enhance IMG worker tab to prevent mixing/cross-contamination!
+          const pageTitle = (document.title || '').toLowerCase();
+          const chatHeader = ((document.querySelector('header h1, nav [class*="title"], div[data-testid*="conversation-header"]') || {}).textContent || '').toLowerCase();
+          const allUserTurns = Array.from(document.querySelectorAll(
+            'div[data-message-author-role="user"], article:not(:has([data-message-author-role="assistant"]))'
+          ));
+          const allUserTurnsText = allUserTurns.map((el) => el.textContent || '').join(' ').toLowerCase();
+
+          if (
+            (pageTitle.includes('enhance') || chatHeader.includes('enhance') || (allUserTurnsText.includes('enhance image') && !allUserTurnsText.includes('hero'))) &&
+            !request.force
+          ) {
+            console.warn('[BOLTHAVEN] 🛑 Refusing DOWNLOAD_CURRENT_HERO_IMAGE on Enhance IMG worker tab to prevent cross-contamination.');
+            return sendResponse({ success: false, error: 'Cannot download hero image from an Enhance IMG tab' });
+          }
+
+          // Anchor to the last user turn element
+          const sentUserTurnEl = allUserTurns[allUserTurns.length - 1] || null;
+
+          let heroImg = findGeneratedHeroImage(new Set(), sentUserTurnEl);
+          if (!heroImg) {
+            heroImg = findGeneratedHeroImage(new Set(), null);
+          }
           if (!heroImg) {
             for (let retry = 0; retry < 10; retry++) {
               await new Promise((r) => setTimeout(r, 400));
-              heroImg = findGeneratedHeroImage(new Set());
+              heroImg = findGeneratedHeroImage(new Set(), sentUserTurnEl) || findGeneratedHeroImage(new Set(), null);
               if (heroImg) break;
             }
           }
@@ -3511,7 +3644,9 @@
             .slice(0, 40) || 'hero';
           const randomId = Math.random().toString(36).slice(2, 8).toUpperCase();
           const filePrefix = request.prefix || (request.groupName && request.groupName.toLowerCase().includes('tiktok') ? 'tiktok_hero' : 'fb_hero');
-          const fileName = `${filePrefix}_${safeCondoSlug}_${randomId}_${Date.now()}.png`;
+          const rawListingCode = (request?.listingCode || request?.listing_code || '').trim();
+          const codePrefix = rawListingCode ? `${rawListingCode}_` : '';
+          const fileName = `${codePrefix}${filePrefix}_${safeCondoSlug}_${randomId}_${Date.now()}.png`;
 
           try {
             const nativeBtn = findGeneratedImageDownloadButton(heroImg);
@@ -3528,6 +3663,7 @@
             heroJobId: request.heroJobId || `hero_recovered_${Date.now()}`,
             result_url: finalUrl,
             filename: fileName,
+            listingCode: rawListingCode,
             imagesAttached: 4,
           });
 

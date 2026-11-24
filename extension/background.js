@@ -778,6 +778,16 @@ async function resetTabChatCleanly(tabId) {
  * When done (success or fail), automatically picks the next pending job
  * from the shared queue and processes it on the same slot.
  */
+async function reportAutomationAlert(alertObj) {
+  try {
+    await fetch(`${COMPANION_URL}/automation-alert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(alertObj),
+    }).catch(() => {});
+  } catch (e) {}
+}
+
 async function processSlot(slotIndex, sessionId, initialJob = null, groupKey = 'Enhance IMG') {
   const slot = automation.tabSlots[slotIndex];
   if (!slot) return;
@@ -845,14 +855,26 @@ async function processSlot(slotIndex, sessionId, initialJob = null, groupKey = '
 
       console.log(`[BOLTHAVEN EXT] Tab ${slot.tabId} → Image #${job.original_position} sent! Releasing setup lock for next tab.`);
     } catch (setupErr) {
-      console.warn(`[BOLTHAVEN EXT] Tab ${slot.tabId} setup error:`, setupErr.message);
+      console.warn(`[BOLTHAVEN EXT] ⚠️ Tab ${slot.tabId} setup error:`, setupErr.message);
       automation.failedCount++;
       await reportJobFailed(job.job_id, setupErr.message);
+
+      // Alert the frontend immediately and STOP this failing tab so remaining tabs continue smoothly!
+      await reportAutomationAlert({
+        tabId: slot.tabId,
+        slotIndex: slotIndex + 1,
+        position: job.original_position || 1,
+        error: setupErr.message,
+        status: 'tab_failed',
+        groupName: groupKey,
+        message: `⚠️ Tab #${slotIndex + 1} stopped: Image #${job.original_position || 1} setup failed (${setupErr.message}). Other tabs will continue remaining images.`
+      });
+
+      slot.stopped = true;
       slot.busy = false;
       slot.currentJob = null;
-
-      await delay(1500);
-      continue; // Continue to process the next job in the queue
+      notifyProgress();
+      break; // Exit slot loop!
     } finally {
       // RELEASE THE LOCK IMMEDIATELY SO NEXT TAB GETS FULL ATTENTION!
       releaseLock();
@@ -873,7 +895,24 @@ async function processSlot(slotIndex, sessionId, initialJob = null, groupKey = '
     } catch (genErr) {
       automation.failedCount++;
       await reportJobFailed(job.job_id, genErr.message);
-      console.warn(`[BOLTHAVEN EXT] ✗ Job ${job.job_id} failed:`, genErr.message);
+      console.warn(`[BOLTHAVEN EXT] ✗ Job ${job.job_id} failed on tab ${slot.tabId}:`, genErr.message);
+
+      // Alert the frontend immediately and STOP this failing tab so remaining tabs continue smoothly!
+      await reportAutomationAlert({
+        tabId: slot.tabId,
+        slotIndex: slotIndex + 1,
+        position: job.original_position || 1,
+        error: genErr.message,
+        status: 'tab_failed',
+        groupName: groupKey,
+        message: `⚠️ Tab #${slotIndex + 1} stopped: Image #${job.original_position || 1} could not be downloaded (${genErr.message}). Other tabs will continue remaining images.`
+      });
+
+      slot.stopped = true;
+      slot.busy = false;
+      slot.currentJob = null;
+      notifyProgress();
+      break; // Exit slot loop!
     }
 
     slot.busy = false;
@@ -976,8 +1015,37 @@ async function loadMemorizedTabs(groupName) {
   try {
     const stored = await chrome.storage.local.get([MEMORIZED_TABS_STORAGE_KEY]);
     const map = stored[MEMORIZED_TABS_STORAGE_KEY] || {};
-    const list = map[sessionKeyFor(groupName)];
-    return Array.isArray(list) ? list : [];
+    const key = sessionKeyFor(groupName);
+    let list = map[key];
+    if (Array.isArray(list) && list.length > 0) return list;
+
+    for (const [k, v] of Object.entries(map)) {
+      if (Array.isArray(v) && v.length > 0) {
+        if (k.includes('facebook') && key.includes('facebook')) return v;
+        if (k.includes('fb') && (key.includes('fb') || key.includes('facebook'))) return v;
+      }
+    }
+
+    // Fallback: fetch persisted memorized tabs from Node Companion on disk
+    const res = await fetch(`${COMPANION_URL}/memorized-tabs?group_name=${encodeURIComponent(groupName)}`).catch(() => null);
+    if (res && res.ok) {
+      const data = await res.json().catch(() => null);
+      if (Array.isArray(data?.tabs) && data.tabs.length > 0) {
+        return data.tabs;
+      }
+    }
+
+    // Also try with "Facebook Hero IMG" if groupName had abbreviation
+    if (groupName.toLowerCase().includes('facebook') || groupName.toLowerCase().includes('fb')) {
+      const fbRes = await fetch(`${COMPANION_URL}/memorized-tabs?group_name=Facebook%20Hero%20IMG`).catch(() => null);
+      if (fbRes && fbRes.ok) {
+        const fbData = await fbRes.json().catch(() => null);
+        if (Array.isArray(fbData?.tabs) && fbData.tabs.length > 0) {
+          return fbData.tabs;
+        }
+      }
+    }
+    return [];
   } catch (e) {
     return [];
   }
@@ -2036,7 +2104,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           step: 'completed',
           result_url: request.result_url || '',
           downloaded_file: request.filename || '',
+          node_id: request.nodeId || '',
+          nodeId: request.nodeId || '',
+          group_name: request.groupName || 'Facebook Hero IMG',
+          groupName: request.groupName || 'Facebook Hero IMG',
+          prefix: request.prefix || 'fb_hero',
+          condo_name: request.condoName || '',
           message: `✓ Hero Image generated and downloaded (${request.filename || 'fb_hero.png'})!`,
+        }),
+      }).catch(() => {});
+    }
+
+    if (request.action === 'HERO_GENERATION_FAILED') {
+      fetch(`${COMPANION_URL}/two-stage-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          is_running: false,
+          step: 'failed',
+          error: request.error || 'Hero generation failed',
+          node_id: request.nodeId || '',
+          nodeId: request.nodeId || '',
+          group_name: request.groupName || 'Facebook Hero IMG',
+          groupName: request.groupName || 'Facebook Hero IMG',
+          message: `⚠️ Hero generation failed: ${request.error || 'Unknown error'}`,
         }),
       }).catch(() => {});
     }
@@ -2155,6 +2246,7 @@ async function executeTwoStageStaging(payload) {
     reuseSessionTabs,
     workerCount: reqWorkerCount,
   } = payload || {};
+  const listingCode = (payload?.listingCode || payload?.listing_code || '').trim();
   const resolvedRefImg = referenceImage || payload?.reference_image || '';
   const resolvedCondoImgs = condoImages || payload?.condo_images || [];
   const resolvedEnhancedImgs = Array.isArray(enhancedImages)
@@ -2349,6 +2441,7 @@ async function executeTwoStageStaging(payload) {
             prefix: payload.prefix,
             groupName: groupKey,
             nodeId: payload.nodeId,
+            listingCode,
           }, (res) => {
             if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
             if (!res || !res.success) return reject(new Error(res?.error || 'Failed to submit Hero staging to ChatGPT'));
@@ -2397,6 +2490,7 @@ async function executeTwoStageStaging(payload) {
       node_id: payload?.nodeId,
       group_name: groupKey,
       condo_name: resolvedCondoName,
+      listing_code: listingCode,
       prefix: payload?.prefix,
       extracted_prompt: extractedPrompt,
       images_attached: heroGenResult.imagesAttached || stage2Response?.imagesAttached || 4,
@@ -2678,22 +2772,35 @@ async function pollCompanion() {
           }).catch(() => {});
         });
       } else if (action === 'RECOVER_HERO_IMAGE') {
-        const { condoName } = payload || {};
-        console.log('[BOLTHAVEN EXT] 🛟 Searching open ChatGPT tabs to recover generated Hero image...');
-        chrome.tabs.query({}).then(async (allTabs) => {
-          const chatTabs = allTabs.filter((t) => (t.url || '').includes('chatgpt.com'));
-          for (const cTab of chatTabs) {
-            try {
-              await ensureContentScriptInjected(cTab.id);
-              chrome.tabs.sendMessage(cTab.id, { action: 'DOWNLOAD_CURRENT_HERO_IMAGE', condoName }, (resp) => {
+        const { condoName, groupName, listingCode } = payload || {};
+        const targetGroup = groupName || 'Facebook Hero IMG';
+        console.log(`[BOLTHAVEN EXT] 🛟 Recovering Hero image strictly for group "${targetGroup}"...`);
+        (async () => {
+          try {
+            const memTabs = await loadMemorizedTabs(targetGroup);
+            const heroTabIds = memTabs.map((t) => t.id).filter(Boolean);
+            if (heroTabIds.length > 0) {
+              // Generation tab is the last tab in the group (Tab 2 in 2-stage mode, Tab 1 in 1-stage mode)
+              const genTabId = heroTabIds[heroTabIds.length - 1];
+              await ensureContentScriptInjected(genTabId);
+              chrome.tabs.sendMessage(genTabId, {
+                action: 'DOWNLOAD_CURRENT_HERO_IMAGE',
+                condoName,
+                groupName: targetGroup,
+                listingCode,
+              }, (resp) => {
                 if (chrome.runtime.lastError) {}
                 if (resp && resp.success) {
-                  console.log(`[BOLTHAVEN EXT] ✓ Recovered Hero image from tab ${cTab.id}:`, resp.filename);
+                  console.log(`[BOLTHAVEN EXT] ✓ Recovered Hero image strictly from tab ${genTabId}:`, resp.filename);
                 }
               });
-            } catch (e) {}
+            } else {
+              console.warn(`[BOLTHAVEN EXT] No memorized tabs found for group "${targetGroup}". Aborting recovery to avoid cross-tab pollution.`);
+            }
+          } catch (e) {
+            console.warn('[BOLTHAVEN EXT] Recovery error:', e.message);
           }
-        });
+        })();
       } else if (action === 'CLEAR_MEMORIZED_TABS') {
         const { groupName } = payload || {};
         if (groupName) {
@@ -2751,6 +2858,27 @@ async function disbandAllExistingGroups() {
   } catch (e) {}
 }
 disbandAllExistingGroups();
+
+// Proactively ungroup any newly grouped tabs so user ALWAYS has 100% pure tabs
+if (chrome.tabGroups && chrome.tabGroups.onCreated) {
+  chrome.tabGroups.onCreated.addListener(async (group) => {
+    try {
+      const gTabs = await chrome.tabs.query({ groupId: group.id });
+      if (gTabs.length > 0) {
+        await chrome.tabs.ungroup(gTabs.map((t) => t.id)).catch(() => {});
+        console.log(`[BOLTHAVEN EXT] 🫧 Auto-disbanded Chrome tab group "${group.title || group.id}" into pure tabs`);
+      }
+    } catch (e) {}
+  });
+}
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
+  if (changeInfo.groupId && changeInfo.groupId !== -1) {
+    try {
+      await chrome.tabs.ungroup(tabId).catch(() => {});
+    } catch (e) {}
+  }
+});
 
 // Poll every 500ms for swift reaction
 setInterval(pollCompanion, 500);
