@@ -592,26 +592,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       return false;
     }
 
-    const boxTitle = (box.title || '').toLowerCase();
-    const template = (box.templateText || '').toLowerCase();
-    const source = box.imageSource;
-    const cropFmtId = (box.cropFormatId || box.templateId || '').toLowerCase();
-    const formatName = (currentFormat?.name || '').toLowerCase();
-    const currentFmtId = (currentFormat?.id || '').toLowerCase();
-
-    const matchesHero =
-      source === 'generate' ||
-      (typeof source === 'string' && source.includes('hero')) ||
-      boxTitle.includes('hero') ||
-      template.includes('hero') ||
-      cropFmtId.includes('hero') ||
-      cropFmtId === 'format-grid-2split' ||
-      formatName.includes('hero') ||
-      currentFmtId === 'format-grid-2split';
-
-    if (matchesHero) return true;
-
-    return (connections || []).some((c: any) => {
+    // Check if there is an incoming wire connection from a Hero generator node
+    const hasIncomingHero = (connections || []).some((c: any) => {
       if (c.toNodeId !== box.id) return false;
       if (c.fromNodeId === 'get-images' || c.fromNodeId === 'get-content') return false;
       const upBox = (workflowBoxes || []).find((b: any) => b.id === c.fromNodeId);
@@ -625,7 +607,22 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         g.includes('hero')
       );
     });
-  }, [box.title, box.templateText, box.imageSource, box.cropFormatId, box.templateId, currentFormat, connections, workflowBoxes, box.id]);
+
+    if (hasIncomingHero) return true;
+
+    // Check if box was explicitly set to generate source
+    if (box.imageSource === 'generate' || (typeof box.imageSource === 'string' && box.imageSource.includes('hero'))) {
+      return true;
+    }
+
+    // Only if the box itself is a standalone Hero Image generator node (e.g. titled "Facebook Hero IMG"), NOT just a format preset!
+    const boxTitle = (box.title || '').toLowerCase();
+    if (boxTitle === 'facebook hero img' || boxTitle.includes('hero generator')) {
+      return true;
+    }
+
+    return false;
+  }, [box.title, box.imageSource, connections, workflowBoxes, box.id]);
 
   // Live hero image from prop, localStorage or event
   const [liveHeroImage, setLiveHeroImage] = useState<{ url: string; fileName?: string; condoName?: string } | null>(() => {
@@ -863,11 +860,21 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     return () => window.removeEventListener('ea_workflow_cleared', handleCleared);
   }, [box.id, listingCode]);
 
-  // Clear cached crop slices whenever image source or listing code changes
+  // Clear cached crop slices ONLY when image source or listing code ACTUALLY changes (not on initial mount!)
+  const prevListingCodeRef = useRef<string>(listingCode);
+  const prevImageSourceRef = useRef<string>(imageSource);
+
   useEffect(() => {
-    clearCropSlicesCache();
-    lastRenderedKeyRef.current = '';
-    setFormattedPreviewItems([]);
+    const listingChanged = prevListingCodeRef.current !== listingCode;
+    const sourceChanged = prevImageSourceRef.current !== imageSource;
+    prevListingCodeRef.current = listingCode;
+    prevImageSourceRef.current = imageSource;
+
+    if (listingChanged || sourceChanged) {
+      clearCropSlicesCache();
+      lastRenderedKeyRef.current = '';
+      setFormattedPreviewItems([]);
+    }
   }, [listingCode, imageSource]);
 
   // Synchronize when box.uploadedImages is cleared externally
@@ -1104,7 +1111,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           (!box.imageSource && isHeroCropNode)
         )));
 
-    // 0. Hero Crop Node (FB Hero / BG Hero): strictly wait for or use generated hero image!
+    // 0. Hero Crop Node (FB Hero / BG Hero): use generated hero image if ready, or fallback to connected images
     if (isHeroSource) {
       if (activeHeroImage && activeHeroImage.url) {
         const heroNodeLabel = (selectedSourceNode?.title || selectedSourceNode?.browserGroupName || heroLabel || 'Hero').trim();
@@ -1117,16 +1124,38 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           label: activeHeroImage.condoName ? `${activeHeroImage.condoName} Hero` : `${heroNodeLabel} (1 Photo)`,
         }];
       }
-      // If hero image has NOT been generated yet:
-      // Strictly wait for Hero image! Do NOT load get_images, do NOT load enhance photos, do NOT fallback to uploaded files!
+      // If hero image has not been generated yet, but connected photos exist from upstream (e.g. Get Images / Enhance):
+      // Show the connected photos so user can preview and crop them!
+      if (effectiveImageList && effectiveImageList.length > 0) {
+        effectiveImageList.forEach((img, idx) => {
+          const photoNum = idx + 1;
+          const url =
+            watermarkedPhotos?.[idx] ||
+            (typeof img.index === 'number' ? watermarkedPhotos?.[img.index] : undefined) ||
+            (img.stored_url
+              ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+              : img.source_url);
+          if (url) {
+            rawList.push({
+              id: `raw-${photoNum}`,
+              index: photoNum,
+              displayNumber: photoNum,
+              url,
+              source: 'get_images',
+              label: `Photo #${photoNum}`,
+            });
+          }
+        });
+        if (rawList.length > 0) return rawList;
+      }
       return [];
     }
 
-    const isEnhanceEmpty = isEnhanceSource;
+    const isEnhanceEmpty = isEnhanceSource && !hasEnhancedPhotos && (!effectiveImageList || effectiveImageList.length === 0);
     const shouldUseUploaded =
       imageSource === 'upload' ||
       (uploadedImages.length > 0 &&
-        ((isEnhanceEmpty && !hasEnhancedPhotos) ||
+        (isEnhanceEmpty ||
          (!isEnhanceSource && (!effectiveImageList || effectiveImageList.length === 0))));
 
     if (shouldUseUploaded && uploadedImages.length > 0) {
@@ -1145,11 +1174,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       return rawList;
     }
 
-    // When upstream is an Enhance node, merge with the first step's photos!
+    // When upstream is an Enhance node, show enhanced photos where ready, and fallback to connected images for remaining
     if (isEnhanceSource) {
-      if (!hasEnhancedPhotos) {
-        return [];
-      }
       const enhancedIndices = Object.keys(mergedEnhancedPhotos).map(Number).filter((n) => !isNaN(n));
       const maxEnhanced = enhancedIndices.length > 0 ? Math.max(...enhancedIndices) + 1 : 0;
       const totalPhotos = Math.max(effectiveImageList?.length || 0, maxEnhanced);
@@ -1162,23 +1188,28 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           (mergedEnhancedPhotos as any)[String(idx)] ||
           (mergedEnhancedPhotos as any)[String(photoNum)];
 
-        // Only include actual enhanced photos! Never fallback to raw un-enhanced photos!
-        if (!enhancedUrl) {
+        const rawImg = effectiveImageList?.[idx];
+        const rawUrl = rawImg
+          ? (watermarkedPhotos?.[idx] || (typeof rawImg.index === 'number' ? watermarkedPhotos?.[rawImg.index] : undefined) || (rawImg.stored_url ? (rawImg.stored_url.startsWith('http') ? rawImg.stored_url : `http://localhost:8085${rawImg.stored_url}`) : rawImg.source_url))
+          : '';
+
+        const effectiveUrl = enhancedUrl || rawUrl;
+        if (!effectiveUrl) {
           continue;
         }
 
         rawList.push({
-          id: `enh-${photoNum}`,
+          id: enhancedUrl ? `enh-${photoNum}` : `raw-${photoNum}`,
           index: photoNum,
           displayNumber: photoNum,
-          url: enhancedUrl,
-          source: 'enhance',
-          label: `Enhanced #${photoNum}`,
-          isEnhanced: true,
+          url: effectiveUrl,
+          source: enhancedUrl ? 'enhance' : 'get_images',
+          label: enhancedUrl ? `Enhanced #${photoNum}` : `Photo #${photoNum}`,
+          isEnhanced: Boolean(enhancedUrl),
         });
       }
 
-      return rawList;
+      if (rawList.length > 0) return rawList;
     }
 
     // 1. Get Images (Raw extracted or fallback studio images)

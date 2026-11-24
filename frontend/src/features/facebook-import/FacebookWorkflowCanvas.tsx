@@ -12066,9 +12066,75 @@ export const FacebookWorkflowCanvas = forwardRef<
                         </span>
                       </div>
                     </>
-                  ) : isWatermark ? (
-                    <FiScissors style={{ fontSize: '28px', color: isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
-                  ) : isExternalBrowser ? (
+                  ) : isWatermark ? (() => {
+                    // Show thumbnail preview images for this format node
+                    const boxAssets = combineMediaAssets.filter((a) => a.formatId === box.id);
+                    // Pick unique photo thumbnails (first tile per photo), max 4
+                    const seenPhotos = new Set<number>();
+                    const thumbAssets = boxAssets.filter((a) => {
+                      if (seenPhotos.has(a.photoIndex)) return false;
+                      seenPhotos.add(a.photoIndex);
+                      return true;
+                    }).slice(0, 4);
+                    // Fallback: use effectiveImages if no processed assets yet
+                    const fallbackUrls: string[] = thumbAssets.length === 0
+                      ? (effectiveImages || []).slice(0, 4).map((img: any) =>
+                          normalizeMediaUrl(img.stored_url || img.source_url || img.url) || ''
+                        ).filter(Boolean)
+                      : [];
+                    const thumbUrls = thumbAssets.length > 0
+                      ? thumbAssets.map((a) => a.url)
+                      : fallbackUrls;
+                    if (thumbUrls.length > 0) {
+                      return (
+                        <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {/* Thumbnail grid */}
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: thumbUrls.length === 1 ? '1fr' : thumbUrls.length === 2 ? '1fr 1fr' : thumbUrls.length === 3 ? '1fr 1fr 1fr' : '1fr 1fr',
+                            gridTemplateRows: thumbUrls.length <= 2 ? '1fr' : thumbUrls.length === 3 ? '1fr' : '1fr 1fr',
+                            gap: '2px',
+                            width: '48px',
+                            height: '48px',
+                            borderRadius: '8px',
+                            overflow: 'hidden',
+                          }}>
+                            {thumbUrls.map((url, i) => (
+                              <img
+                                key={i}
+                                src={url}
+                                alt=""
+                                style={{
+                                  width: '100%',
+                                  height: '100%',
+                                  objectFit: 'cover',
+                                  display: 'block',
+                                  opacity: isEffectiveEnabled ? 1 : 0.5,
+                                }}
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                              />
+                            ))}
+                          </div>
+                          {/* Small scissors badge */}
+                          <div style={{
+                            position: 'absolute',
+                            bottom: '4px',
+                            right: '4px',
+                            width: '16px',
+                            height: '16px',
+                            borderRadius: '4px',
+                            backgroundColor: isDark ? 'rgba(139,92,246,0.85)' : 'rgba(139,92,246,0.9)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}>
+                            <FiScissors style={{ fontSize: '10px', color: '#fff' }} />
+                          </div>
+                        </div>
+                      );
+                    }
+                    return <FiScissors style={{ fontSize: '28px', color: isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />;
+                  })() : isExternalBrowser ? (
                     <>
                       <FiMonitor style={{ fontSize: '32px', color: isEffectiveEnabled ? '#06B6D4' : '#8B949E', transition: 'color 0.2s ease', flexShrink: 0 }} />
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.25, minWidth: 0, flex: 1 }}>
