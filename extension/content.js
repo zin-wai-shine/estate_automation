@@ -933,22 +933,7 @@
       } catch (_) {}
     }
 
-    // Direct in-tab anchor download (directly saves blob: or data: to ~/Downloads via Chrome)
-    try {
-      const anchorUrl = companionUrl.startsWith('data:') ? companionUrl : finalUrl;
-      const a = document.createElement('a');
-      a.href = anchorUrl;
-      a.download = fileName;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => a.remove(), 1000);
-      console.log('[BOLTHAVEN] ✓ Direct in-tab anchor download triggered for:', fileName);
-    } catch (aErr) {
-      console.warn('[BOLTHAVEN] Direct anchor download notice:', aErr.message);
-    }
-
-    // Tier 1: Primary Serialized Background Download (fetches via extension host permissions + saves via Node Companion + chrome.downloads)
+    // Tier 1: Primary Serialized Background Download (saves via Node Companion directly to ~/Downloads with zero dialogs)
     try {
       const dlUrl = companionUrl.startsWith('data:') ? companionUrl : finalUrl;
       const response = await new Promise((resolve) => {
@@ -965,7 +950,7 @@
       });
 
       if (response && response.success) {
-        console.log('[BOLTHAVEN] ✓ Downloaded cleanly via serialized background download:', fileName);
+        console.log('[BOLTHAVEN] ✓ Saved cleanly to disk via serialized background download:', fileName);
         return true;
       }
       console.log('[BOLTHAVEN] Serial background download note, trying next tier...', response?.error);
@@ -987,42 +972,6 @@
       }
     } catch (e) {
       console.log('[BOLTHAVEN] Companion direct save note:', e.message);
-    }
-
-    // Tier 3: Native ChatGPT UI Download (Direct button OR Share -> Modal -> Download OR Copy Image)
-    try {
-      const nativeTriggered = await triggerNativeChatGPTDownload(imgEl);
-      if (nativeTriggered) {
-        console.log('[BOLTHAVEN] ✓ Native ChatGPT download triggered for:', fileName);
-        return true;
-      }
-    } catch (e) {
-      console.log('[BOLTHAVEN] Native trigger download notice:', e.message);
-    }
-
-    // Tier 4: Direct in-tab blob anchor download (fallback)
-    try {
-      console.log('[BOLTHAVEN] Fallback: Fetching blob for direct browser download...');
-      const resp = await fetch(finalUrl, { mode: 'cors' });
-      if (resp.ok) {
-        const blob = await resp.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-          try {
-            document.body.removeChild(a);
-            URL.revokeObjectURL(blobUrl);
-          } catch (e) {}
-        }, 8000);
-        console.log('[BOLTHAVEN] ✓ Fallback direct anchor download triggered for:', fileName);
-        return true;
-      }
-    } catch (e) {
-      console.warn('[BOLTHAVEN] Fallback blob download failed:', e.message);
     }
 
     return false;
@@ -2479,19 +2428,7 @@
             });
           }
 
-          // Trigger native download button click if present on the image card
-          try {
-            const nativeBtn = findGeneratedImageDownloadButton(enhancedImg);
-            if (nativeBtn) {
-              console.log('[BOLTHAVEN] Clicking native ChatGPT image download button...');
-              clickElementSafely(nativeBtn);
-              await new Promise((r) => setTimeout(r, 600));
-            }
-          } catch (e) {
-            console.warn('[BOLTHAVEN] Native download button click notice:', e.message);
-          }
-
-          // Download using serialized multi-tier downloader strictly with frozen fileName
+          // Download directly using serialized downloader strictly with frozen fileName (silent direct disk save)
           await downloadEnhancedImage(enhancedImg, finalUrl, fileName);
           await new Promise((r) => setTimeout(r, 1000));
 

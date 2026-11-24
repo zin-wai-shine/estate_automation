@@ -96,32 +96,31 @@ async function handleSerializedDownload(request) {
       console.warn('[BOLTHAVEN EXT] Companion save warning:', compErr.message);
     }
 
-    // Tier B: Also invoke chrome.downloads API so it appears in Chrome's download shelf
+    // Tier B: Fallback ONLY if Node Companion is completely unreachable
     let downloadId = null;
-    try {
-      downloadId = await new Promise((resolve) => {
-        chrome.downloads.download(
-          {
-            url: targetUrl,
-            filename: cleanFilename,
-            saveAs: false,
-            conflictAction: 'overwrite',
-          },
-          (id) => {
-            if (chrome.runtime.lastError) {
-              console.log('[BOLTHAVEN EXT] chrome.downloads note:', chrome.runtime.lastError.message);
-              chrome.downloads.download({ url: targetUrl, saveAs: false, conflictAction: 'overwrite' }, (id2) => {
-                if (chrome.runtime.lastError) {}
-                resolve(id2 || null);
-              });
-            } else {
-              resolve(id);
+    if (!companionSaved) {
+      try {
+        downloadId = await new Promise((resolve) => {
+          chrome.downloads.download(
+            {
+              url: targetUrl,
+              filename: cleanFilename,
+              saveAs: false,
+              conflictAction: 'overwrite',
+            },
+            (id) => {
+              if (chrome.runtime.lastError) {
+                console.log('[BOLTHAVEN EXT] chrome.downloads note:', chrome.runtime.lastError.message);
+                resolve(null);
+              } else {
+                resolve(id);
+              }
             }
-          }
-        );
-      });
-    } catch (dlErr) {
-      console.warn('[BOLTHAVEN EXT] chrome.downloads error:', dlErr.message);
+          );
+        });
+      } catch (dlErr) {
+        console.warn('[BOLTHAVEN EXT] chrome.downloads fallback error:', dlErr.message);
+      }
     }
 
     // Memorize the thread URL for this position if provided
