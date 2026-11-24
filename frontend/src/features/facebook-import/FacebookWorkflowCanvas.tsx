@@ -5447,23 +5447,29 @@ export const FacebookWorkflowCanvas = forwardRef<
         });
 
         const isFromEnhance = cropBox.imageSource === 'enhance' || isConnectedFromEnhance;
+        // isHeroCropBox: ONLY mark as hero if explicitly set to 'generate' source, or if there's an
+        // actual direct incoming connection from a hero generator node. Never use title/format name matching
+        // because "Format: FB Hero Cut" has 'hero' in its name but is NOT a hero generator — it's a
+        // regular crop format that uses connected enhance/raw photos.
         const isHeroCropBox =
           cropBox.imageSource === 'generate' ||
-          cropBox.title?.toLowerCase().includes('hero') ||
-          cropBox.templateText?.toLowerCase().includes('hero') ||
-          cropBox.cropFormatId === 'format-grid-2split' ||
-          effectiveFmt?.name?.toLowerCase().includes('hero') ||
-          effectiveFmt?.id === 'format-grid-2split' ||
+          (typeof cropBox.imageSource === 'string' && cropBox.imageSource.includes('hero') && cropBox.imageSource !== 'get_images') ||
           (config.connections || []).some((c: any) => {
-            if (c.toNodeId === cropBox.id) {
-              const upBox = (config.aiBoxes || []).find((b) => b.id === c.fromNodeId);
-              return upBox && (
-                upBox.title?.toLowerCase().includes('hero') ||
-                upBox.browserGroupName?.toLowerCase().includes('hero') ||
-                (upBox as any).tabGroupMode === 'generate'
-              );
-            }
-            return false;
+            if (c.toNodeId !== cropBox.id) return false;
+            if (c.fromNodeId === 'get-images' || c.fromNodeId === 'get-content') return false;
+            const upBox = (config.aiBoxes || []).find((b) => b.id === c.fromNodeId);
+            if (!upBox) return false;
+            // Only match if the upstream node is a true hero GENERATOR (not just a crop/format box with 'hero' in name)
+            const upTitle = (upBox.title || '').toLowerCase();
+            const upGroup = (upBox.browserGroupName || '').toLowerCase();
+            const upMode = (upBox as any).tabGroupMode;
+            const upSubtitle = (upBox.subtitle || '').toLowerCase();
+            return (
+              upMode === 'generate' ||
+              upSubtitle.includes('hero img') ||
+              (upTitle.includes('hero') && (upTitle.includes('img') || upTitle.includes('image') || upTitle.includes('generator') || upTitle.includes('gen'))) ||
+              (upGroup.includes('hero') && upGroup.includes('img'))
+            );
           });
 
         if (isHeroCropBox) {
