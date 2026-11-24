@@ -806,8 +806,12 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         localStorage.removeItem(`bolthaven_format_uploads_${box.id}`);
       } catch {}
       try {
-        const codeKey = listingCode || 'current';
-        localStorage.removeItem(`bolthaven_canvas_enhanced_${codeKey}`);
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('bolthaven_canvas_enhanced_')) {
+            localStorage.removeItem(k);
+          }
+        }
       } catch {}
     };
     window.addEventListener('ea_workflow_cleared', handleCleared);
@@ -841,12 +845,13 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     return [];
   }, [images]);
 
-  // Live downloaded enhanced photos polled from companion / backend (persisted across drive deletions)
+  // Live downloaded enhanced photos polled from companion / backend
   const [companionEnhanced, setCompanionEnhanced] = useState<Record<number, string>>(() => {
     try {
-      const codeKey = listingCode || 'current';
-      const saved = localStorage.getItem(`bolthaven_canvas_enhanced_${codeKey}`);
-      if (saved) return JSON.parse(saved);
+      if (listingCode) {
+        const saved = localStorage.getItem(`bolthaven_canvas_enhanced_${listingCode}`);
+        if (saved) return JSON.parse(saved);
+      }
     } catch {}
     return {};
   });
@@ -862,20 +867,28 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         const downloaded = await fetchEnhancedDownloadedImages(undefined, activeListingCode);
         if (downloaded && downloaded.length > 0 && !isCancelled) {
           const maxAllowed = effectiveImageList?.length || 6;
-          // If filenames have a listing prefix (e.g. GXV-738913-YG), ensure only files matching that prefix are accepted
-          const firstWithPrefix = downloaded.find((img) => img.filename?.match(/^([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)-/i));
-          const detectedPrefix = firstWithPrefix
-            ? firstWithPrefix.filename.match(/^([A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)-/i)?.[1]?.toLowerCase()
-            : (activeListingCode ? activeListingCode.trim().toLowerCase() : '');
+          // STRICT listing code verification:
+          // If activeListingCode is present, only accept files whose filename includes activeListingCode!
+          // NEVER fall back to picking any random prefix from other files!
+          const requiredPrefix = activeListingCode ? activeListingCode.trim().toLowerCase() : '';
 
           const valid = downloaded.filter((img) => {
             const pos = img.position || 1;
             if (pos > maxAllowed) return false;
-            if (detectedPrefix && img.filename) {
-              return img.filename.toLowerCase().startsWith(detectedPrefix);
+            if (requiredPrefix && img.filename) {
+              return img.filename.toLowerCase().includes(requiredPrefix);
             }
-            return true;
+            return !requiredPrefix;
           });
+
+          if (valid.length === 0) {
+            setCompanionEnhanced({});
+            try {
+              const codeKey = listingCode || 'current';
+              localStorage.removeItem(`bolthaven_canvas_enhanced_${codeKey}`);
+            } catch {}
+            return;
+          }
 
           const map: Record<number, string> = {};
           valid.forEach((img) => {
@@ -904,8 +917,17 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             } catch {}
             return map;
           });
+        } else if (!isCancelled && downloaded && downloaded.length === 0) {
+          // If no downloaded images found on disk/companion, clear companionEnhanced
+          setCompanionEnhanced({});
+          try {
+            const codeKey = listingCode || 'current';
+            localStorage.removeItem(`bolthaven_canvas_enhanced_${codeKey}`);
+          } catch {}
         }
-      } catch (e) {}
+      } catch (e) {
+        if (!isCancelled) setCompanionEnhanced({});
+      }
     };
     // Load once when clicking this box / when modal opens
     loadDownloaded();
@@ -938,6 +960,30 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     });
     return merged;
   }, [companionEnhanced, enhancedPhotos, effectiveImageList?.length]);
+
+  const hasEnhancedPhotos = Object.keys(mergedEnhancedPhotos).length > 0;
+
+  const isEnhanceSource = useMemo(() => {
+    if (imageSource === 'upload') return false;
+    const selectedSourceNode = (imageSource && imageSource.startsWith('node:'))
+      ? (workflowBoxes || []).find((b: any) => b.id === imageSource.replace('node:', '')) || null
+      : null;
+    const isTargetEnhance = Boolean(
+      selectedSourceNode &&
+      (selectedSourceNode.tabGroupMode === 'enhance' ||
+        selectedSourceNode.processKind === 'enhance_images' ||
+        (selectedSourceNode.title || '').toLowerCase().includes('enhance') ||
+        (selectedSourceNode.browserGroupName || '').toLowerCase().includes('enhance'))
+    );
+    return Boolean(
+      isTargetEnhance ||
+      (!selectedSourceNode && (
+        imageSource === 'enhance' ||
+        (typeof imageSource === 'string' && imageSource.includes('enhance')) ||
+        (!box.imageSource && isUpstreamEnhance)
+      ))
+    );
+  }, [imageSource, workflowBoxes, box.imageSource, isUpstreamEnhance]);
 
   // Build the list of photos available for the currently selected source
   const currentSourceList = useMemo(() => {
@@ -1016,15 +1062,6 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           (!box.imageSource && isHeroCropNode)
         )));
 
-    const isEnhanceSource =
-      imageSource !== 'upload' &&
-      (isTargetEnhance ||
-        (!selectedSourceNode && (
-          imageSource === 'enhance' ||
-          (typeof imageSource === 'string' && imageSource.includes('enhance')) ||
-          (!box.imageSource && isUpstreamEnhance)
-        )));
-
     // 0. Hero Crop Node (FB Hero / BG Hero): strictly wait for or use generated hero image!
     if (isHeroSource) {
       if (activeHeroImage && activeHeroImage.url) {
@@ -1043,7 +1080,6 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       return [];
     }
 
-    const hasEnhancedPhotos = Object.keys(mergedEnhancedPhotos).length > 0;
     const isEnhanceEmpty = isEnhanceSource;
     const shouldUseUploaded =
       imageSource === 'upload' ||
@@ -1160,6 +1196,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   }, [
     isHeroCropNode,
     isUpstreamEnhance,
+    isEnhanceSource,
+    hasEnhancedPhotos,
     imageSource,
     mergedEnhancedPhotos,
     effectiveImageList,
@@ -1204,10 +1242,13 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     }
   }, [box.imageSource, box.selectedImageIndices]);
 
+  const [brokenPhotoIds, setBrokenPhotoIds] = useState<Set<string>>(new Set());
+
   const activePhotosToFormat = useMemo(() => {
-    const list = currentSourceList.filter((p) => selectedIndices.includes(p.index));
-    return list.length > 0 ? list : currentSourceList;
-  }, [currentSourceList, selectedIndices]);
+    const nonBroken = currentSourceList.filter((p) => !brokenPhotoIds.has(p.id));
+    const list = nonBroken.filter((p) => selectedIndices.includes(p.index));
+    return list.length > 0 ? list : nonBroken;
+  }, [currentSourceList, selectedIndices, brokenPhotoIds]);
 
   const formatOptions = useMemo<SelectOption[]>(() => {
     return savedFormats.map((f) => ({
@@ -1620,8 +1661,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                 ? `Uploaded Files (${activePhotosToFormat.length} Photos)`
                 : imageSource === 'generate'
                 ? `${heroLabel} (${effectiveHeroImage && effectiveHeroImage.url ? '1 Photo' : '0 Photos'})`
-                : imageSource === 'enhance'
-                ? `${enhanceLabel} (${activePhotosToFormat.length} Photos)`
+                : imageSource === 'enhance' || isUpstreamEnhance
+                ? `${enhanceLabel} (${activePhotosToFormat.length > 0 ? `${activePhotosToFormat.length} Photos` : 'Waiting for Enhance IMG'})`
                 : `Get Images (${activePhotosToFormat.length} Photos)`}
             </div>
           </div>
@@ -1902,28 +1943,36 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                       alt={item.label}
                       onError={(e) => {
                         const target = e.currentTarget as HTMLImageElement;
-                        if (target.dataset.triedFallback) return;
-                        target.dataset.triedFallback = 'true';
-                        const currentSrc = target.src;
-                        if (currentSrc.includes('/downloaded-image?file=')) {
-                          try {
-                            const filename = new URL(currentSrc).searchParams.get('file');
+                        if (!target.dataset.triedFallback) {
+                          target.dataset.triedFallback = 'true';
+                          const currentSrc = target.src;
+                          if (currentSrc.includes('/downloaded-image?file=')) {
+                            try {
+                              const filename = new URL(currentSrc).searchParams.get('file');
+                              if (filename) {
+                                target.src = `/storage/uploads/facebook-import/enhanced/${filename}`;
+                                return;
+                              }
+                            } catch (_) {}
+                          }
+                          if (currentSrc.includes('/storage/uploads/facebook-import/enhanced/')) {
+                            const filename = currentSrc.split('/').pop();
                             if (filename) {
-                              target.src = `/storage/uploads/facebook-import/enhanced/${filename}`;
+                              target.src = `http://127.0.0.1:9224/downloaded-image?file=${filename}`;
                               return;
                             }
-                          } catch (_) {}
-                        }
-                        if (currentSrc.includes('/storage/uploads/facebook-import/enhanced/')) {
-                          const filename = currentSrc.split('/').pop();
-                          if (filename) {
-                            target.src = `http://127.0.0.1:9224/downloaded-image?file=${filename}`;
+                          }
+                          if (currentSrc.includes('localhost:8085/storage/')) {
+                            target.src = currentSrc.replace(/^https?:\/\/localhost:8085/, '');
                             return;
                           }
                         }
-                        if (currentSrc.includes('localhost:8085/storage/')) {
-                          target.src = currentSrc.replace(/^https?:\/\/localhost:8085/, '');
-                        }
+                        // Mark photo as broken so it's excluded from preview grid
+                        setBrokenPhotoIds((prev) => {
+                          const next = new Set(prev);
+                          next.add(item.id);
+                          return next;
+                        });
                       }}
                       style={{
                         width: '100%',
@@ -2436,6 +2485,188 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               </button>
               <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
                 or drag & drop your image here
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : ((isEnhanceSource || imageSource === 'enhance') && imageSource !== 'upload' && uploadedImages.length === 0) ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginTop: '0.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Processed Photos Preview
+              </label>
+              <span
+                style={{
+                  fontSize: '0.625rem',
+                  fontWeight: 600,
+                  color: '#F59E0B',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                }}
+              >
+                ⏳ Waiting for {enhanceLabel}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              title="Upload photos manually to skip waiting"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '3px 8px',
+                borderRadius: '5px',
+                backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
+                border: isDark ? '1px solid rgba(59, 130, 246, 0.35)' : '1px solid rgba(59, 130, 246, 0.3)',
+                color: '#3B82F6',
+                fontSize: '0.6875rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'background-color 0.15s ease',
+              }}
+            >
+              <FiUpload size={11} />
+              <span>Upload Manual</span>
+            </button>
+          </div>
+
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDraggingOver(true);
+            }}
+            onDragLeave={() => setIsDraggingOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDraggingOver(false);
+              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleFilesUpload(e.dataTransfer.files);
+              }
+            }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '2.5rem 1.25rem',
+              borderRadius: '10px',
+              border: isDraggingOver
+                ? '2px dashed #3B82F6'
+                : isDark
+                ? '1px solid #30363D'
+                : '1px solid #E2E8F0',
+              backgroundColor: isDraggingOver
+                ? (isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.06)')
+                : (isDark ? 'rgba(245, 158, 11, 0.04)' : 'rgba(245, 158, 11, 0.03)'),
+              gap: '12px',
+              textAlign: 'center',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <div
+              style={{
+                width: '46px',
+                height: '46px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                border: '1px solid rgba(245, 158, 11, 0.35)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#F59E0B',
+              }}
+            >
+              <FiClock size={22} />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                Waiting for {enhanceLabel} Photos
+              </span>
+              <span style={{ fontSize: '0.71875rem', color: 'var(--text-muted)', maxWidth: '340px', lineHeight: 1.5 }}>
+                The upstream {enhanceLabel} node has not enhanced photos yet for this canvas run. Once {enhanceLabel} processes and downloads the enhanced photos, this studio will automatically set up the crop tiles.
+              </span>
+            </div>
+
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                color: '#F59E0B',
+                fontSize: '0.6875rem',
+                fontWeight: 500,
+              }}
+            >
+              <span
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: '#F59E0B',
+                }}
+              />
+              <span>Awaiting image enhancement</span>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '8px',
+                marginTop: '4px',
+                width: '100%',
+                maxWidth: '340px',
+                paddingTop: '14px',
+                borderTop: isDark ? '1px dashed #30363D' : '1px dashed #E2E8F0',
+              }}
+            >
+              <span style={{ fontSize: '0.71875rem', color: 'var(--text-muted)' }}>
+                Don't want to wait? You can upload manually:
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fileInputRef.current?.click();
+                }}
+                disabled={isProcessingCrop}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 16px',
+                  borderRadius: '6px',
+                  backgroundColor: 'var(--accent-primary, #3B82F6)',
+                  color: '#FFFFFF',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  border: 'none',
+                  cursor: isProcessingCrop ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)',
+                  transition: 'opacity 0.15s ease',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+              >
+                <FiUploadCloud size={15} />
+                <span>{isProcessingCrop ? 'Uploading...' : 'Upload Photos Manually'}</span>
+              </button>
+              <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                or drag & drop your photos here
               </span>
             </div>
           </div>

@@ -700,14 +700,14 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
         const title = (en.title || en.browserGroupName || 'Enhance Image').trim();
         opts.push({
           value: enhanceNodes.length === 1 ? 'enhance' : `node:${en.id}`,
-          label: `${title} (${enhanceCount} Photo${enhanceCount === 1 ? '' : 's'})`,
+          label: `${title} (${enhanceCount > 0 ? `${enhanceCount} Photo${enhanceCount === 1 ? '' : 's'}` : 'Waiting for Enhanced Photos'})`,
         });
       });
     } else if (isUpstreamEnhance || hasIncomingEnhance || enhanceNode) {
       const enhanceCount = Object.keys(enhancedPhotos || {}).length;
       opts.push({
         value: 'enhance',
-        label: `${enhanceLabel} (${enhanceCount} Photo${enhanceCount === 1 ? '' : 's'})`,
+        label: `${enhanceLabel} (${enhanceCount > 0 ? `${enhanceCount} Photo${enhanceCount === 1 ? '' : 's'}` : 'Waiting for Enhanced Photos'})`,
       });
     }
 

@@ -3596,9 +3596,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           if (listingPrefix) {
             if (listingPrefix.toLowerCase() !== filterLower) continue;
           } else if (!lower.includes(filterLower)) {
-            // Also accept recently created enhanced_X files within the last 3 hours
-            const isRecentEnhanced = f.match(/^enhanced_(\d+)_/i) && (Date.now() - stat.mtimeMs < 3 * 60 * 60 * 1000);
-            if (!isRecentEnhanced && (!reqPropertyId || !f.includes(reqPropertyId))) continue;
+            if (!reqPropertyId || !lower.includes(reqPropertyId.toLowerCase())) continue;
           }
 
           // If ~/Downloads has files for this listing, but this file is NOT in Downloads, skip it!
