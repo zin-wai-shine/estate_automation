@@ -3860,11 +3860,9 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [locallyCompletedNodeIds, setLocallyCompletedNodeIds] = useState<string[]>([]);
   const [companionEnhancedMap, setCompanionEnhancedMap] = useState<Record<number, string>>(() => {
     try {
-      if (executionState?.completedNodeIds && executionState.completedNodeIds.length > 0) {
-        const activeCode = executionState?.listingCode || previewSampleCode || 'current';
-        const saved = localStorage.getItem(`bolthaven_canvas_enhanced_${activeCode}`);
-        if (saved) return JSON.parse(saved);
-      }
+      const activeCode = executionState?.listingCode || previewSampleCode || 'current';
+      const saved = localStorage.getItem(`bolthaven_canvas_enhanced_${activeCode}`);
+      if (saved) return JSON.parse(saved);
     } catch { }
     return {};
   });
@@ -3877,14 +3875,6 @@ export const FacebookWorkflowCanvas = forwardRef<
       setCompanionEnhancedMap({});
       setCombineMediaAssets([]);
       setCombineCropSlices([]);
-      try {
-        for (let i = localStorage.length - 1; i >= 0; i--) {
-          const k = localStorage.key(i);
-          if (k && k.startsWith('bolthaven_canvas_enhanced_')) {
-            localStorage.removeItem(k);
-          }
-        }
-      } catch (_) {}
       if (config.aiBoxes && config.aiBoxes.length > 0) {
         const nextBoxes = config.aiBoxes.map((b) => {
           if ((b.uploadedImages && b.uploadedImages.length > 0) || b.imageSource === 'upload') {
@@ -3923,27 +3913,6 @@ export const FacebookWorkflowCanvas = forwardRef<
     let isCancelled = false;
     const pollCompanionEnhanced = async () => {
       try {
-        const enhanceBox = config.aiBoxes?.find(
-          (b) =>
-            b.tabGroupMode === 'enhance' ||
-            b.processKind === 'enhance_images' ||
-            (b.browserGroupName || '').toLowerCase().includes('enhance') ||
-            (b.title || '').toLowerCase().includes('enhance')
-        );
-        const hasEnhanceRun =
-          Boolean(executionState?.isRunning) ||
-          Boolean(locallyRunningNodeId) ||
-          (enhanceBox && (locallyCompletedNodeIds.includes(enhanceBox.id) || executionState?.completedNodeIds?.includes(enhanceBox.id)));
-
-        // If Enhance node has not executed or run in this canvas session, keep companionEnhancedMap empty
-        if (!hasEnhanceRun) {
-          setCompanionEnhancedMap((prev) => {
-            if (Object.keys(prev).length === 0) return prev;
-            return {};
-          });
-          return;
-        }
-
         const activeCode = executionState?.listingCode || previewSampleCode;
         const list = await fetchEnhancedDownloadedImages(executionState?.propertyId, activeCode);
         if (list && list.length > 0 && !isCancelled) {

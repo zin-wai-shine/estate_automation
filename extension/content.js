@@ -219,7 +219,7 @@
         return true;
       }
     }
-    return false;
+    return null;
   }
 
   // Dismiss or cancel ChatGPT audio / speech recording mode if it was accidentally triggered
@@ -412,25 +412,39 @@
     return true;
   }
 
+  // Check if a DOM element is genuinely visible and rendered on screen
+  function isElementVisible(el) {
+    if (!el) return false;
+    try {
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return false;
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+    } catch (_) {
+      return false;
+    }
+  }
+
   // Find stop button (indicates generation is actively running).
-  // Strictly locate the active stop button in the composer
+  // Strictly locate the active visible stop button in the composer
   function findStopButton() {
     const composer = getComposerContainer() || document.querySelector('form') || document;
     if (!composer) return null;
 
-    // 1. Explicit stop buttons
-    const byAttr = composer.querySelector(
+    // 1. Explicit visible stop buttons
+    const byAttr = Array.from(composer.querySelectorAll(
       'button[data-testid="stop-button"], ' +
       'button[aria-label*="Stop generating" i], ' +
       'button[aria-label*="Stop streaming" i], ' +
       'button[aria-label="Stop" i], ' +
       'button[aria-label*="Stop" i]'
-    );
-    if (byAttr && !byAttr.disabled && byAttr.getAttribute('aria-disabled') !== 'true') return byAttr;
+    )).find((b) => isElementVisible(b) && !b.disabled && b.getAttribute('aria-disabled') !== 'true');
+    if (byAttr) return byAttr;
 
-    // 2. Button with aria-label or testid containing "stop" (excluding voice/mic/speech/tools)
+    // 2. Visible button with aria-label or testid containing "stop" (excluding voice/mic/speech/tools)
     const composerButtons = Array.from(composer.querySelectorAll('button:not(:disabled)'));
     for (const b of composerButtons) {
+      if (!isElementVisible(b)) continue;
       const aria = (b.getAttribute('aria-label') || '').toLowerCase();
       const testid = (b.getAttribute('data-testid') || '').toLowerCase();
       const isVoiceOrTool = aria.includes('voice') || aria.includes('speech') || aria.includes('mic') || aria.includes('tool') || aria.includes('search') || aria.includes('canvas') || aria.includes('reason');
@@ -442,8 +456,8 @@
       // Check for square stop icon (SVG rect with filled square) specifically in send button or active submit wrapper
       const isSendOrAction = aria.includes('send') || testid.includes('send') || Boolean(b.closest('[data-testid*="send"], form'));
       if (isSendOrAction) {
-        const rect = b.querySelector('svg rect, svg [class*="square"]');
-        if (rect && (rect.getAttribute('width') || rect.getAttribute('height'))) {
+        const rect = b.querySelector('svg rect[width][height], svg [class*="square"]');
+        if (rect) {
           return b;
         }
       }
@@ -454,28 +468,25 @@
 
   // Detect whether ChatGPT is actively thinking, reasoning, or generating
   function isThinkingOrGenerating() {
-    // 1. Stop button present anywhere in composer or page -> actively generating!
+    // 1. Visible Stop button present in composer -> actively generating!
     if (findStopButton()) return true;
 
+    // 2. Check for any genuinely VISIBLE stop button on page (excluding hidden template buttons)
     const anyStopBtn = Array.from(document.querySelectorAll('button')).some((b) => {
+      if (!isElementVisible(b)) return false;
       const aria = (b.getAttribute('aria-label') || '').toLowerCase();
       const testid = (b.getAttribute('data-testid') || '').toLowerCase();
       return (aria.includes('stop') || testid.includes('stop')) && !aria.includes('voice') && !aria.includes('speech');
     });
     if (anyStopBtn) return true;
 
-    // 2. Only check for ACTIVE spinning/pulsing animation elements outside header/nav
+    // 3. Only check for VISIBLE ACTIVE spinning/pulsing animation elements outside header/nav
     const activeSpinners = Array.from(
       document.querySelectorAll('svg.animate-spin, div.animate-spin, .animate-pulse, div[class*="shimmer"]')
-    ).filter((el) => !el.closest('header, nav, aside'));
+    ).filter((el) => isElementVisible(el) && !el.closest('header, nav, aside'));
     if (activeSpinners.length > 0) return true;
 
-    // 3. Only if stop button is possibly present or send button is in spinning/progress state
-    const composer = getComposerContainer() || document.querySelector('form');
-    const sendBtn = composer?.querySelector('button[data-testid="send-button"], button[aria-label*="Send" i]');
-    if (sendBtn && sendBtn.querySelector('svg.animate-spin, rect')) return true;
-
-    // 4. Check for active generation percentage or progress status (e.g. "84%", "Created and finalized the composite layout", or dots matrix)
+    // 4. Check for active generation percentage or progress status
     const assistantTurns = Array.from(document.querySelectorAll('div[data-message-author-role="assistant"], article'));
     if (assistantTurns.length > 0) {
       const latestTurn = assistantTurns[assistantTurns.length - 1];
@@ -488,7 +499,7 @@
         text.includes('Creating composite') ||
         text.includes('Analyzing')
       ) {
-        const hasCard = latestTurn.querySelector('button:has(svg), a[download]');
+        const hasCard = latestTurn.querySelector('button[data-testid*="generated-image"], button[aria-label*="Generated image" i], div[data-testid*="generated-image"], button:has(svg), a[download]');
         if (!hasCard) return true;
       }
     }
@@ -920,6 +931,21 @@
           console.log('[BOLTHAVEN] ✓ Converted image via anonymous Image element to data URL');
         }
       } catch (_) {}
+    }
+
+    // Direct in-tab anchor download (directly saves blob: or data: to ~/Downloads via Chrome)
+    try {
+      const anchorUrl = companionUrl.startsWith('data:') ? companionUrl : finalUrl;
+      const a = document.createElement('a');
+      a.href = anchorUrl;
+      a.download = fileName;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => a.remove(), 1000);
+      console.log('[BOLTHAVEN] ✓ Direct in-tab anchor download triggered for:', fileName);
+    } catch (aErr) {
+      console.warn('[BOLTHAVEN] Direct anchor download notice:', aErr.message);
     }
 
     // Tier 1: Primary Serialized Background Download (fetches via extension host permissions + saves via Node Companion + chrome.downloads)
@@ -3680,6 +3706,8 @@
           clickLog,
           allButtons: docButtons,
           hasStopBtn: Boolean(findStopButton()),
+          isThinking: Boolean(isThinkingOrGenerating()),
+          stopBtnTag: findStopButton()?.outerHTML?.slice(0, 100),
           allImages: Array.from(document.querySelectorAll('img')).map((i) => ({
             src: i.src.slice(0, 100),
             w: i.naturalWidth,

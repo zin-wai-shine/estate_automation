@@ -2362,9 +2362,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         }
 
         if (buffer && buffer.length > 0) {
-          if (!fs.existsSync(downloadFilePath)) {
-            try { fs.writeFileSync(downloadFilePath, buffer); } catch (e) {}
-          }
+          try { fs.writeFileSync(downloadFilePath, buffer); } catch (e) {}
           try { fs.writeFileSync(canvasCacheFilePath, buffer); } catch (e) {}
           persistCanvasImage(canvasCacheFilePath, filename);
           console.log(`[COMPANION] ✓ Saved generated image:\n  - ${downloadFilePath} (${buffer.length} bytes)\n  - ${canvasCacheFilePath}`);
@@ -2408,7 +2406,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           return res.end(JSON.stringify({
             status: 'success',
             download_path: downloadFilePath,
-            processing_path: processingFilePath,
+            processing_path: canvasCacheFilePath,
             size: buffer.length,
           }));
         } else {
@@ -2663,6 +2661,20 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       attempts++;
     }
     const result = global.lastInspectResult || { error: 'Timeout waiting for test setup & send result' };
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify(result));
+  }
+
+  if (url.pathname === '/download-active-chatgpt-image' && req.method === 'POST') {
+    global.lastInspectResult = null;
+    pushPendingCommand({ action: 'DOWNLOAD_CURRENT_TAB_IMAGE', payload: {}, created_at: new Date().toISOString() });
+    console.log('[COMPANION] Download current tab image command queued');
+    let attempts = 0;
+    while (attempts < 60 && !global.lastInspectResult) {
+      await new Promise((r) => setTimeout(r, 200));
+      attempts++;
+    }
+    const result = global.lastInspectResult || { error: 'Timeout waiting for download result' };
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify(result));
   }

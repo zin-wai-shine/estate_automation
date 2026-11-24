@@ -2757,6 +2757,37 @@ async function pollCompanion() {
             body: JSON.stringify({ error: 'No chatgpt.com tab found in this Chrome profile' }),
           }).catch(() => {});
         }
+      } else if (action === 'DOWNLOAD_CURRENT_TAB_IMAGE') {
+        const focusedTabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        const allTabs = await chrome.tabs.query({});
+        const chatTab = (focusedTabs.length > 0 && (focusedTabs[0].url || '').includes('chatgpt.com'))
+          ? focusedTabs[0]
+          : (allTabs.find((t) => t.active && (t.url || '').includes('chatgpt.com')) || allTabs.find((t) => (t.url || '').includes('chatgpt.com')));
+        if (chatTab) {
+          await ensureContentScriptInjected(chatTab.id);
+          const listingCode = payload?.listingCode || automation.listingCode || '';
+          const pos = payload?.position || 1;
+          const fileName = payload?.filename || (listingCode ? `${listingCode}-${pos}.png` : `enhanced_${pos}_${Date.now()}.png`);
+          chrome.tabs.sendMessage(chatTab.id, {
+            action: 'DOWNLOAD_CURRENT_ENHANCED_IMAGE',
+            position: pos,
+            listingCode,
+            filename: fileName,
+          }, (resp) => {
+            const err = chrome.runtime.lastError?.message;
+            fetch(`${COMPANION_URL}/report-inspect`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(resp || { error: err || 'No response from tab' }),
+            }).catch(() => {});
+          });
+        } else {
+          fetch(`${COMPANION_URL}/report-inspect`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ error: 'No chatgpt.com tab found in this Chrome profile' }),
+          }).catch(() => {});
+        }
       } else if (action === 'START_AUTOMATION') {
         startAutomation(payload)
           .then((result) => console.log('[BOLTHAVEN EXT] Automation start:', result))
