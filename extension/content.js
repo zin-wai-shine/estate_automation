@@ -692,7 +692,15 @@
   function isNodeAfterSentTurn(node, sentTurn) {
     if (!sentTurn || !node) return true;
     try {
-      if (node === sentTurn || sentTurn.contains(node)) return false;
+      if (node === sentTurn) return false;
+      // In modern ChatGPT, if sentTurn was misidentified as an article/container,
+      // but node is a generated image preview or inside an assistant container, do NOT discard it!
+      if (sentTurn.contains(node)) {
+        if (node.closest?.('button[data-testid*="generated-image"], [data-testid="generated-image-preview"], button[aria-label*="Generated image" i], button[aria-label*="Edit generated image" i], [data-message-author-role="assistant"]')) {
+          return true;
+        }
+        return false;
+      }
       return Boolean(sentTurn.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING);
     } catch (e) {
       return true;
@@ -703,25 +711,80 @@
   function findLatestGeneratedImageInTab(preExistingUrls, sentUserTurnEl = null) {
     const preUrls = preExistingUrls || new Set();
 
-    // 0. Priority 0: Look for image with an "Edit" button adjacent or inside its card
-    const editButtons = Array.from(document.querySelectorAll('button')).filter((b) => (b.textContent || '').trim() === 'Edit');
-    for (let i = editButtons.length - 1; i >= 0; i--) {
-      const editBtn = editButtons[i];
-      const card = editBtn.closest('div[class*="group"], div[class*="relative"], article, section') || editBtn.parentElement;
-      if (card) {
-        if (sentUserTurnEl && !isNodeAfterSentTurn(card, sentUserTurnEl)) {
-          continue; // Older turn: strictly skip!
-        }
-        const cardImg = card.querySelector('img');
-        if (cardImg && cardImg.complete) {
-          const src = cardImg.src || cardImg.getAttribute('src') || '';
-          const cleanSrc = src.split('?')[0];
-          if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) continue;
-          const s = src.toLowerCase();
-          if (s && !s.includes('avatar') && !s.includes('icon')) {
-            if ((cardImg.naturalWidth >= 100 || cardImg.width >= 100)) return cardImg;
+    // 0. Priority 0 (Modern ChatGPT 2024-2026 Native Preview): Check button[data-testid*="generated-image"] or aria-label*="Generated image"
+    const previewButtons = Array.from(document.querySelectorAll(
+      'button[data-testid="generated-image-preview"], button[data-testid*="generated-image"], button[aria-label*="Generated image" i], div[data-testid*="generated-image"]'
+    ));
+    for (let i = previewButtons.length - 1; i >= 0; i--) {
+      const btn = previewButtons[i];
+      if (sentUserTurnEl && !isNodeAfterSentTurn(btn, sentUserTurnEl)) continue;
+      const img = btn.querySelector('img') || btn.parentElement?.querySelector('img') || btn.closest('div[class*="relative"], article, section')?.querySelector('img');
+      if (img && img.complete) {
+        const src = img.src || img.getAttribute('src') || '';
+        const cleanSrc = src.split('?')[0];
+        if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) continue;
+        const s = src.toLowerCase();
+        if (!s.includes('avatar') && !s.includes('icon') && !s.includes('logo')) {
+          if (img.naturalWidth >= 100 || img.width >= 100 || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) {
+            return img;
           }
         }
+      }
+    }
+
+    // 0.1. Priority 0.1: Look for image with an "Edit" button adjacent or inside its card
+    // AI generated images in ChatGPT are the ONLY images that receive the native "Edit" button!
+    const editButtons = Array.from(document.querySelectorAll('button')).filter((b) => {
+      const txt = (b.textContent || '').trim();
+      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+      return txt === 'Edit' || aria.includes('edit generated image');
+    });
+    for (let i = editButtons.length - 1; i >= 0; i--) {
+      const editBtn = editButtons[i];
+      if (sentUserTurnEl && !isNodeAfterSentTurn(editBtn, sentUserTurnEl)) continue;
+
+      // Climb up through parent containers (up to 6 levels) to locate the associated generated image
+      let container = editBtn.parentElement;
+      for (let depth = 0; depth < 6 && container && container !== document.body; depth++) {
+        const imgs = Array.from(container.querySelectorAll('img')).filter((img) => {
+          if (isUserAttachment(img, sentUserTurnEl)) return false;
+          const src = img.src || img.getAttribute('src') || '';
+          const cleanSrc = src.split('?')[0];
+          if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) return false;
+          const s = src.toLowerCase();
+          if (s.includes('avatar') || s.includes('icon') || s.includes('profile') || s.includes('logo')) return false;
+          return img.complete && (img.naturalWidth >= 100 || img.width >= 100 || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:'));
+        });
+        if (imgs.length > 0) {
+          return imgs[imgs.length - 1];
+        }
+        container = container.parentElement;
+      }
+    }
+
+    // 0.2. Priority 0.2: Look for assistant action bar buttons (Copy image, Like this image, Share generated image)
+    const actionButtons = Array.from(document.querySelectorAll('button')).filter((b) => {
+      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+      return aria === 'copy image' || aria.includes('share generated image') || aria === 'like this image';
+    });
+    for (let i = actionButtons.length - 1; i >= 0; i--) {
+      const actBtn = actionButtons[i];
+      if (sentUserTurnEl && !isNodeAfterSentTurn(actBtn, sentUserTurnEl)) continue;
+      let container = actBtn.parentElement;
+      for (let depth = 0; depth < 6 && container && container !== document.body; depth++) {
+        const imgs = Array.from(container.querySelectorAll('img')).filter((img) => {
+          if (isUserAttachment(img, sentUserTurnEl)) return false;
+          const src = img.src || img.getAttribute('src') || '';
+          const cleanSrc = src.split('?')[0];
+          if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) return false;
+          const s = src.toLowerCase();
+          if (s.includes('avatar') || s.includes('icon')) return false;
+          return img.complete && (img.naturalWidth >= 100 || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:'));
+        });
+        if (imgs.length > 0) {
+          return imgs[imgs.length - 1];
+        }
+        container = container.parentElement;
       }
     }
 
@@ -744,6 +807,7 @@
       }
 
       const imgs = Array.from(latestTurn.querySelectorAll('img')).filter((img) => {
+        if (isUserAttachment(img, sentUserTurnEl)) return false;
         const src = img.src || img.getAttribute('src') || '';
         const cleanSrc = src.split('?')[0];
         if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) return false;
@@ -760,6 +824,7 @@
 
     // 2. Fallback: Any complete oaiusercontent or large image on page outside composer (STRICTLY NOT PRE-EXISTING)
     const anyOai = Array.from(document.querySelectorAll('img')).filter((img) => {
+      if (isUserAttachment(img, sentUserTurnEl)) return false;
       if (sentUserTurnEl && !isNodeAfterSentTurn(img, sentUserTurnEl)) return false;
       const src = img.src || img.getAttribute('src') || '';
       const cleanSrc = src.split('?')[0];
@@ -995,19 +1060,25 @@
   // Helper to verify if an image element is an uploaded/input user attachment rather than an AI output
   function isUserAttachment(img, sentUserTurnEl = null) {
     if (!img) return true;
+    // Generated image preview buttons and their descendants are NEVER user attachments!
+    if (img.closest('button[data-testid*="generated-image"], [data-testid="generated-image-preview"], button[aria-label*="Generated image" i]')) {
+      return false;
+    }
     if (img.closest('form, div[class*="composer"], header, nav, aside')) return true;
     if (img.closest('[data-message-author-role="user"], div[class*="user-message"], div[class*="user-turn"]')) return true;
     const article = img.closest('article');
     if (article) {
-      if (article.querySelector('[data-message-author-role="user"]')) return true;
-      if (article.querySelector('button[aria-label*="Edit message" i]')) return true;
-      const hasAssistantAction = article.querySelector(
-        '[data-message-author-role="assistant"], button[aria-label*="Good response" i], button[aria-label*="Copy" i]'
-      );
-      if (!hasAssistantAction) return true;
+      if (article.querySelector('button[aria-label*="Edit message" i], button[aria-label*="Share prompt" i]')) {
+        if (!article.querySelector('button[data-testid*="generated-image"], button[aria-label*="Generated image" i], button[aria-label*="Edit generated image" i]')) {
+          return true;
+        }
+      }
     }
     if (sentUserTurnEl) {
-      if (img === sentUserTurnEl || sentUserTurnEl.contains(img)) return true;
+      if (img === sentUserTurnEl) return true;
+      if (sentUserTurnEl.contains(img) && !img.closest('button[data-testid*="generated-image"], [data-testid="generated-image-preview"], button[aria-label*="Generated image" i]')) {
+        return true;
+      }
       if (!isNodeAfterSentTurn(img, sentUserTurnEl)) return true;
     }
     return false;
@@ -1135,27 +1206,81 @@
   function findGeneratedEnhancedImage(preExistingUrls, preAssistantCount = 0, sentUserTurnEl = null) {
     const preUrls = preExistingUrls || new Set();
 
-    // METHOD 0 (Primary - 100% Reliable): Locate any image with an "Edit" button adjacent or inside its card (STRICTLY NOT PRE-EXISTING)
-    // Note: Only AI-generated assistant images in ChatGPT have the native "Edit" button.
-    const editButtons = Array.from(document.querySelectorAll('button')).filter((b) => (b.textContent || '').trim() === 'Edit');
-    for (let i = editButtons.length - 1; i >= 0; i--) {
-      const editBtn = editButtons[i];
-      const card = editBtn.closest('div[class*="group"], div[class*="relative"], article, section') || editBtn.parentElement;
-      if (card) {
-        if (sentUserTurnEl && !isNodeAfterSentTurn(card, sentUserTurnEl)) {
-          continue; // Older turn: strictly skip!
-        }
-        const cardImg = card.querySelector('img');
-        if (cardImg) {
-          const src = cardImg.src || cardImg.getAttribute('src') || '';
-          const cleanSrc = src.split('?')[0];
-          if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) continue;
-          if (!src.toLowerCase().includes('avatar') && !src.toLowerCase().includes('icon')) {
-            if (cardImg.complete && (cardImg.naturalWidth >= 100 || cardImg.width >= 100)) {
-              return cardImg;
-            }
+    // METHOD 0 (Primary - 100% Reliable): Modern ChatGPT 2024-2026 Native Generated Image Preview Button
+    const previewButtons = Array.from(document.querySelectorAll(
+      'button[data-testid="generated-image-preview"], button[data-testid*="generated-image"], button[aria-label*="Generated image" i], div[data-testid*="generated-image"]'
+    ));
+    for (let i = previewButtons.length - 1; i >= 0; i--) {
+      const btn = previewButtons[i];
+      if (sentUserTurnEl && !isNodeAfterSentTurn(btn, sentUserTurnEl)) continue;
+      const img = btn.querySelector('img') || btn.parentElement?.querySelector('img') || btn.closest('div[class*="relative"], article, section')?.querySelector('img');
+      if (img && img.complete) {
+        const src = img.src || img.getAttribute('src') || '';
+        const cleanSrc = src.split('?')[0];
+        if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) continue;
+        const s = src.toLowerCase();
+        if (!s.includes('avatar') && !s.includes('icon') && !s.includes('logo')) {
+          if (img.naturalWidth >= 100 || img.width >= 100 || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:')) {
+            console.log('[BOLTHAVEN] ✓ Located Enhanced Image via generated-image-preview button:', src.slice(0, 80));
+            return img;
           }
         }
+      }
+    }
+
+    // METHOD 0.1: Locate any image with an "Edit" button adjacent or inside its card (STRICTLY NOT PRE-EXISTING)
+    // Note: Only AI-generated assistant images in ChatGPT have the native "Edit" button.
+    const editButtons = Array.from(document.querySelectorAll('button')).filter((b) => {
+      const txt = (b.textContent || '').trim();
+      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+      return txt === 'Edit' || aria.includes('edit generated image');
+    });
+    for (let i = editButtons.length - 1; i >= 0; i--) {
+      const editBtn = editButtons[i];
+      if (sentUserTurnEl && !isNodeAfterSentTurn(editBtn, sentUserTurnEl)) continue;
+
+      let container = editBtn.parentElement;
+      for (let depth = 0; depth < 6 && container && container !== document.body; depth++) {
+        const imgs = Array.from(container.querySelectorAll('img')).filter((img) => {
+          if (isUserAttachment(img, sentUserTurnEl)) return false;
+          const src = img.src || img.getAttribute('src') || '';
+          const cleanSrc = src.split('?')[0];
+          if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) return false;
+          const s = src.toLowerCase();
+          if (s.includes('avatar') || s.includes('icon') || s.includes('profile') || s.includes('logo')) return false;
+          return img.complete && (img.naturalWidth >= 100 || img.width >= 100 || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:'));
+        });
+        if (imgs.length > 0) {
+          console.log('[BOLTHAVEN] ✓ Located Enhanced Image via Edit button container climb:', (imgs[imgs.length - 1].src || '').slice(0, 80));
+          return imgs[imgs.length - 1];
+        }
+        container = container.parentElement;
+      }
+    }
+
+    // METHOD 0.2: Assistant action bar search (Copy image, Like this image, Share generated image)
+    const actionButtons = Array.from(document.querySelectorAll('button')).filter((b) => {
+      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+      return aria === 'copy image' || aria.includes('share generated image') || aria === 'like this image';
+    });
+    for (let i = actionButtons.length - 1; i >= 0; i--) {
+      const actBtn = actionButtons[i];
+      if (sentUserTurnEl && !isNodeAfterSentTurn(actBtn, sentUserTurnEl)) continue;
+      let container = actBtn.parentElement;
+      for (let depth = 0; depth < 6 && container && container !== document.body; depth++) {
+        const imgs = Array.from(container.querySelectorAll('img')).filter((img) => {
+          if (isUserAttachment(img, sentUserTurnEl)) return false;
+          const src = img.src || img.getAttribute('src') || '';
+          const cleanSrc = src.split('?')[0];
+          if (!src || preUrls.has(src) || preUrls.has(cleanSrc)) return false;
+          const s = src.toLowerCase();
+          if (s.includes('avatar') || s.includes('icon')) return false;
+          return img.complete && (img.naturalWidth >= 100 || s.includes('oaiusercontent.com') || s.includes('file-service') || s.startsWith('blob:'));
+        });
+        if (imgs.length > 0) {
+          return imgs[imgs.length - 1];
+        }
+        container = container.parentElement;
       }
     }
 
@@ -1183,6 +1308,7 @@
       }
 
       const imgs = Array.from(turn.querySelectorAll('img')).filter((img) => {
+        if (isUserAttachment(img, sentUserTurnEl)) return false;
         const src = img.src || img.getAttribute('src') || '';
         if (!src) return false;
         const cleanSrc = src.split('?')[0];
@@ -1209,6 +1335,7 @@
 
     // METHOD 2: Look for any new oaiusercontent / file-service / blob image on page not in composer/nav
     const oaiImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+      if (isUserAttachment(img, sentUserTurnEl)) return false;
       if (sentUserTurnEl && !isNodeAfterSentTurn(img, sentUserTurnEl)) return false;
       const src = img.src || img.getAttribute('src') || '';
       if (!src || preUrls.has(src)) return false;
@@ -1224,6 +1351,7 @@
 
     // METHOD 3: Look for any new large completed image on page (>= 150px) not in user/composer
     const largeImgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+      if (isUserAttachment(img, sentUserTurnEl)) return false;
       if (sentUserTurnEl && !isNodeAfterSentTurn(img, sentUserTurnEl)) return false;
       const src = img.src || img.getAttribute('src') || '';
       if (!src || preUrls.has(src)) return false;
@@ -2813,8 +2941,13 @@
     let sentUserTurnEl = null;
     try {
       const userTurns = Array.from(document.querySelectorAll(
-        'div[data-message-author-role="user"], article:not(:has([data-message-author-role="assistant"]))'
-      ));
+        'div[data-message-author-role="user"], [data-testid*="user-message"], div[class*="user-turn"], div[class*="user-message"], article:has([data-message-author-role="user"]), article:has(button[aria-label*="Edit message" i])'
+      )).filter((el) => {
+        if (el.querySelector('button[data-testid*="generated-image"], [data-testid="generated-image-preview"], button[aria-label*="Generated image" i], button[aria-label*="Edit generated image" i], [data-message-author-role="assistant"]')) {
+          return false;
+        }
+        return true;
+      });
       sentUserTurnEl = userTurns[userTurns.length - 1] || null;
     } catch (_) {}
 
@@ -3201,8 +3334,13 @@
     let sentUserTurnEl = null;
     try {
       const userTurns = Array.from(document.querySelectorAll(
-        'div[data-message-author-role="user"], article:not(:has([data-message-author-role="assistant"]))'
-      ));
+        'div[data-message-author-role="user"], [data-testid*="user-message"], div[class*="user-turn"], div[class*="user-message"], article:has([data-message-author-role="user"]), article:has(button[aria-label*="Edit message" i])'
+      )).filter((el) => {
+        if (el.querySelector('button[data-testid*="generated-image"], [data-testid="generated-image-preview"], button[aria-label*="Generated image" i], button[aria-label*="Edit generated image" i], [data-message-author-role="assistant"]')) {
+          return false;
+        }
+        return true;
+      });
       sentUserTurnEl = userTurns[userTurns.length - 1] || null;
     } catch (_) {}
 
@@ -3542,6 +3680,15 @@
           clickLog,
           allButtons: docButtons,
           hasStopBtn: Boolean(findStopButton()),
+          allImages: Array.from(document.querySelectorAll('img')).map((i) => ({
+            src: i.src.slice(0, 100),
+            w: i.naturalWidth,
+            h: i.naturalHeight,
+            complete: i.complete,
+            parentClass: i.parentElement?.className?.slice(0, 50),
+          })),
+          latestGeneratedFound: Boolean(findLatestGeneratedImageInTab()),
+          latestGeneratedSrc: findLatestGeneratedImageInTab()?.src?.slice(0, 100),
         });
       })();
       return true;
@@ -3605,8 +3752,13 @@
           const pageTitle = (document.title || '').toLowerCase();
           const chatHeader = ((document.querySelector('header h1, nav [class*="title"], div[data-testid*="conversation-header"]') || {}).textContent || '').toLowerCase();
           const allUserTurns = Array.from(document.querySelectorAll(
-            'div[data-message-author-role="user"], article:not(:has([data-message-author-role="assistant"]))'
-          ));
+            'div[data-message-author-role="user"], [data-testid*="user-message"], div[class*="user-turn"], div[class*="user-message"], article:has([data-message-author-role="user"]), article:has(button[aria-label*="Edit message" i])'
+          )).filter((el) => {
+            if (el.querySelector('button[data-testid*="generated-image"], [data-testid="generated-image-preview"], button[aria-label*="Generated image" i], button[aria-label*="Edit generated image" i], [data-message-author-role="assistant"]')) {
+              return false;
+            }
+            return true;
+          });
           const allUserTurnsText = allUserTurns.map((el) => el.textContent || '').join(' ').toLowerCase();
 
           if (
