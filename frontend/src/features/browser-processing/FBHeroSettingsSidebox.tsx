@@ -150,7 +150,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
         id: 'group-1',
         title: 'Group 1',
         count: 1,
-        sourceType: 'upload',
+        sourceType: 'folder',
         folderName: '',
         enabled: true,
       },

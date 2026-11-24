@@ -234,6 +234,10 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
     } catch (_) {}
   };
 
+  // Stable ref to always have latest steps in async callbacks and prevent race-condition overwrite
+  const stepsRef = React.useRef<AttachmentStep[]>(steps);
+  stepsRef.current = steps;
+
   const inFlightFetchRef = React.useRef<Record<string, boolean>>({});
 
   const fetchImagesForStep = async (stepId: string, folder: string, forceReload: boolean = false) => {
@@ -245,7 +249,8 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
     if (!forceReload) {
       if (inFlightFetchRef.current[fetchKey]) return;
       if (globalCondoImagesCache[cacheKey] && globalCondoImagesCache[cacheKey].length > 0) {
-        const targetStep = steps.find((s) => s.id === stepId);
+        const currentSteps = stepsRef.current || steps;
+        const targetStep = currentSteps.find((s) => s.id === stepId);
         if (targetStep?.folderImages && targetStep.folderImages.length === globalCondoImagesCache[cacheKey].length) {
           return;
         }
@@ -297,21 +302,23 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
       setLoadingSteps({});
       setReloadingStepId(null);
       // Clean all steps so folderName, folderImages, and selectedIndices are reset to clean initial state
-      const cleaned = steps.map((s) => ({
+      const current = stepsRef.current || steps;
+      const cleaned = current.map((s) => ({
         ...s,
         folderName: '',
         folderImages: [],
         selectedIndices: undefined,
       }));
+      stepsRef.current = cleaned;
       onChange(cleaned);
     };
     window.addEventListener('ea_workflow_cleared', handleWorkflowCleared);
     return () => {
       window.removeEventListener('ea_workflow_cleared', handleWorkflowCleared);
     };
-  }, [steps]);
+  }, []);
 
-  // Auto-sync folderName with condoName & detect when condo name changes on rerun
+  // Auto-sync folderName with condoName only when condo name actually changes
   const prevCondoNameRef = React.useRef<string>((condoName || '').trim());
 
   useEffect(() => {
@@ -322,34 +329,35 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
     const nameChanged = Boolean(prevCondo && prevCondo.toLowerCase() !== trimmedCondo.toLowerCase());
     prevCondoNameRef.current = trimmedCondo;
 
-    let changed = false;
-    const next = steps.map((s) => {
-      const isFolder = s.sourceType === 'folder' || (isMainBox && s.id === 'group-1');
-      const folderMismatch = Boolean((s.folderName || '').trim().toLowerCase() !== trimmedCondo.toLowerCase()) || nameChanged;
-      const needsLoad = !s.folderImages || s.folderImages.length === 0;
+    // Only force auto-sync if condo name actually changed
+    if (!nameChanged) return;
 
-      if (isFolder && (folderMismatch || needsLoad)) {
+    const current = stepsRef.current || steps;
+    let changed = false;
+    const next = current.map((s) => {
+      if (s.id === 'group-1' || s.sourceType === 'folder') {
         changed = true;
-        // If condo name actually changed, force reload from companion and clear old indices!
-        fetchImagesForStep(s.id, trimmedCondo, nameChanged);
+        fetchImagesForStep(s.id, trimmedCondo, true);
         return {
           ...s,
           sourceType: 'folder' as const,
           folderName: trimmedCondo,
-          ...(nameChanged ? { selectedIndices: undefined } : {}),
+          selectedIndices: undefined,
         };
       }
       return s;
     });
     if (changed) {
+      stepsRef.current = next;
       onChange(next);
     }
-  }, [condoName, isMainBox, steps]);
+  }, [condoName]);
 
   // When step folderName is set and folderImages is missing, load from cache or companion
   const stepsFolderKey = steps.map((s) => `${s.id}:${s.sourceType}:${(s.folderName || '').trim().toLowerCase()}`).join('|');
   useEffect(() => {
-    steps.forEach((s) => {
+    const current = stepsRef.current || steps;
+    current.forEach((s) => {
       if (s.sourceType === 'folder' || (isMainBox && s.id === 'group-1')) {
         const folder = (s.folderName || condoName || '').trim();
         if (folder && (!s.folderImages || s.folderImages.length === 0)) {
@@ -370,33 +378,46 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
   }, [steps]);
 
   const handleUpdateStep = (id: string, updates: Partial<AttachmentStep>) => {
-    onChange(steps.map((s) => (s.id === id ? { ...s, ...updates } : s)));
+    const current = stepsRef.current || steps;
+    const next = current.map((s) => (s.id === id ? { ...s, ...updates } : s));
+    stepsRef.current = next;
+    onChange(next);
   };
 
   const handleAddStep = () => {
-    const nextIdx = steps.length + 1;
-    const remaining = Math.max(1, 10 - totalCondoImagesCount);
+    const currentSteps = stepsRef.current || steps;
+    const nextIdx = currentSteps.length + 1;
+    const currentTotal = currentSteps.filter((s) => s.enabled).reduce((acc, s) => acc + s.count, 0);
+    const remaining = Math.max(1, 10 - currentTotal);
     const newStepId = `group-${Date.now()}`;
-    const initialFolder = condoName || availableCondoFolders[0] || '';
+    const initialFolder = (condoName || availableCondoFolders[0] || '').trim();
+    const cachedImages = initialFolder ? (globalCondoImagesCache[initialFolder.toLowerCase()] || []) : [];
 
     const newStep: AttachmentStep = {
       id: newStepId,
       title: `Group ${nextIdx}`,
       count: Math.min(remaining, 1),
-      sourceType: 'upload',
+      sourceType: initialFolder ? 'folder' : 'upload',
       workflowSourceId: activeSources[0]?.id || 'get-images',
       folderName: initialFolder,
+      folderImages: cachedImages.length > 0 ? cachedImages : undefined,
       imageSelection: '',
       enabled: true,
     };
-    onChange([...steps, newStep]);
-    if (initialFolder) {
+    const nextSteps = [...currentSteps, newStep];
+    stepsRef.current = nextSteps;
+    onChange(nextSteps);
+
+    if (initialFolder && cachedImages.length === 0) {
       fetchImagesForStep(newStepId, initialFolder);
     }
   };
 
   const handleRemoveStep = (id: string) => {
-    onChange(steps.filter((s) => s.id !== id));
+    const current = stepsRef.current || steps;
+    const next = current.filter((s) => s.id !== id);
+    stepsRef.current = next;
+    onChange(next);
   };
 
   const renderCountStepper = (s: AttachmentStep) => {
@@ -1558,23 +1579,42 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
             <button
               type="button"
               disabled={totalCondoImagesCount >= 10}
-              onClick={handleAddStep}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleAddStep();
+              }}
               style={{
-                height: '28px',
-                borderRadius: '5px',
-                border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
-                backgroundColor: 'transparent',
-                color: totalCondoImagesCount >= 10 ? (isDark ? '#484F58' : '#94A3B8') : (isDark ? '#8B949E' : '#64748B'),
-                fontSize: '0.65625rem',
-                fontWeight: 500,
+                height: '32px',
+                borderRadius: '6px',
+                border: isDark ? '1px dashed #388BFD' : '1px dashed #3B82F6',
+                backgroundColor: isDark ? 'rgba(56, 139, 253, 0.04)' : 'rgba(59, 130, 246, 0.04)',
+                color: totalCondoImagesCount >= 10
+                  ? (isDark ? '#484F58' : '#94A3B8')
+                  : (isDark ? '#58A6FF' : '#2563EB'),
+                fontSize: '0.6875rem',
+                fontWeight: 600,
                 cursor: totalCondoImagesCount >= 10 ? 'not-allowed' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '6px',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                if (totalCondoImagesCount < 10) {
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(56, 139, 253, 0.12)' : 'rgba(59, 130, 246, 0.1)';
+                  e.currentTarget.style.borderColor = isDark ? '#58A6FF' : '#1D4ED8';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (totalCondoImagesCount < 10) {
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(56, 139, 253, 0.04)' : 'rgba(59, 130, 246, 0.04)';
+                  e.currentTarget.style.borderColor = isDark ? '#388BFD' : '#3B82F6';
+                }
               }}
             >
-              <FiPlus size={11} />
+              <FiPlus size={13} />
               <span>Add Group ({steps.length + 1})</span>
             </button>
           )}
