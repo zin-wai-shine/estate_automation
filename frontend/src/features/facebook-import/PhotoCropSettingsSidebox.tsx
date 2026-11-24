@@ -34,6 +34,7 @@ export interface PhotoCropSettingsSideboxProps {
   watermarkedPhotos?: Record<number, string>;
   listingCode?: string;
   heroImage?: { url: string; fileName?: string; condoName?: string } | null;
+  embedded?: boolean;
 }
 
 export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> = ({
@@ -49,6 +50,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
   watermarkedPhotos = {},
   listingCode: _listingCode,
   heroImage,
+  embedded = false,
 }) => {
   const listingCode = _listingCode || (() => {
     try {
@@ -770,10 +772,19 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
 
   return (
     <div
-      className="workflow-sidebar"
+      className={embedded ? undefined : 'workflow-sidebar'}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
-      style={{
+      style={embedded ? {
+        width: '100%',
+        height: '100%',
+        backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+      } : {
         position: 'fixed',
         top: 0,
         bottom: 0,

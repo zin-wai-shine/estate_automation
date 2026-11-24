@@ -13491,6 +13491,264 @@ export const FacebookWorkflowCanvas = forwardRef<
             } catch { }
           };
 
+          const isSideboxActive = Boolean(
+            showFBHeroSettingsSidebox ||
+            (showGoogleSheetSettingsSidebox && !viewingPromptTemplate) ||
+            viewingPromptTemplate ||
+            showCombineMediaSidebox
+          );
+
+          // Compute browser / hero context for sidebar & settings
+          const isTikTokTitle = Boolean(currentModalAIBox?.title?.toLowerCase().includes('tiktok'));
+          const isHeroTitle = Boolean(
+            (currentModalAIBox?.title?.toLowerCase().includes('hero') || currentModalAIBox?.title?.toLowerCase().includes('fb')) &&
+            !currentModalAIBox?.title?.toLowerCase().includes('enhance')
+          );
+          const isEnhanceTitle = Boolean(currentModalAIBox?.title?.toLowerCase().includes('enhance'));
+          const isTabGroupNode = isChromeTabGroupAIBox(currentModalAIBox || undefined);
+          const isProfileNode = currentModalAIBox?.processType === 'chrome_profile' || Boolean(currentModalAIBox?.id?.includes('ai-box-chrome-'));
+
+          const candidateAbove = currentModalAIBox ? (
+            config.aiBoxes
+              .filter(
+                (b) =>
+                  b.id !== currentModalAIBox.id &&
+                  b.processType !== 'chrome_profile' &&
+                  !isExternalBrowserAIBox(b) &&
+                  !isChromeTabGroupAIBox(b) &&
+                  b.y < currentModalAIBox.y
+              )
+              .sort((a, b) => b.y - a.y)[0] ||
+            config.aiBoxes
+              .filter((b) => b.id !== currentModalAIBox.id && b.y < currentModalAIBox.y)
+              .sort((a, b) => b.y - a.y)[0]
+          ) : null;
+
+          const connectedProfileBox = currentModalAIBox ? config.aiBoxes.find(
+            (b) =>
+              b.processType === 'chrome_profile' &&
+              (config.connections?.some(
+                (c) =>
+                  (c.fromNodeId === currentModalAIBox.id && c.toNodeId === b.id) ||
+                  (c.fromNodeId === b.id && c.toNodeId === currentModalAIBox.id)
+              ) ||
+                (isTabGroupNode && b.browserProfileId && b.browserProfileId === currentModalAIBox.browserProfileId))
+          ) : null;
+
+          const connectedTabGroupNodes = currentModalAIBox ? config.aiBoxes
+            .filter(
+              (b) =>
+                isChromeTabGroupAIBox(b) &&
+                (config.connections?.some((c) => c.fromNodeId === currentModalAIBox.id && c.toNodeId === b.id) ||
+                  (b.browserProfileId && b.browserProfileId === currentModalAIBox.browserProfileId))
+            )
+            .map((b) => ({
+              id: b.id,
+              title: b.title || 'Tab Group',
+              subtitle: b.subtitle || 'Tab Group',
+              browserGroupName: b.browserGroupName || b.title,
+            })) : [];
+
+          const resolvedGroupName = currentModalAIBox ? (
+            isEnhanceTitle
+              ? 'Enhance IMG'
+              : isTikTokTitle
+                ? (currentModalAIBox.title && currentModalAIBox.title !== 'Tab Group' ? currentModalAIBox.title : (currentModalAIBox.browserGroupName || 'TikTok Hero'))
+                : isHeroTitle
+                  ? (currentModalAIBox.title && currentModalAIBox.title !== 'Tab Group' ? currentModalAIBox.title : (currentModalAIBox.browserGroupName || 'FB Hero'))
+                  : (isTabGroupNode
+                    ? (currentModalAIBox.title && currentModalAIBox.title !== 'Tab Group' ? currentModalAIBox.title : (currentModalAIBox.browserGroupName || currentModalAIBox.title || 'Tab Group'))
+                    : (currentModalAIBox.browserGroupName || ''))
+          ) : '';
+
+          const isExplicitlyNoRef = currentModalAIBox?.referenceImage === '' || isReferenceImageExplicitlyDeleted();
+          const effectiveBoxConfig = currentModalAIBox ? {
+            ...currentModalAIBox,
+            referenceImage: isExplicitlyNoRef
+              ? ''
+              : (currentModalAIBox.referenceImage ||
+                (isHeroTitle ? getPersistedReferenceImage(currentModalAIBox.id) : '')),
+            tabGroupMode: isEnhanceTitle ? 'enhance' : isHeroTitle ? 'generate' : currentModalAIBox.tabGroupMode,
+            processKind: isEnhanceTitle ? 'enhance_images' : isHeroTitle ? 'generate_image' : currentModalAIBox.processKind,
+            browserProfileId: currentModalAIBox.browserProfileId || connectedProfileBox?.browserProfileId,
+            browserProfileKey: currentModalAIBox.browserProfileKey || connectedProfileBox?.browserProfileKey,
+            browserProfileName: currentModalAIBox.browserProfileName || connectedProfileBox?.browserProfileName,
+            browserGroupName: resolvedGroupName || currentModalAIBox.browserGroupName,
+          } : ({} as any);
+
+          const connectedIncomingCombineBoxes = (config.combineBoxes || []).filter((cb) =>
+            currentModalAIBox && (config.connections || []).some((c) => c.fromNodeId === cb.id && c.toNodeId === currentModalAIBox.id)
+          );
+          const hasIncomingCombine = connectedIncomingCombineBoxes.length > 0;
+          const primaryIncomingCombine = connectedIncomingCombineBoxes[0];
+
+          let cbMergedText = '';
+          if (hasIncomingCombine) {
+            const cbInputs = (config.connections || []).filter((c) => c.toNodeId === primaryIncomingCombine.id);
+            for (const c of cbInputs) {
+              if (aiGeneratedOutputs && aiGeneratedOutputs[c.fromNodeId]) {
+                cbMergedText = aiGeneratedOutputs[c.fromNodeId];
+                break;
+              }
+            }
+            if (!cbMergedText) {
+              if (cbInputs.some((c) => c.fromNodeId === 'get-content')) {
+                cbMergedText = effectiveRawContent || '';
+              } else {
+                cbMergedText = aiGeneratedCopy || effectiveRawContent || '';
+              }
+            }
+          }
+
+          const aboveBoxTitle = hasIncomingCombine
+            ? (primaryIncomingCombine.title || 'Combine Box')
+            : (candidateAbove ? candidateAbove.title : 'Format: Enhance Image');
+
+          const condoAiBox = currentModalAIBox ? (
+            (currentModalAIBox.condoNameAiBoxId &&
+              config.aiBoxes.find((b) => b.id === currentModalAIBox.condoNameAiBoxId)) ||
+            config.aiBoxes.find(
+              (b) =>
+                !isChromeProfileAIBox(b) &&
+                !isChromeTabGroupAIBox(b) &&
+                !isExternalBrowserAIBox(b) &&
+                (b.title?.toLowerCase().includes('condo') || b.title?.toLowerCase().includes('name'))
+            )
+          ) : null;
+
+          const aiCondoOutput =
+            condoAiBox && aiGeneratedOutputs && aiGeneratedOutputs[condoAiBox.id]
+              ? extractCleanCondoNameFromAiText(aiGeneratedOutputs[condoAiBox.id])
+              : '';
+          const condoFromCombine = cbMergedText ? extractCleanCondoNameFromAiText(cbMergedText) : '';
+          const hasActiveExtractedPost = Boolean(effectiveRawContent || (images && images.length > 0) || (_projectName && _projectName !== 'Facebook Property Post'));
+          const condoFromProject = (_projectName && _projectName !== 'Facebook Property Post' && _projectName !== 'Featured Property Listing') ? _projectName : '';
+          const condoName =
+            condoFromCombine ||
+            aiCondoOutput ||
+            condoFromProject ||
+            (hasActiveExtractedPost && currentModalAIBox?.browserCondoName ? currentModalAIBox.browserCondoName : '');
+
+          const directIncomingConnIds = new Set(
+            (config.connections || [])
+              .filter((c) => currentModalAIBox && c.toNodeId === currentModalAIBox.id)
+              .map((c) => c.fromNodeId)
+          );
+
+          const upstreamPrompts = currentModalAIBox ? config.aiBoxes
+            .filter(
+              (b) =>
+                b.id !== currentModalAIBox.id &&
+                !isChromeProfileAIBox(b) &&
+                !isChromeTabGroupAIBox(b) &&
+                !isExternalBrowserAIBox(b) &&
+                (b.processType === 'text_ai' || isTextAIBox(b, config.connections) || b.title?.toLowerCase().includes('prompt') || b.title?.toLowerCase().includes('condo') || b.templateId || b.templateText)
+            )
+            .map((b) => ({
+              id: b.id,
+              title: b.title || 'FB Hero Prompt',
+              text:
+                (aiGeneratedOutputs && aiGeneratedOutputs[b.id]) ||
+                b.templateText ||
+                b.customPrompt ||
+                (b.title?.toLowerCase().includes('hero')
+                  ? 'Generate a hero real estate listing image based on condo unit context and reference styling. Maintain realistic architectural aesthetics, high dynamic range, and authentic materials.'
+                  : ''),
+              generatedOutput: (aiGeneratedOutputs && aiGeneratedOutputs[b.id]) || '',
+              templateId: b.templateId,
+              isDirectConnected: directIncomingConnIds.has(b.id),
+            }))
+            .sort((a, b) => {
+              const aDirect = a.isDirectConnected ? 1 : 0;
+              const bDirect = b.isDirectConnected ? 1 : 0;
+              return bDirect - aDirect;
+            }) : [];
+
+          const combinePromptItems = connectedIncomingCombineBoxes.map((cb) => {
+            const inputs = (config.connections || []).filter((c) => c.toNodeId === cb.id);
+            let text = '';
+            for (const c of inputs) {
+              if (aiGeneratedOutputs && aiGeneratedOutputs[c.fromNodeId]) {
+                text = aiGeneratedOutputs[c.fromNodeId];
+                break;
+              }
+            }
+            if (!text) {
+              if (inputs.some((c) => c.fromNodeId === 'get-content')) {
+                text = effectiveRawContent || '';
+              } else {
+                text = aiGeneratedCopy || effectiveRawContent || '';
+              }
+            }
+            return {
+              id: cb.id,
+              title: `${cb.title || 'Combine Box'} (Merged Output)`,
+              text: text,
+              generatedOutput: text,
+              templateId: cb.id,
+            };
+          });
+
+          const effectiveUpstreamPrompts = [
+            ...combinePromptItems,
+            ...(upstreamPrompts.length > 0 ? upstreamPrompts : []),
+          ];
+
+          if (effectiveUpstreamPrompts.length === 0) {
+            effectiveUpstreamPrompts.push({
+              id: 'ai-box-fb-hero-prompt-default',
+              title: 'FB Hero Prompt',
+              text: 'Generate a hero real estate listing image based on condo unit context and reference styling. Maintain realistic architectural aesthetics, high dynamic range, and authentic materials.',
+              generatedOutput: '',
+              templateId: '4',
+            });
+          }
+
+          const upstreamTabGroups = config.aiBoxes
+            .filter((b) => currentModalAIBox && isChromeTabGroupAIBox(b) && b.id !== currentModalAIBox.id)
+            .map((b) => ({
+              id: b.id,
+              title: b.title || 'Tab Group',
+              browserGroupName: b.browserGroupName || b.title,
+            }));
+
+          let effectiveBrowserImages: Array<{ url: string; index: number; filename?: string }> = [];
+          if (hasIncomingCombine && combineCropSlices.length > 0) {
+            effectiveBrowserImages = combineCropSlices.map((slice, idx) => ({
+              url: slice.url,
+              index: slice.tileIndex || idx + 1,
+              filename: `Crop Tile #${slice.tileIndex || idx + 1} (${slice.label || '1:1'})`,
+            }));
+          } else if (hasIncomingCombine) {
+            effectiveBrowserImages = (effectiveImages || []).map((img, i) => {
+              const url =
+                watermarkedPhotos?.[img.index] ||
+                enhancedPhotos?.[img.index] ||
+                img.stored_url ||
+                img.source_url ||
+                (img as any).preview ||
+                (img as any).url ||
+                '';
+              return {
+                url: typeof img === 'string' ? img : url,
+                index: typeof img === 'object' && img.index ? img.index : i + 1,
+                filename: typeof img === 'object' && (img as any).filename ? (img as any).filename : `Photo #${i + 1}`,
+              };
+            });
+          } else {
+            effectiveBrowserImages = (effectiveImages || []).map((img, i) => ({
+              url: typeof img === 'string' ? img : img.stored_url || img.source_url || (img as any).preview || (img as any).url || '',
+              index: typeof img === 'object' && img.index ? img.index : i + 1,
+              filename: typeof img === 'object' && (img as any).filename ? (img as any).filename : `Photo #${i + 1}`,
+            }));
+          }
+
+          const formattedEnhancedImages = Object.entries(allEnhancedPhotos || {}).map(([k, url], i) => ({
+            url: String(url),
+            index: Number(k) + 1 || i + 1,
+            filename: `Enhanced Photo #${Number(k) + 1 || i + 1}`,
+          }));
+
           return (
             <aside
               className="workflow-sidebar"
@@ -13501,33 +13759,481 @@ export const FacebookWorkflowCanvas = forwardRef<
                 top: 0,
                 right: 0,
                 bottom: 0,
-                width: '380px',
-                maxWidth: '100%',
+                width: isSideboxActive ? 'clamp(760px, 50vw, calc(100vw - 24px))' : '380px',
+                maxWidth: 'calc(100vw - 24px)',
                 backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 borderLeft: '1px solid var(--border-color)',
-                boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showCombineMediaSidebox || showGoogleSheetDataViewer)
-                  ? 'none'
-                  : isDark
-                    ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
-                    : '-3px 0 16px rgba(0, 0, 0, 0.06)',
-                transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
+                boxShadow: isDark
+                  ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                  : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                transition: 'width 0.32s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s ease',
                 zIndex: 170,
                 display: 'flex',
-                flexDirection: 'column',
+                flexDirection: 'row',
+                overflow: 'hidden',
                 animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
               }}
             >
-              {/* Header */}
+              {/* ── LEFT EXPANDED PANE (Settings / Details / Prompt Template) ── */}
+              {isSideboxActive && (
+                <div
+                  style={{
+                    flex: '1 1 50%',
+                    minWidth: '380px',
+                    height: '100%',
+                    borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+                    backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    animation: 'sidebarFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+                  }}
+                >
+                  {/* 1. FB Hero / Enhance IMG Settings */}
+                  {showFBHeroSettingsSidebox && currentModalAIBox && (
+                    <FBHeroSettingsSidebox
+                      embedded
+                      key={currentModalAIBox.id}
+                      isOpen={showFBHeroSettingsSidebox}
+                      onClose={() => setShowFBHeroSettingsSidebox(false)}
+                      isDark={isDark}
+                      boxConfig={effectiveBoxConfig}
+                      onUpdateBoxConfig={(updated) => {
+                        const { enabled: _ignoreEnabled, ...rest } = (updated || {}) as any;
+                        handleUpdateAIBox(currentModalAIBox.id, rest);
+                      }}
+                      availablePrompts={availablePrompts as any}
+                      propertyContext={{
+                        id: executionState?.propertyId || '',
+                        listingCode: executionState?.listingCode || previewSampleCode,
+                        title: condoName,
+                        aboveBoxTitle: aboveBoxTitle,
+                        upstreamPrompts: effectiveUpstreamPrompts,
+                        upstreamTabGroups,
+                        images: effectiveBrowserImages,
+                        enhancedImages: formattedEnhancedImages,
+                      }}
+                      workflowImageSources={computedWorkflowImageNodes}
+                    />
+                  )}
+
+                  {/* 2. Google Sheet Settings */}
+                  {!showFBHeroSettingsSidebox && showGoogleSheetSettingsSidebox && !viewingPromptTemplate && currentModalAIBox && isGoogleSheetBox(currentModalAIBox) && (
+                    <GoogleSheetSettingsSidebox
+                      embedded
+                      key={currentModalAIBox.id}
+                      isOpen={showGoogleSheetSettingsSidebox && !viewingPromptTemplate}
+                      onClose={() => setShowGoogleSheetSettingsSidebox(false)}
+                      isDark={isDark}
+                      boxConfig={currentModalAIBox}
+                      onUpdateBoxConfig={(updated) => handleUpdateAIBox(currentModalAIBox.id, updated)}
+                      onLoadHeaders={() => handleLoadGoogleSheetHeaders(currentModalAIBox)}
+                      loadingHeaders={loadingSheetHeaders}
+                      onUrlChange={(newUrl, delay) => handleSheetUrlChange(currentModalAIBox, newUrl, delay)}
+                    />
+                  )}
+
+                  {/* 3. Combine Media Merged Assets */}
+                  {!showFBHeroSettingsSidebox && !showGoogleSheetSettingsSidebox && showCombineMediaSidebox && activeModalNode && activeModalNode.type === 'combine' && (
+                    <CombineMediaSidebox
+                      embedded
+                      isOpen={showCombineMediaSidebox}
+                      onClose={() => setShowCombineMediaSidebox(false)}
+                      isDark={isDark}
+                      combineMediaAssets={combineMediaAssets}
+                      connectedImageNodes={connectedImageNodesForCombine}
+                      activeFilter={combineMediaSideboxFormatFilter}
+                      onFilterChange={setCombineMediaSideboxFormatFilter}
+                      onOpenLightbox={(url, index, customAssets) => {
+                        const assetsToUse = customAssets || (combineMediaSideboxFormatFilter === 'all'
+                          ? combineMediaAssets
+                          : combineMediaAssets.filter((a) => a.formatId === combineMediaSideboxFormatFilter));
+                        const customList = assetsToUse.map((a) => ({
+                          finalUrl: a.url,
+                          isWatermarked: true,
+                          isEnhanced: a.isEnhanced,
+                          label: a.label,
+                        }));
+                        const targetIdx = typeof index === 'number'
+                          ? index
+                          : customList.findIndex((item) => item.finalUrl === url);
+                        handleOpenLightbox(targetIdx >= 0 ? targetIdx : 0, 'custom', customList);
+                      }}
+                      onDownloadImage={handleDownloadImage}
+                      onDownloadAllImages={handleDownloadAllCombineAssets}
+                    />
+                  )}
+
+                  {/* 4. Prompt Template Viewer & Editor */}
+                  {viewingPromptTemplate && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        height: '100%',
+                        width: '100%',
+                        backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                        position: 'relative',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {/* Top Header */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '0.875rem 1.125rem',
+                          borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                          backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                          <div
+                            style={{
+                              width: '30px',
+                              height: '30px',
+                              borderRadius: '8px',
+                              backgroundColor: viewingPromptTemplate.isEditable
+                                ? 'rgba(139, 92, 246, 0.12)'
+                                : 'rgba(59, 130, 246, 0.12)',
+                              color: viewingPromptTemplate.isEditable ? '#8B5CF6' : '#3B82F6',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            {viewingPromptTemplate.isEditable ? <FiEdit2 size={15} /> : <FiFileText size={15} />}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                              {viewingPromptTemplate.headerTitle || (viewingPromptTemplate.isEditable ? 'Custom Prompt Editor' : 'Prompt Template Viewer')}
+                            </div>
+                            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                              {viewingPromptTemplate.isEditable ? 'Manual Input · Live Auto-Save' : viewingPromptTemplate.name}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexShrink: 0 }}>
+                          {isViewingOutput && onRegenerateBoxOutput && viewingPromptTemplate.id && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (isRegeneratingAI) return;
+                                setIsRegeneratingAI(true);
+                                setRegeneratingBoxId(viewingPromptTemplate.id);
+                                try {
+                                  const fresh = await onRegenerateBoxOutput(viewingPromptTemplate.id);
+                                  if (fresh && typeof fresh === 'string') {
+                                    setViewingPromptTemplate((prev) => (prev ? { ...prev, templateText: fresh } : null));
+                                  }
+                                } finally {
+                                  setIsRegeneratingAI(false);
+                                  setRegeneratingBoxId(null);
+                                }
+                              }}
+                              disabled={isRegeneratingAI}
+                              title="Regenerate content with AI"
+                              style={{
+                                height: '28px',
+                                padding: '0 0.625rem',
+                                borderRadius: '6px',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                                color: 'var(--text-primary)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '0.75rem',
+                                fontWeight: 500,
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0,
+                                cursor: isRegeneratingAI ? 'not-allowed' : 'pointer',
+                                opacity: isRegeneratingAI ? 0.7 : 1,
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              <FiRefreshCw
+                                size={12}
+                                style={{
+                                  animation:
+                                    isRegeneratingAI && regeneratingBoxId === viewingPromptTemplate.id
+                                      ? 'spin 1s linear infinite'
+                                      : 'none',
+                                }}
+                              />
+                              <span style={{ whiteSpace: 'nowrap' }}>
+                                {isRegeneratingAI && regeneratingBoxId === viewingPromptTemplate.id
+                                  ? 'Generating...'
+                                  : 'Regenerate'}
+                              </span>
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const textToCopy = activeDisplayText || viewingPromptTemplate.templateText || '';
+                              if (textToCopy) {
+                                navigator.clipboard.writeText(textToCopy);
+                                setIsViewerPromptCopied(true);
+                                setTimeout(() => setIsViewerPromptCopied(false), 2000);
+                              }
+                            }}
+                            title="Copy prompt to clipboard"
+                            style={{
+                              height: '28px',
+                              padding: '0 0.625rem',
+                              borderRadius: '6px',
+                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                              color: isViewerPromptCopied ? '#10B981' : 'var(--text-primary)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '0.75rem',
+                              fontWeight: 500,
+                              whiteSpace: 'nowrap',
+                              flexShrink: 0,
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            {isViewerPromptCopied ? <FiCheck size={12} /> : <FiCopy size={12} />}
+                            <span>{isViewerPromptCopied ? 'Copied' : 'Copy'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setViewingPromptTemplate(null)}
+                            title="Close (Esc)"
+                            style={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '6px',
+                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                              color: 'var(--text-secondary)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiX size={14} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Content Body */}
+                      {viewingPromptTemplate.isEditable ? (
+                        <div
+                          style={{
+                            flex: 1,
+                            overflowY: 'auto',
+                            padding: '1.25rem 1.375rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.75rem',
+                          }}
+                        >
+                          <textarea
+                            value={viewingPromptTemplate.templateText || ''}
+                            onChange={(e) => {
+                              const newText = e.target.value;
+                              setViewingPromptTemplate((prev) => (prev ? { ...prev, templateText: newText } : null));
+                              if (viewingPromptTemplate.boxId) {
+                                handleUpdateAIBox(viewingPromptTemplate.boxId, {
+                                  customPrompt: newText,
+                                  templateText: newText,
+                                });
+                              }
+                            }}
+                            placeholder="Type or paste custom prompt instructions here..."
+                            rows={16}
+                            style={{
+                              width: '100%',
+                              flex: 1,
+                              minHeight: '260px',
+                              padding: '0.875rem 1rem',
+                              borderRadius: '8px',
+                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              backgroundColor: isDark ? 'var(--bg-card)' : '#FFFFFF',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.8125rem',
+                              fontFamily: 'monospace',
+                              lineHeight: 1.6,
+                              resize: 'none',
+                              outline: 'none',
+                              boxSizing: 'border-box',
+                            }}
+                          />
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              paddingTop: '0.5rem',
+                              borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                              fontSize: '0.6875rem',
+                              color: 'var(--text-muted)',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span>{(viewingPromptTemplate.templateText || '').length} characters</span>
+                              <span>•</span>
+                              <span>
+                                {(viewingPromptTemplate.templateText || '').trim()
+                                  ? (viewingPromptTemplate.templateText || '').trim().split(/\s+/).length
+                                  : 0}{' '}
+                                words
+                              </span>
+                            </div>
+                            {(viewingPromptTemplate.templateText || '').length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setViewingPromptTemplate((prev) => (prev ? { ...prev, templateText: '' } : null));
+                                  if (viewingPromptTemplate.boxId) {
+                                    handleUpdateAIBox(viewingPromptTemplate.boxId, {
+                                      customPrompt: '',
+                                      templateText: '',
+                                    });
+                                  }
+                                }}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: isDark ? '#FCA5A5' : '#DC2626',
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 500,
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                }}
+                              >
+                                Clear Prompt
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div
+                            style={{
+                              flex: 1,
+                              overflowY: 'auto',
+                              padding: '1.25rem 1.375rem 2rem 1.375rem',
+                              fontFamily:
+                                '"Helvetica Neue", Helvetica, Arial, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                              fontSize: '0.84375rem',
+                              fontWeight: 400,
+                              lineHeight: '1.7',
+                              letterSpacing: '-0.005em',
+                              color: isDark ? '#E2E8F0' : '#1E293B',
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                              position: 'relative',
+                            }}
+                          >
+                            {isRegeneratingCurrentView && (
+                              <div
+                                style={{
+                                  position: 'sticky',
+                                  top: 0,
+                                  marginBottom: '1rem',
+                                  padding: '0.625rem 0.875rem',
+                                  borderRadius: '6px',
+                                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF',
+                                  border: '1px solid rgba(59, 130, 246, 0.35)',
+                                  color: '#3B82F6',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  zIndex: 5,
+                                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)',
+                                }}
+                              >
+                                <FiRefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                                <span>Regenerating fresh content with AI...</span>
+                              </div>
+                            )}
+                            {activeDisplayText || (isRegeneratingCurrentView ? 'Generating content with AI...' : 'No content available.')}
+                            <div style={{ height: '1.5rem' }} />
+                          </div>
+
+                          <div
+                            style={{
+                              padding: '0.75rem 1.125rem',
+                              borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                              backgroundColor: isDark ? 'var(--bg-main)' : '#F8FAFC',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              fontSize: '0.75rem',
+                              color: 'var(--text-muted)',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span>{activeDisplayText ? `${activeDisplayText.length} characters` : '0 characters'}</span>
+                              <span>•</span>
+                              <span>
+                                {activeDisplayText
+                                  ? `${activeDisplayText.trim().split(/\s+/).filter(Boolean).length} words`
+                                  : '0 words'}
+                              </span>
+                            </div>
+                            {isViewingOutput && (
+                              <span
+                                style={{
+                                  fontSize: '0.6875rem',
+                                  color: '#10B981',
+                                  fontWeight: 600,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                              >
+                                ● Live Output Synced
+                              </span>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── RIGHT MAIN INSPECTOR PANE ── */}
               <div
                 style={{
+                  flex: isSideboxActive ? '1 1 50%' : '1 1 100%',
+                  width: isSideboxActive ? '50%' : '100%',
+                  minWidth: isSideboxActive ? '360px' : '380px',
+                  height: '100%',
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '1rem',
-                  padding: '0.875rem 1rem',
-                  height: '62px',
-                  boxSizing: 'border-box',
-                  borderBottom: 'none',
+                  flexDirection: 'column',
+                  position: 'relative',
+                  backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                  overflow: 'hidden',
+                }}
+              >
+                {/* Header */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '1rem',
+                    padding: '0.875rem 1rem',
+                    height: '62px',
+                    boxSizing: 'border-box',
+                    borderBottom: 'none',
                   backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
                 }}
               >
@@ -18286,8 +18992,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         }));
 
                         return (
-                          <>
-                            <ExternalBrowserSidebar
+                          <ExternalBrowserSidebar
                               key={currentModalAIBox.id}
                               isDark={isDark}
                               boxConfig={effectiveBoxConfig}
@@ -18332,30 +19037,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                               onEnhancedPhotosUpdate={(photos) => setCompanionEnhancedMap((prev) => ({ ...prev, ...photos }))}
                               workflowImageSources={computedWorkflowImageNodes}
                             />
-                            <FBHeroSettingsSidebox
-                              key={currentModalAIBox.id}
-                              isOpen={showFBHeroSettingsSidebox}
-                              onClose={() => setShowFBHeroSettingsSidebox(false)}
-                              isDark={isDark}
-                              boxConfig={effectiveBoxConfig}
-                              onUpdateBoxConfig={(updated) => {
-                                const { enabled: _ignoreEnabled, ...rest } = (updated || {}) as any;
-                                handleUpdateAIBox(currentModalAIBox.id, rest);
-                              }}
-                              availablePrompts={availablePrompts as any}
-                              propertyContext={{
-                                id: executionState?.propertyId || '',
-                                listingCode: executionState?.listingCode || previewSampleCode,
-                                title: condoName,
-                                aboveBoxTitle: aboveBoxTitle,
-                                upstreamPrompts: effectiveUpstreamPrompts,
-                                upstreamTabGroups,
-                                images: effectiveBrowserImages,
-                                enhancedImages: formattedEnhancedImages,
-                              }}
-                              workflowImageSources={computedWorkflowImageNodes}
-                            />
-                          </>
                         );
                       })()
                     ) : isTextFormatAIBox(currentModalAIBox) ? (
@@ -19159,24 +19840,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                   </div>
                 )}
               </div>
-            </aside>
-          );
-        })()}
-
-      {/* ── GOOGLE SHEET SETTINGS SLIDE-OVER (SLIDES OUT UNDER 380px SIDEBAR) ── */}
-      {currentModalAIBox && isGoogleSheetBox(currentModalAIBox) && (
-        <GoogleSheetSettingsSidebox
-          key={currentModalAIBox.id}
-          isOpen={showGoogleSheetSettingsSidebox && !viewingPromptTemplate}
-          onClose={() => setShowGoogleSheetSettingsSidebox(false)}
-          isDark={isDark}
-          boxConfig={currentModalAIBox}
-          onUpdateBoxConfig={(updated) => handleUpdateAIBox(currentModalAIBox.id, updated)}
-          onLoadHeaders={() => handleLoadGoogleSheetHeaders(currentModalAIBox)}
-          loadingHeaders={loadingSheetHeaders}
-          onUrlChange={(newUrl, delay) => handleSheetUrlChange(currentModalAIBox, newUrl, delay)}
-        />
-      )}
+            </div>
+          </aside>
+        );
+      })()}
 
       {/* ── GOOGLE SHEET FULL DATA TABLE VIEWER (SLIDES OUT AT LEFT OF 380px SIDEBAR) ── */}
       {showGoogleSheetDataViewer && (
@@ -19187,407 +19854,6 @@ export const FacebookWorkflowCanvas = forwardRef<
           boxConfig={sheetViewerBoxConfig || currentModalAIBox || config.aiBoxes.find(isGoogleSheetBox) || ({} as any)}
           isSidebarOpen={Boolean(activeModalNode)}
         />
-      )}
-
-      {/* ── COMBINE BOX MERGED MEDIA ASSETS EXTRA SIDEBOX (SLIDES OUT NEXT TO 380px SIDEBAR) ── */}
-      {activeModalNode && activeModalNode.type === 'combine' && (
-        <CombineMediaSidebox
-          isOpen={showCombineMediaSidebox}
-          onClose={() => setShowCombineMediaSidebox(false)}
-          isDark={isDark}
-          combineMediaAssets={combineMediaAssets}
-          connectedImageNodes={connectedImageNodesForCombine}
-          activeFilter={combineMediaSideboxFormatFilter}
-          onFilterChange={setCombineMediaSideboxFormatFilter}
-          onOpenLightbox={(url, index, customAssets) => {
-            const assetsToUse = customAssets || (combineMediaSideboxFormatFilter === 'all'
-              ? combineMediaAssets
-              : combineMediaAssets.filter((a) => a.formatId === combineMediaSideboxFormatFilter));
-            const customList = assetsToUse.map((a) => ({
-              finalUrl: a.url,
-              isWatermarked: true,
-              isEnhanced: a.isEnhanced,
-              label: a.label,
-            }));
-            const targetIdx = typeof index === 'number'
-              ? index
-              : customList.findIndex((item) => item.finalUrl === url);
-            handleOpenLightbox(targetIdx >= 0 ? targetIdx : 0, 'custom', customList);
-          }}
-          onDownloadImage={handleDownloadImage}
-          onDownloadAllImages={handleDownloadAllCombineAssets}
-        />
-      )}
-
-      {/* ── PROMPT TEMPLATE VIEWER & EDITOR SLIDE-OVER (SLIDES OUT NEXT TO 380px SIDEBAR) ── */}
-      {viewingPromptTemplate && (
-        <div
-          className="workflow-sidebar"
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            position: 'fixed',
-            top: 0,
-            bottom: 0,
-            right: '380px', // sits smoothly right alongside the main sidebar inspector
-            width: '440px',
-            maxWidth: 'calc(100vw - 420px)',
-            backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-            borderLeft: '1px solid var(--border-color)',
-            borderRight: 'none',
-            boxShadow: isDark
-              ? '-16px 0 20px -6px rgba(0, 0, 0, 0.75)'
-              : '-8px 0 16px -4px rgba(0, 0, 0, 0.08)',
-            zIndex: 165,
-            display: 'flex',
-            flexDirection: 'column',
-            animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
-        >
-          {/* Top Header */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '0.875rem 1.125rem',
-              borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-              backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-              <div
-                style={{
-                  width: '30px',
-                  height: '30px',
-                  borderRadius: '8px',
-                  backgroundColor: viewingPromptTemplate.isEditable
-                    ? 'rgba(139, 92, 246, 0.12)'
-                    : 'rgba(59, 130, 246, 0.12)',
-                  color: viewingPromptTemplate.isEditable ? '#8B5CF6' : '#3B82F6',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                {viewingPromptTemplate.isEditable ? <FiEdit2 size={15} /> : <FiFileText size={15} />}
-              </div>
-              <div>
-                <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
-                  {viewingPromptTemplate.headerTitle || (viewingPromptTemplate.isEditable ? 'Custom Prompt Editor' : 'Prompt Template Viewer')}
-                </div>
-                <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {viewingPromptTemplate.isEditable ? 'Manual Input · Live Auto-Save' : viewingPromptTemplate.name}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexShrink: 0 }}>
-              {/* Direct Re-generate button inside viewer when viewing generated output */}
-              {isViewingOutput && onRegenerateBoxOutput && viewingPromptTemplate.id && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (isRegeneratingAI) return;
-                    setIsRegeneratingAI(true);
-                    setRegeneratingBoxId(viewingPromptTemplate.id);
-                    try {
-                      const fresh = await onRegenerateBoxOutput(viewingPromptTemplate.id);
-                      if (fresh && typeof fresh === 'string') {
-                        setViewingPromptTemplate((prev) => (prev ? { ...prev, templateText: fresh } : null));
-                      }
-                    } finally {
-                      setIsRegeneratingAI(false);
-                      setRegeneratingBoxId(null);
-                    }
-                  }}
-                  disabled={isRegeneratingAI}
-                  title="Regenerate content with AI"
-                  style={{
-                    height: '28px',
-                    padding: '0 0.625rem',
-                    borderRadius: '6px',
-                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-                    color: 'var(--text-primary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    fontSize: '0.75rem',
-                    fontWeight: 500,
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                    cursor: isRegeneratingAI ? 'not-allowed' : 'pointer',
-                    opacity: isRegeneratingAI ? 0.7 : 1,
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  <FiRefreshCw
-                    size={12}
-                    style={{
-                      animation:
-                        isRegeneratingAI && regeneratingBoxId === viewingPromptTemplate.id
-                          ? 'spin 1s linear infinite'
-                          : 'none',
-                    }}
-                  />
-                  <span style={{ whiteSpace: 'nowrap' }}>
-                    {isRegeneratingAI && regeneratingBoxId === viewingPromptTemplate.id
-                      ? 'Generating...'
-                      : 'Regenerate'}
-                  </span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => {
-                  const textToCopy = activeDisplayText || viewingPromptTemplate.templateText || '';
-                  if (textToCopy) {
-                    navigator.clipboard.writeText(textToCopy);
-                    setIsViewerPromptCopied(true);
-                    setTimeout(() => setIsViewerPromptCopied(false), 2000);
-                  }
-                }}
-                title={isViewerPromptCopied ? 'Copied!' : (viewingPromptTemplate.copyButtonLabel || 'Copy Prompt')}
-                style={{
-                  height: '28px',
-                  padding: '0 0.625rem',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
-                  color: isViewerPromptCopied ? '#10B981' : 'var(--text-secondary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontSize: '0.75rem',
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                {isViewerPromptCopied ? <FiCheck size={13} /> : <FiCopy size={13} />}
-                <span style={{ whiteSpace: 'nowrap' }}>{isViewerPromptCopied ? 'Copied' : 'Copy'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setViewingPromptTemplate(null)}
-                title="Close"
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
-                  color: 'var(--text-secondary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                  cursor: 'pointer',
-                }}
-              >
-                <FiX size={15} />
-              </button>
-            </div>
-          </div>
-
-          {/* Body: Prompt Editor or Read-Only Viewer */}
-          {viewingPromptTemplate.isEditable ? (
-            <div
-              style={{
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                padding: '1rem 1.125rem',
-                gap: '0.75rem',
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  fontSize: '0.6875rem',
-                  color: 'var(--text-muted)',
-                }}
-              >
-                <span>Write prompt instructions for AI execution:</span>
-                <span style={{ color: '#10B981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  ● Saved to Node
-                </span>
-              </div>
-
-              <textarea
-                value={viewingPromptTemplate.templateText || ''}
-                onChange={(e) => {
-                  const newText = e.target.value;
-                  setViewingPromptTemplate((prev) => (prev ? { ...prev, templateText: newText } : null));
-                  if (viewingPromptTemplate.boxId) {
-                    handleUpdateAIBox(viewingPromptTemplate.boxId, {
-                      customPrompt: newText,
-                      templateText: newText,
-                    });
-                  }
-                }}
-                placeholder="Write your custom prompt instructions here... e.g. Analyze Facebook post, extract property specs, format price and location..."
-                style={{
-                  flex: 1,
-                  width: '100%',
-                  padding: '0.875rem 1rem',
-                  borderRadius: '8px',
-                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
-                  color: isDark ? '#E2E8F0' : '#1E293B',
-                  fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
-                  fontSize: '0.8125rem',
-                  lineHeight: '1.65',
-                  resize: 'none',
-                  outline: 'none',
-                  boxShadow: 'inset 0 1px 3px rgba(0, 0, 0, 0.08)',
-                }}
-              />
-
-              {/* Status bar */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingTop: '0.5rem',
-                  borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-                  fontSize: '0.6875rem',
-                  color: 'var(--text-muted)',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span>{(viewingPromptTemplate.templateText || '').length} characters</span>
-                  <span>•</span>
-                  <span>
-                    {(viewingPromptTemplate.templateText || '').trim()
-                      ? (viewingPromptTemplate.templateText || '').trim().split(/\s+/).length
-                      : 0}{' '}
-                    words
-                  </span>
-                </div>
-                {(viewingPromptTemplate.templateText || '').length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setViewingPromptTemplate((prev) => (prev ? { ...prev, templateText: '' } : null));
-                      if (viewingPromptTemplate.boxId) {
-                        handleUpdateAIBox(viewingPromptTemplate.boxId, {
-                          customPrompt: '',
-                          templateText: '',
-                        });
-                      }
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: isDark ? '#FCA5A5' : '#DC2626',
-                      fontSize: '0.6875rem',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      padding: 0,
-                    }}
-                  >
-                    Clear Prompt
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : (
-            <>
-              <div
-                style={{
-                  flex: 1,
-                  overflowY: 'auto',
-                  padding: '1.25rem 1.375rem 2rem 1.375rem',
-                  fontFamily:
-                    '"Helvetica Neue", Helvetica, Arial, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  fontSize: '0.84375rem',
-                  fontWeight: 400,
-                  lineHeight: '1.7',
-                  letterSpacing: '-0.005em',
-                  color: isDark ? '#E2E8F0' : '#1E293B',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  position: 'relative',
-                }}
-              >
-                {isRegeneratingCurrentView && (
-                  <div
-                    style={{
-                      position: 'sticky',
-                      top: 0,
-                      marginBottom: '1rem',
-                      padding: '0.625rem 0.875rem',
-                      borderRadius: '6px',
-                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF',
-                      border: '1px solid rgba(59, 130, 246, 0.35)',
-                      color: '#3B82F6',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      zIndex: 5,
-                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)',
-                    }}
-                  >
-                    <FiRefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />
-                    <span>Regenerating fresh content with AI...</span>
-                  </div>
-                )}
-                {activeDisplayText || (isRegeneratingCurrentView ? 'Generating content with AI...' : 'No content available.')}
-                <div style={{ height: '1.5rem' }} />
-              </div>
-
-              {/* Read-Only Output / Prompt Viewer Bottom Status Bar */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.625rem 1.125rem',
-                  borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-                  backgroundColor: isDark ? 'rgba(0, 0, 0, 0.2)' : '#F8FAFC',
-                  fontSize: '0.6875rem',
-                  color: 'var(--text-muted)',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>{activeDisplayText.length.toLocaleString()} characters</span>
-                  <span>•</span>
-                  <span>
-                    {activeDisplayText.trim()
-                      ? activeDisplayText.trim().split(/\s+/).filter(Boolean).length.toLocaleString()
-                      : 0}{' '}
-                    words
-                  </span>
-                </div>
-                {isViewingOutput && (
-                  <span
-                    style={{
-                      fontSize: '0.6875rem',
-                      color: '#10B981',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
-                  >
-                    ● Live Output Synced
-                  </span>
-                )}
-              </div>
-            </>
-          )}
-        </div>
       )}
 
       {/* ======================================================== */}
@@ -19601,31 +19867,79 @@ export const FacebookWorkflowCanvas = forwardRef<
           const effectiveTargetFormatBox = isCropStudioBox(currentModalAIBox)
             ? ((config.aiBoxes || []).find((b) => isWatermarkAIBox(b) && (config.connections || []).some((c) => (c.fromNodeId === currentModalAIBox.id && c.toNodeId === b.id) || (c.fromNodeId === b.id && c.toNodeId === currentModalAIBox.id))) || currentModalAIBox)
             : currentModalAIBox;
+          const isPhotoCropSideboxActive = Boolean(showPhotoCropSettingsSidebox);
           return (
-            <>
-              <aside
-                className="workflow-sidebar"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
+            <aside
+              className="workflow-sidebar"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: isPhotoCropSideboxActive ? 'clamp(760px, 50vw, calc(100vw - 24px))' : '380px',
+                maxWidth: 'calc(100vw - 24px)',
+                backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                borderLeft: '1px solid var(--border-color)',
+                boxShadow: isDark
+                  ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
+                  : '-3px 0 16px rgba(0, 0, 0, 0.06)',
+                transition: 'width 0.32s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s ease',
+                zIndex: 170,
+                display: 'flex',
+                flexDirection: 'row',
+                overflow: 'hidden',
+                animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
+            >
+              {/* ── LEFT EXPANDED PANE (Photo Format & Crop Settings) ── */}
+              {isPhotoCropSideboxActive && (
+                <div
+                  style={{
+                    flex: '1 1 50%',
+                    minWidth: '380px',
+                    height: '100%',
+                    borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+                    backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    animation: 'sidebarFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+                  }}
+                >
+                  <PhotoCropSettingsSidebox
+                    embedded
+                    key={currentModalAIBox.id}
+                    isOpen={showPhotoCropSettingsSidebox}
+                    onClose={() => setShowPhotoCropSettingsSidebox(false)}
+                    isDark={isDark}
+                    box={currentModalAIBox}
+                    onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
+                    images={effectiveImages}
+                    workflowBoxes={config.aiBoxes}
+                    connections={config.connections}
+                    enhancedPhotos={allEnhancedPhotos}
+                    watermarkedPhotos={watermarkedPhotos}
+                    heroImage={heroImage}
+                    listingCode={executionState?.listingCode || previewSampleCode}
+                  />
+                </div>
+              )}
+
+              {/* ── RIGHT MAIN INSPECTOR PANE (Photo Format & Crop Studio) ── */}
+              <div
                 style={{
-                  position: 'absolute',
-                  top: 0,
-                  right: 0,
-                  bottom: 0,
-                  width: '380px',
-                  maxWidth: '100%',
-                  backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-                  borderLeft: '1px solid var(--border-color)',
-                  boxShadow: (viewingPromptTemplate || showGoogleSheetSettingsSidebox || showPhotoCropSettingsSidebox)
-                    ? 'none'
-                    : isDark
-                      ? '-8px 0 28px rgba(0, 0, 0, 0.75)'
-                      : '-3px 0 16px rgba(0, 0, 0, 0.06)',
-                  transition: 'box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s ease',
-                  zIndex: 170,
+                  flex: isPhotoCropSideboxActive ? '1 1 50%' : '1 1 100%',
+                  width: isPhotoCropSideboxActive ? '50%' : '100%',
+                  minWidth: isPhotoCropSideboxActive ? '360px' : '380px',
+                  height: '100%',
                   display: 'flex',
                   flexDirection: 'column',
-                  animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+                  position: 'relative',
+                  backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                  overflow: 'hidden',
                 }}
               >
                 {/* Top Navigation Bar with Title & Close [X] */}
@@ -19903,24 +20217,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     )}
                   </button>
                 </div>
-              </aside>
-
-              <PhotoCropSettingsSidebox
-                key={currentModalAIBox.id}
-                isOpen={showPhotoCropSettingsSidebox}
-                onClose={() => setShowPhotoCropSettingsSidebox(false)}
-                isDark={isDark}
-                box={currentModalAIBox}
-                onUpdateBox={(id, updates) => handleUpdateAIBox(id, updates)}
-                images={effectiveImages}
-                workflowBoxes={config.aiBoxes}
-                connections={config.connections}
-                enhancedPhotos={allEnhancedPhotos}
-                watermarkedPhotos={watermarkedPhotos}
-                heroImage={heroImage}
-                listingCode={executionState?.listingCode || previewSampleCode}
-              />
-            </>
+              </div>
+            </aside>
           );
         })()}
 

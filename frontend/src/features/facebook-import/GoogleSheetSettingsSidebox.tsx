@@ -27,6 +27,7 @@ interface GoogleSheetSettingsSideboxProps {
   onLoadHeaders?: () => Promise<void>;
   loadingHeaders?: boolean;
   onUrlChange?: (newUrl: string, delay?: number) => void;
+  embedded?: boolean;
 }
 
 export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProps> = ({
@@ -38,6 +39,7 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
   onLoadHeaders,
   loadingHeaders = false,
   onUrlChange,
+  embedded = false,
 }) => {
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -104,10 +106,19 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
 
   return (
     <div
-      className="workflow-sidebar"
+      className={embedded ? undefined : 'workflow-sidebar'}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
-      style={{
+      style={embedded ? {
+        width: '100%',
+        height: '100%',
+        backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+      } : {
         position: 'fixed',
         top: 0,
         bottom: 0,

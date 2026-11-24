@@ -55,6 +55,7 @@ interface FBHeroSettingsSideboxProps {
   };
   availablePrompts?: Array<{ id: string | number; name: string; category?: string; instructions?: string; templateText?: string }>;
   workflowImageSources?: WorkflowImageSource[];
+  embedded?: boolean;
 }
 
 export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
@@ -66,6 +67,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   propertyContext,
   availablePrompts = [],
   workflowImageSources = [],
+  embedded = false,
 }) => {
   // ── 1. Execution Mode (Direct to Tab 2 vs Two-Stage Browser) ───────────────
   const [stagingMode, setStagingMode] = useState<'direct_tab2' | 'two_stage_tabs'>(() => {
@@ -772,7 +774,17 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
 
   return (
     <div
-      style={{
+      className={embedded ? undefined : 'workflow-sidebar'}
+      style={embedded ? {
+        width: '100%',
+        height: '100%',
+        backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+      } : {
         position: 'fixed',
         top: 0,
         bottom: 0,

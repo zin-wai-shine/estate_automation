@@ -30,6 +30,7 @@ interface CombineMediaSideboxProps {
   onOpenLightbox: (url: string, index?: number, customAssets?: CombineMediaAssetItem[]) => void;
   onDownloadImage: (url: string, index: number, e?: React.MouseEvent) => void;
   onDownloadAllImages: (assets: CombineMediaAssetItem[]) => void;
+  embedded?: boolean;
 }
 
 export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
@@ -42,6 +43,7 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
   onOpenLightbox,
   onDownloadImage,
   onDownloadAllImages,
+  embedded = false,
 }) => {
   const filteredAssets = useMemo(() => {
     if (activeFilter === 'all') return combineMediaAssets;
@@ -60,10 +62,19 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
 
   return (
     <div
-      className="workflow-sidebar"
+      className={embedded ? undefined : 'workflow-sidebar'}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
-      style={{
+      style={embedded ? {
+        width: '100%',
+        height: '100%',
+        backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+      } : {
         position: 'fixed',
         top: 0,
         bottom: 0,
