@@ -58,8 +58,9 @@ export function resolveAttachedPhotosFromSteps(
     if (step.sourceType === 'upload') {
       const urls = step.uploadedUrls || [];
       if (urls.length > 0) {
-        const chosen = (step.selectedIndices && step.selectedIndices.length > 0)
-          ? step.selectedIndices.map((idx) => urls[idx]).filter(Boolean)
+        const validIndices = (step.selectedIndices || []).filter((idx) => typeof idx === 'number' && idx >= 0 && idx < urls.length);
+        const chosen = validIndices.length > 0
+          ? validIndices.map((idx) => urls[idx]).filter(Boolean)
           : urls.slice(0, count);
         for (let i = 0; i < chosen.length; i++) {
           result.push({
@@ -73,8 +74,9 @@ export function resolveAttachedPhotosFromSteps(
     } else if (step.sourceType === 'folder') {
       const fImgs = step.folderImages || [];
       if (fImgs.length > 0) {
-        const chosen = (step.selectedIndices && step.selectedIndices.length > 0)
-          ? step.selectedIndices.map((idx) => fImgs[idx]).filter(Boolean)
+        const validIndices = (step.selectedIndices || []).filter((idx) => typeof idx === 'number' && idx >= 0 && idx < fImgs.length);
+        const chosen = validIndices.length > 0
+          ? validIndices.map((idx) => fImgs[idx]).filter(Boolean)
           : fImgs.slice(0, count);
         for (let i = 0; i < chosen.length; i++) {
           const u = chosen[i].data_url || chosen[i].full_path || '';
@@ -100,8 +102,9 @@ export function resolveAttachedPhotosFromSteps(
         : propertyImages;
 
       if (imgs && imgs.length > 0) {
-        const chosen = (step.selectedIndices && step.selectedIndices.length > 0)
-          ? step.selectedIndices.map((idx) => imgs[idx]).filter(Boolean)
+        const validIndices = (step.selectedIndices || []).filter((idx) => typeof idx === 'number' && idx >= 0 && idx < imgs.length);
+        const chosen = validIndices.length > 0
+          ? validIndices.map((idx) => imgs[idx]).filter(Boolean)
           : imgs.slice(0, count);
         for (let i = 0; i < chosen.length; i++) {
           const u = chosen[i].url || (chosen[i] as any).data_url || '';
@@ -140,9 +143,16 @@ interface AttachmentGroupsManagerProps {
 }
 
 // Global in-memory cache preserved across unmounts, sidebar toggles, and node switches
-const globalCondoImagesCache: Record<string, Array<{ filename: string; data_url?: string; full_path?: string; index?: number }>> = {};
+export const globalCondoImagesCache: Record<string, Array<{ filename: string; data_url?: string; full_path?: string; index?: number }>> = {};
 let globalAvailableCondoFolders: string[] = [];
 let globalBaseCondoDirectory: string = '/Users/zinwaishine/Desktop/Condo Building';
+let globalLoadedCondoName: string = '';
+
+export function clearCondoFolderCache() {
+  for (const k in globalCondoImagesCache) delete globalCondoImagesCache[k];
+  globalAvailableCondoFolders = [];
+  globalLoadedCondoName = '';
+}
 
 export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = ({
   steps,
@@ -281,38 +291,73 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
 
   useEffect(() => {
     loadCondoFolders();
-  }, []);
+    const handleWorkflowCleared = () => {
+      clearCondoFolderCache();
+      prevCondoNameRef.current = '';
+      setLoadingSteps({});
+      setReloadingStepId(null);
+      // Clean all steps so folderName, folderImages, and selectedIndices are reset to clean initial state
+      const cleaned = steps.map((s) => ({
+        ...s,
+        folderName: '',
+        folderImages: [],
+        selectedIndices: undefined,
+      }));
+      onChange(cleaned);
+    };
+    window.addEventListener('ea_workflow_cleared', handleWorkflowCleared);
+    return () => {
+      window.removeEventListener('ea_workflow_cleared', handleWorkflowCleared);
+    };
+  }, [steps]);
 
-  // In main box, auto-sync folderName with condoName
+  // Auto-sync folderName with condoName & detect when condo name changes on rerun
+  const prevCondoNameRef = React.useRef<string>((condoName || '').trim());
+
   useEffect(() => {
-    if (!isMainBox || !condoName) return;
-    const trimmedCondo = condoName.trim();
+    const trimmedCondo = (condoName || '').trim();
     if (!trimmedCondo) return;
+
+    const prevCondo = prevCondoNameRef.current;
+    const nameChanged = Boolean(prevCondo && prevCondo.toLowerCase() !== trimmedCondo.toLowerCase());
+    prevCondoNameRef.current = trimmedCondo;
+
     let changed = false;
     const next = steps.map((s) => {
-      if (s.sourceType === 'folder' && s.folderName !== trimmedCondo) {
+      const isFolder = s.sourceType === 'folder' || (isMainBox && s.id === 'group-1');
+      const folderMismatch = Boolean((s.folderName || '').trim().toLowerCase() !== trimmedCondo.toLowerCase()) || nameChanged;
+      const needsLoad = !s.folderImages || s.folderImages.length === 0;
+
+      if (isFolder && (folderMismatch || needsLoad)) {
         changed = true;
-        fetchImagesForStep(s.id, trimmedCondo);
-        return { ...s, folderName: trimmedCondo };
+        // If condo name actually changed, force reload from companion and clear old indices!
+        fetchImagesForStep(s.id, trimmedCondo, nameChanged);
+        return {
+          ...s,
+          sourceType: 'folder' as const,
+          folderName: trimmedCondo,
+          ...(nameChanged ? { selectedIndices: undefined } : {}),
+        };
       }
       return s;
     });
     if (changed) {
       onChange(next);
     }
-  }, [isMainBox, condoName]);
+  }, [condoName, isMainBox, steps]);
 
+  // When step folderName is set and folderImages is missing, load from cache or companion
   const stepsFolderKey = steps.map((s) => `${s.id}:${s.sourceType}:${(s.folderName || '').trim().toLowerCase()}`).join('|');
   useEffect(() => {
     steps.forEach((s) => {
-      if (s.sourceType === 'folder') {
+      if (s.sourceType === 'folder' || (isMainBox && s.id === 'group-1')) {
         const folder = (s.folderName || condoName || '').trim();
         if (folder && (!s.folderImages || s.folderImages.length === 0)) {
-          fetchImagesForStep(s.id, folder);
+          fetchImagesForStep(s.id, folder, false);
         }
       }
     });
-  }, [stepsFolderKey, condoName]);
+  }, [stepsFolderKey, condoName, isMainBox]);
 
   const filteredCondoFolders = useMemo(() => {
     if (!folderSearchFilter.trim()) return [];
@@ -590,9 +635,10 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                       <div
                         style={{
                           display: 'inline-flex',
-                          padding: '1px',
-                          borderRadius: '4px',
-                          backgroundColor: isDark ? '#0D1117' : '#E2E8F0',
+                          padding: '2px',
+                          borderRadius: '8px',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#E2E8F0',
+                          border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.06)',
                         }}
                       >
                         {(['folder', 'upload', 'workflow'] as const).map((st) => {
@@ -605,13 +651,14 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                               onClick={() => handleUpdateStep(step.id, { sourceType: st })}
                               style={{
                                 padding: '2px 8px',
-                                borderRadius: '3px',
+                                borderRadius: '6px',
                                 border: 'none',
                                 fontSize: '0.625rem',
                                 fontWeight: isCurrent ? 600 : 400,
                                 backgroundColor: isCurrent ? (isDark ? '#21262D' : '#FFFFFF') : 'transparent',
                                 color: isCurrent ? (isDark ? '#F0F6FC' : '#0F172A') : (isDark ? '#8B949E' : '#64748B'),
                                 cursor: 'pointer',
+                                transition: 'all 0.15s ease',
                               }}
                             >
                               {label}
@@ -788,20 +835,23 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                             }}
                             title="Reload folder photos from disk"
                             style={{
-                              height: '26px',
-                              padding: '0 8px',
-                              borderRadius: '4px',
-                              border: isStepLoading ? '1px solid #2563EB' : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                              height: '28px',
+                              width: '28px',
+                              padding: 0,
+                              borderRadius: '8px',
+                              border: isStepLoading
+                                ? '1px solid #2563EB'
+                                : (isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)'),
                               backgroundColor: isStepLoading
                                 ? (isDark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF')
-                                : (isDark ? '#0D1117' : '#FFFFFF'),
-                              color: isStepLoading ? '#2563EB' : (isDark ? '#8B949E' : '#64748B'),
+                                : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
+                              color: isStepLoading ? '#2563EB' : 'var(--text-secondary)',
                               cursor: isStepLoading ? 'wait' : 'pointer',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               transition: 'all 0.15s ease',
-                              boxShadow: isStepLoading ? '0 0 0 1px rgba(37, 99, 235, 0.3)' : 'none',
+                              boxShadow: 'none',
                             }}
                           >
                             <FiRefreshCw
@@ -836,34 +886,58 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                   </span>
                                 </div>
                               ) : (
-                                <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {`Found ${effectiveFolderImages.length} photos in ${condoName || step.folderName || 'folder'}`}
-                                </span>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                                  {effectiveFolderImages.length > 0 && (
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        fontSize: '0.5625rem',
+                                        fontWeight: 700,
+                                        padding: '1.5px 6px',
+                                        borderRadius: '4px',
+                                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7',
+                                        color: isDark ? '#34D399' : '#15803D',
+                                        border: isDark ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid #BBF7D0',
+                                        flexShrink: 0,
+                                      }}
+                                      title="Folder photos loaded and ready"
+                                    >
+                                      <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: isDark ? '#34D399' : '#15803D' }} />
+                                      Loaded
+                                    </span>
+                                  )}
+                                  <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {`Found ${effectiveFolderImages.length} photos in ${condoName || step.folderName || 'folder'}`}
+                                  </span>
+                                </div>
                               )}
                               {!isStepLoading && effectiveFolderImages.length > 0 && (() => {
-                                const isManuallyChosen = Boolean(step.selectedIndices && step.selectedIndices.length > 0);
+                                const validChosen = Array.from(
+                                  new Set((step.selectedIndices || []).filter((idx) => typeof idx === 'number' && idx >= 0 && idx < effectiveFolderImages.length))
+                                );
+                                const isManuallyChosen = validChosen.length > 0;
                                 return (
                                   <button
                                     type="button"
                                     onClick={() => setManualChooseModalStepId(step.id)}
                                     style={{
-                                      height: '24px',
-                                      padding: '0 9px',
-                                      borderRadius: '5px',
-                                      fontSize: '0.625rem',
-                                      fontWeight: 600,
+                                      height: '26px',
+                                      padding: '0 10px',
+                                      borderRadius: '8px',
+                                      fontSize: '0.6875rem',
+                                      fontWeight: 500,
                                       border: isManuallyChosen
-                                        ? '1px solid #1D4ED8'
-                                        : (isDark ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid #BFDBFE'),
+                                        ? (isDark ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid #93C5FD')
+                                        : (isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)'),
                                       backgroundColor: isManuallyChosen
-                                        ? '#2563EB'
-                                        : (isDark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF'),
+                                        ? (isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF')
+                                        : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
                                       color: isManuallyChosen
-                                        ? '#FFFFFF'
-                                        : (isDark ? '#60A5FA' : '#2563EB'),
-                                      boxShadow: isManuallyChosen
-                                        ? '0 1px 3px rgba(37, 99, 235, 0.4), 0 1px 2px rgba(0, 0, 0, 0.1)'
-                                        : (isDark ? '0 1px 2px rgba(0, 0, 0, 0.2)' : '0 1px 2px rgba(0, 0, 0, 0.05)'),
+                                        ? (isDark ? '#93C5FD' : '#1D4ED8')
+                                        : 'var(--text-secondary)',
+                                      boxShadow: 'none',
                                       cursor: 'pointer',
                                       display: 'inline-flex',
                                       alignItems: 'center',
@@ -872,10 +946,10 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                       transition: 'all 0.15s ease',
                                     }}
                                   >
-                                    <FiCheckSquare size={12} color={isManuallyChosen ? '#FFFFFF' : (isDark ? '#60A5FA' : '#2563EB')} style={{ flexShrink: 0 }} />
+                                    <FiCheckSquare size={13} color={isManuallyChosen ? (isDark ? '#93C5FD' : '#1D4ED8') : 'var(--text-secondary)'} style={{ flexShrink: 0 }} />
                                     <span style={{ whiteSpace: 'nowrap' }}>
                                       {isManuallyChosen
-                                        ? `Manual: ${step.selectedIndices!.length} Chosen`
+                                        ? `Manual: ${validChosen.length} Chosen`
                                         : 'Manual Choose'}
                                     </span>
                                   </button>
@@ -944,7 +1018,8 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                             updated = [...updated.slice(1), idx];
                                           }
                                         }
-                                        handleUpdateStep(step.id, { selectedIndices: updated });
+                                        const cleanUpdated = Array.from(new Set(updated)).filter((i) => i >= 0 && i < effectiveFolderImages.length);
+                                        handleUpdateStep(step.id, { selectedIndices: cleanUpdated });
                                       }}
                                       style={{
                                         width: '64px',
@@ -1011,7 +1086,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                           boxShadow: isSelected ? '0 1px 3px rgba(0,0,0,0.3)' : 'none',
                                         }}
                                       >
-                                        {isSelected ? `#${selectionOrder}` : `#${idx + 1}`}
+                                        #{idx + 1}
                                       </span>
                                     </div>
                                   );
@@ -1298,29 +1373,30 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                             : `Found 0 photos in ${selectedSource?.title || 'Workflow'} (Awaiting results)`}
                         </span>
                         {sourceImages.length > 0 && (() => {
-                          const isManuallyChosen = Boolean(step.selectedIndices && step.selectedIndices.length > 0);
+                          const validChosen = Array.from(
+                            new Set((step.selectedIndices || []).filter((idx) => typeof idx === 'number' && idx >= 0 && idx < sourceImages.length))
+                          );
+                          const isManuallyChosen = validChosen.length > 0;
                           return (
                             <button
                               type="button"
                               onClick={() => setManualChooseModalStepId(step.id)}
                               style={{
-                                height: '24px',
-                                padding: '0 9px',
-                                borderRadius: '5px',
-                                fontSize: '0.625rem',
-                                fontWeight: 600,
+                                height: '26px',
+                                padding: '0 10px',
+                                borderRadius: '8px',
+                                fontSize: '0.6875rem',
+                                fontWeight: 500,
                                 border: isManuallyChosen
-                                  ? '1px solid #1D4ED8'
-                                  : (isDark ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid #BFDBFE'),
+                                  ? (isDark ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid #93C5FD')
+                                  : (isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)'),
                                 backgroundColor: isManuallyChosen
-                                  ? '#2563EB'
-                                  : (isDark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF'),
+                                  ? (isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF')
+                                  : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
                                 color: isManuallyChosen
-                                  ? '#FFFFFF'
-                                  : (isDark ? '#60A5FA' : '#2563EB'),
-                                boxShadow: isManuallyChosen
-                                  ? '0 1px 3px rgba(37, 99, 235, 0.4), 0 1px 2px rgba(0, 0, 0, 0.1)'
-                                  : (isDark ? '0 1px 2px rgba(0, 0, 0, 0.2)' : '0 1px 2px rgba(0, 0, 0, 0.05)'),
+                                  ? (isDark ? '#93C5FD' : '#1D4ED8')
+                                  : 'var(--text-secondary)',
+                                boxShadow: 'none',
                                 cursor: 'pointer',
                                 display: 'inline-flex',
                                 alignItems: 'center',
@@ -1329,10 +1405,10 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                 transition: 'all 0.15s ease',
                               }}
                             >
-                              <FiCheckSquare size={12} color={isManuallyChosen ? '#FFFFFF' : (isDark ? '#60A5FA' : '#2563EB')} style={{ flexShrink: 0 }} />
+                              <FiCheckSquare size={13} color={isManuallyChosen ? (isDark ? '#93C5FD' : '#1D4ED8') : 'var(--text-secondary)'} style={{ flexShrink: 0 }} />
                               <span style={{ whiteSpace: 'nowrap' }}>
                                 {isManuallyChosen
-                                  ? `Manual: ${step.selectedIndices!.length} Chosen`
+                                  ? `Manual: ${validChosen.length} Chosen`
                                   : 'Manual Choose'}
                               </span>
                             </button>
@@ -1393,9 +1469,10 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                   }
                                 }
 
+                                const cleanSelected = Array.from(new Set(currentSelected)).filter((idx) => idx >= 0 && idx < sourceImages.length);
                                 handleUpdateStep(step.id, {
-                                  selectedIndices: currentSelected,
-                                  count: currentSelected.length,
+                                  selectedIndices: cleanSelected,
+                                  count: cleanSelected.length,
                                 });
                               }}
                               style={{
@@ -1463,7 +1540,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                   boxShadow: isSelected ? '0 1px 3px rgba(0,0,0,0.3)' : 'none',
                                 }}
                               >
-                                {isSelected ? `#${selectionIndex}` : `#${tIdx + 1}`}
+                                #{tIdx + 1}
                               </span>
                             </div>
                           );
@@ -1576,8 +1653,8 @@ const ManualChoosePhotosDialog: React.FC<ManualChoosePhotosDialogProps> = ({
   });
 
   const toggleSelect = (idx: number) => {
-    let updated = [...localSelected];
-    const isChosen = localSelected.includes(idx);
+    let updated = Array.from(new Set(localSelected));
+    const isChosen = updated.includes(idx);
     if (isFolder) {
       if (isChosen) {
         if (modalStep.count === 1) {
@@ -1594,8 +1671,9 @@ const ManualChoosePhotosDialog: React.FC<ManualChoosePhotosDialogProps> = ({
           updated = [...updated.slice(1), idx];
         }
       }
-      setLocalSelected(updated);
-      onUpdateStep(modalStep.id, { selectedIndices: updated });
+      const cleanUpdated = Array.from(new Set(updated)).filter((i) => i >= 0 && i < imagesList.length);
+      setLocalSelected(cleanUpdated);
+      onUpdateStep(modalStep.id, { selectedIndices: cleanUpdated });
     } else {
       if (isChosen) {
         if (updated.length > 1) {
@@ -1606,8 +1684,9 @@ const ManualChoosePhotosDialog: React.FC<ManualChoosePhotosDialogProps> = ({
           updated.push(idx);
         }
       }
-      setLocalSelected(updated);
-      onUpdateStep(modalStep.id, { selectedIndices: updated, count: updated.length });
+      const cleanUpdated = Array.from(new Set(updated)).filter((i) => i >= 0 && i < imagesList.length);
+      setLocalSelected(cleanUpdated);
+      onUpdateStep(modalStep.id, { selectedIndices: cleanUpdated, count: cleanUpdated.length });
     }
   };
 

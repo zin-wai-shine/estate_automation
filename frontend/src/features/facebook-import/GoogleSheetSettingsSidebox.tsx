@@ -188,11 +188,11 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
             title="Close Settings (Esc)"
             aria-label="Close"
             style={{
-              width: '28px',
-              height: '28px',
-              borderRadius: '6px',
-              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+              width: '32px',
+              height: '32px',
+              borderRadius: '8px',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
               color: 'var(--text-secondary)',
               display: 'flex',
               alignItems: 'center',
@@ -204,7 +204,7 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
               transition: 'all 0.15s ease',
             }}
           >
-            <FiX size={15} style={{ pointerEvents: 'none' }} />
+            <FiX size={14} style={{ pointerEvents: 'none' }} />
           </button>
         </div>
       </div>

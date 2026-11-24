@@ -834,11 +834,11 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
           }}
           title="Close Settings Sidebox"
           style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '6px',
-            border: '1px solid var(--border-color)',
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+            width: '32px',
+            height: '32px',
+            borderRadius: '8px',
+            border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
             color: 'var(--text-secondary)',
             display: 'flex',
             alignItems: 'center',
@@ -846,9 +846,10 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
             cursor: 'pointer',
             pointerEvents: 'auto',
             userSelect: 'none',
+            transition: 'all 0.15s ease',
           }}
         >
-          <FiX size={15} style={{ pointerEvents: 'none' }} />
+          <FiX size={14} style={{ pointerEvents: 'none' }} />
         </button>
       </div>
 
@@ -1241,15 +1242,22 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                             height: '32px',
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '4px',
-                            padding: '0 10px',
-                            borderRadius: '4px',
-                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                            backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                            color: isDark ? '#C9D1D9' : '#334155',
-                            fontSize: '0.65625rem',
+                            gap: '5px',
+                            padding: '0 12px',
+                            borderRadius: '8px',
+                            border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                            color: 'var(--text-primary)',
+                            fontSize: '0.75rem',
                             fontWeight: 500,
                             cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
                           }}
                         >
                           <FiFolder size={12} />
@@ -1260,15 +1268,22 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                             height: '32px',
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '4px',
-                            padding: '0 10px',
-                            borderRadius: '4px',
-                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                            backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                            color: isDark ? '#C9D1D9' : '#334155',
-                            fontSize: '0.65625rem',
+                            gap: '5px',
+                            padding: '0 12px',
+                            borderRadius: '8px',
+                            border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                            color: 'var(--text-primary)',
+                            fontSize: '0.75rem',
                             fontWeight: 500,
                             cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
                           }}
                         >
                           <FiUploadCloud size={12} />
@@ -1942,9 +1957,34 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
           justifyContent: 'flex-end',
         }}
       >
-        <Button size="sm" variant="primary" onClick={onClose} style={{ fontSize: '0.75rem', fontWeight: 600 }}>
-          Done & Apply Settings
-        </Button>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            height: '34px',
+            padding: '0 16px',
+            borderRadius: '8px',
+            border: '1px solid transparent',
+            backgroundColor: isDark ? 'var(--accent-primary, #2563EB)' : '#0F172A',
+            color: '#FFFFFF',
+            fontSize: '0.78125rem',
+            fontWeight: 600,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = isDark ? 'var(--accent-primary-hover, #1D4ED8)' : '#1E293B';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = isDark ? 'var(--accent-primary, #2563EB)' : '#0F172A';
+          }}
+        >
+          <FiCheckCircle size={13} />
+          <span>Done & Apply Settings</span>
+        </button>
       </div>
     </div>
   );

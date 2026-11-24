@@ -5940,36 +5940,36 @@ export const FacebookWorkflowCanvas = forwardRef<
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '0.4rem',
+        gap: '0.45rem',
         width: '100%',
-        height: '38px',
-        minHeight: '38px',
-        maxHeight: '38px',
+        height: '36px',
+        minHeight: '36px',
+        maxHeight: '36px',
         flexShrink: 0,
         boxSizing: 'border-box',
         marginBottom: '0.875rem',
-        padding: '0 0.625rem',
+        padding: '0 0.875rem',
         borderRadius: '8px',
-        border: '1px solid var(--border-color)',
-        backgroundColor: isDark ? 'var(--bg-surface)' : '#F1F5F9',
+        border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
         color: 'var(--text-primary)',
-        fontSize: '0.75rem',
-        fontWeight: 600,
+        fontSize: '0.78125rem',
+        fontWeight: 500,
         whiteSpace: 'nowrap',
         cursor: 'pointer',
         transition: 'all 0.15s ease',
-        boxShadow: isDark ? '0 1px 2px rgba(0, 0, 0, 0.25)' : '0 1px 2px rgba(0, 0, 0, 0.05)',
+        boxShadow: isDark ? '0 1px 2px rgba(0, 0, 0, 0.25)' : '0 1px 2px rgba(0, 0, 0, 0.03)',
         ...customStyle,
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = isDark ? 'var(--bg-surface-hover)' : '#E2E8F0';
-        e.currentTarget.style.borderColor = isDark ? 'var(--border-color-hover)' : '#94A3B8';
+        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+        e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.15)';
         const arrow = e.currentTarget.querySelector('.next-step-arrow') as HTMLElement | null;
         if (arrow) arrow.style.transform = 'translateX(3px)';
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor = isDark ? 'var(--bg-surface)' : '#F1F5F9';
-        e.currentTarget.style.borderColor = 'var(--border-color)';
+        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
+        e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)';
         const arrow = e.currentTarget.querySelector('.next-step-arrow') as HTMLElement | null;
         if (arrow) arrow.style.transform = 'translateX(0)';
       }}
@@ -13709,15 +13709,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '6px',
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '8px',
                           border: showFBHeroSettingsSidebox
                             ? '1px solid #F59E0B'
-                            : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                            : (isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)'),
                           backgroundColor: showFBHeroSettingsSidebox
                             ? 'rgba(245, 158, 11, 0.15)'
-                            : isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                            : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
                           color: showFBHeroSettingsSidebox ? '#F59E0B' : 'var(--text-secondary)',
                           cursor: 'pointer',
                           flexShrink: 0,
@@ -13726,7 +13726,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                           transition: 'all 0.15s ease',
                         }}
                       >
-                        <FiSettings size={15} style={{ pointerEvents: 'none' }} />
+                        <FiSettings size={14} style={{ pointerEvents: 'none' }} />
                       </button>
                     )}
 
@@ -13743,11 +13743,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '6px',
-                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
                       color: 'var(--text-secondary)',
                       cursor: 'pointer',
                       flexShrink: 0,
@@ -13756,7 +13756,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       transition: 'all 0.15s ease',
                     }}
                   >
-                    <FiX size={15} style={{ pointerEvents: 'none' }} />
+                    <FiX size={14} style={{ pointerEvents: 'none' }} />
                   </button>
                 </div>
               </div>
@@ -19687,15 +19687,15 @@ export const FacebookWorkflowCanvas = forwardRef<
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        width: '28px',
-                        height: '28px',
-                        borderRadius: '6px',
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
                         border: showPhotoCropSettingsSidebox
                           ? '1px solid var(--accent-primary, #3B82F6)'
-                          : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          : (isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)'),
                         backgroundColor: showPhotoCropSettingsSidebox
                           ? 'rgba(59, 130, 246, 0.15)'
-                          : isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                          : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
                         color: showPhotoCropSettingsSidebox ? 'var(--accent-primary, #3B82F6)' : 'var(--text-secondary)',
                         cursor: 'pointer',
                         flexShrink: 0,
@@ -19704,7 +19704,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         transition: 'all 0.15s ease',
                       }}
                     >
-                      <FiSettings size={15} style={{ pointerEvents: 'none' }} />
+                      <FiSettings size={14} style={{ pointerEvents: 'none' }} />
                     </button>
 
                     <button
@@ -19720,19 +19720,20 @@ export const FacebookWorkflowCanvas = forwardRef<
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        width: '28px',
-                        height: '28px',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: isDark ? 'var(--bg-surface)' : 'rgba(0, 0, 0, 0.04)',
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
                         color: 'var(--text-secondary)',
                         cursor: 'pointer',
+                        flexShrink: 0,
                         pointerEvents: 'auto',
                         userSelect: 'none',
                         transition: 'all 0.15s ease',
                       }}
                     >
-                      <FiX size={15} style={{ pointerEvents: 'none' }} />
+                      <FiX size={14} style={{ pointerEvents: 'none' }} />
                     </button>
                   </div>
                 </div>
@@ -19861,14 +19862,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                     disabled={locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id)}
                     style={{
                       width: '100%',
-                      height: '34px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--accent-primary, #2563EB)',
+                      height: '36px',
+                      borderRadius: '8px',
+                      border: '1px solid transparent',
                       backgroundColor: (locallyRunningNodeId === currentModalAIBox.id || executionState?.activeNodeIds?.includes(currentModalAIBox.id))
-                        ? 'rgba(37, 99, 235, 0.6)'
-                        : 'var(--accent-primary, #2563EB)',
+                        ? (isDark ? 'rgba(37, 99, 235, 0.5)' : '#94A3B8')
+                        : (isDark ? 'var(--accent-primary, #2563EB)' : '#0F172A'),
                       color: '#FFFFFF',
-                      fontSize: '0.75rem',
+                      fontSize: '0.8125rem',
                       fontWeight: 600,
                       display: 'flex',
                       alignItems: 'center',
@@ -19880,12 +19881,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                     }}
                     onMouseEnter={(e) => {
                       if (locallyRunningNodeId !== currentModalAIBox.id && !executionState?.activeNodeIds?.includes(currentModalAIBox.id)) {
-                        e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover, #1D4ED8)';
+                        e.currentTarget.style.backgroundColor = isDark ? 'var(--accent-primary-hover, #1D4ED8)' : '#1E293B';
                       }
                     }}
                     onMouseLeave={(e) => {
                       if (locallyRunningNodeId !== currentModalAIBox.id && !executionState?.activeNodeIds?.includes(currentModalAIBox.id)) {
-                        e.currentTarget.style.backgroundColor = 'var(--accent-primary, #2563EB)';
+                        e.currentTarget.style.backgroundColor = isDark ? 'var(--accent-primary, #2563EB)' : '#0F172A';
                       }
                     }}
                   >
@@ -19896,7 +19897,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       </>
                     ) : (
                       <>
-                        <FiPlay size={12} />
+                        <FiPlay size={12} style={{ fill: 'currentColor' }} />
                         <span>Run</span>
                       </>
                     )}
@@ -20065,11 +20066,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: isDark ? 'var(--bg-surface)' : 'rgba(0, 0, 0, 0.04)',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
                   color: 'var(--text-secondary)',
                   cursor: 'pointer',
                   pointerEvents: 'auto',
@@ -20077,7 +20078,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   transition: 'all 0.15s ease',
                 }}
               >
-                <FiX size={15} style={{ pointerEvents: 'none' }} />
+                <FiX size={14} style={{ pointerEvents: 'none' }} />
               </button>
             </div>
 

@@ -5092,21 +5092,28 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     }}
                     style={{
                       flex: 1,
-                      height: '28px',
-                      borderRadius: '6px',
+                      height: '30px',
+                      borderRadius: '8px',
                       backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-                      border: '1px solid var(--border-color)',
+                      border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
                       color: isDark ? '#F3F4F6' : '#1E293B',
-                      fontSize: '0.625rem',
-                      fontWeight: 600,
+                      fontSize: '0.6875rem',
+                      fontWeight: 500,
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '4px',
+                      gap: '5px',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
                     }}
                   >
-                    <FiMaximize2 size={11} /> Open Full Size
+                    <FiMaximize2 size={12} /> <span>Open Full Size</span>
                   </button>
                   <button
                     type="button"
@@ -5115,21 +5122,28 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     }}
                     style={{
                       flex: 1,
-                      height: '28px',
-                      borderRadius: '6px',
+                      height: '30px',
+                      borderRadius: '8px',
                       backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-                      border: '1px solid var(--border-color)',
+                      border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
                       color: isDark ? '#F3F4F6' : '#1E293B',
-                      fontSize: '0.625rem',
-                      fontWeight: 600,
+                      fontSize: '0.6875rem',
+                      fontWeight: 500,
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '4px',
+                      gap: '5px',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
                     }}
                   >
-                    <FiFolder size={11} /> Reveal in Finder
+                    <FiFolder size={12} /> <span>Reveal in Finder</span>
                   </button>
                 </div>
               </div>
@@ -5236,12 +5250,12 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   style={{
                     flex: 1,
                     height: '32px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                    borderRadius: '8px',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
                     color: 'var(--text-primary)',
-                    fontSize: '0.6875rem',
-                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    fontWeight: 500,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -5249,8 +5263,14 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
                   }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
+                  }}
                 >
-                  <FiFileText size={13} style={{ color: '#3B82F6' }} />
+                  <FiFileText size={13} style={{ color: 'var(--text-secondary)' }} />
                   <span>View Prompt Template</span>
                 </button>
 
@@ -5261,17 +5281,23 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   style={{
                     height: '32px',
                     padding: '0 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                    borderRadius: '8px',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
                     color: isCopied ? '#10B981' : 'var(--text-secondary)',
-                    fontSize: '0.6875rem',
-                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    fontWeight: 500,
                     display: 'flex',
                     alignItems: 'center',
                     gap: '5px',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
                   }}
                 >
                   {isCopied ? <FiCheck size={12} /> : <FiCopy size={12} />}
@@ -5460,9 +5486,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <FiLayers style={{ color: 'var(--text-muted)' }} /> Tab Groups & Pipelines ({activeProfile?.display_name || 'Chrome'})
           </label>
-          <Button
-            size="sm"
-            variant="ghost"
+          <button
+            type="button"
             onClick={() => {
               const profId = activeProfile?.id || selectedProfileId;
               const profKey = activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
@@ -5471,10 +5496,33 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 fetchTabGroups(profId, profKey, profName).then((g) => setTabGroups(g));
               }
             }}
-            style={{ fontSize: '0.625rem', padding: '2px 6px', height: 'auto' }}
+            style={{
+              height: '26px',
+              padding: '0 8px',
+              borderRadius: '8px',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+              color: 'var(--text-secondary)',
+              fontSize: '0.6875rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+              e.currentTarget.style.color = 'var(--text-primary)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
+              e.currentTarget.style.color = 'var(--text-secondary)';
+            }}
           >
-            <FiRefreshCw size={10} style={{ marginRight: '3px' }} /> Refresh Groups
-          </Button>
+            <FiRefreshCw size={11} />
+            <span>Refresh Groups</span>
+          </button>
         </div>
 
         {displayGroups.length === 0 ? (
@@ -5538,9 +5586,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     </span>
                   </div>
 
-                  <Button
-                    size="sm"
-                    variant="ghost"
+                  <button
+                    type="button"
                     onClick={async () => {
                       if (tabs.length > 0) {
                         try {
@@ -5559,10 +5606,33 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                         } catch (e) {}
                       }
                     }}
-                    style={{ fontSize: '0.625rem', padding: '2px 7px', height: '22px' }}
+                    style={{
+                      height: '24px',
+                      padding: '0 8px',
+                      borderRadius: '8px',
+                      border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                      color: 'var(--text-secondary)',
+                      fontSize: '0.6875rem',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+                      e.currentTarget.style.color = 'var(--text-primary)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
+                      e.currentTarget.style.color = 'var(--text-secondary)';
+                    }}
                   >
-                    <FiExternalLink size={10} style={{ marginRight: '3px' }} /> Focus Group
-                  </Button>
+                    <FiExternalLink size={11} />
+                    <span>Focus Group</span>
+                  </button>
                 </div>
 
                 {/* Worker Tabs in this Group (Clean Compact Grid) */}
@@ -6725,12 +6795,12 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               }}
               style={{
                 height: '36px',
-                width: '38px',
-                minWidth: '38px',
+                width: '36px',
+                minWidth: '36px',
                 borderRadius: '8px',
-                border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid #CBD5E1',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
-                color: isDark ? '#C9D1D9' : '#475569',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                color: 'var(--text-secondary)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -6740,14 +6810,12 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 flexShrink: 0,
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9';
-                e.currentTarget.style.color = 'var(--accent-primary, #2563EB)';
-                e.currentTarget.style.borderColor = 'var(--accent-primary, #2563EB)';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+                e.currentTarget.style.color = 'var(--text-primary)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC';
-                e.currentTarget.style.color = isDark ? '#C9D1D9' : '#475569';
-                e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
+                e.currentTarget.style.color = 'var(--text-secondary)';
               }}
             >
               <FiEye size={15} />
@@ -6764,7 +6832,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     backgroundColor: isDark ? 'rgba(37, 99, 235, 0.12)' : 'rgba(37, 99, 235, 0.08)',
                     border: isDark ? '1px solid rgba(59, 130, 246, 0.35)' : '1px solid rgba(37, 99, 235, 0.25)',
                     color: isDark ? '#93C5FD' : '#1D4ED8',
-                    fontSize: '0.75rem',
+                    fontSize: '0.78125rem',
                     fontWeight: 600,
                     display: 'flex',
                     alignItems: 'center',
@@ -6791,7 +6859,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
                     border: isDark ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid #FECACA',
                     color: isDark ? '#F87171' : '#DC2626',
-                    fontSize: '0.75rem',
+                    fontSize: '0.78125rem',
                     fontWeight: 600,
                     display: 'flex',
                     alignItems: 'center',
@@ -6831,10 +6899,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   flex: 1,
                   height: '36px',
                   borderRadius: '8px',
-                  border: '1px solid var(--accent-primary, #2563EB)',
-                  backgroundColor: 'var(--accent-primary, #2563EB)',
+                  border: '1px solid transparent',
+                  backgroundColor: isDark ? 'var(--accent-primary, #2563EB)' : '#0F172A',
                   color: '#FFFFFF',
-                  fontSize: '0.75rem',
+                  fontSize: '0.8125rem',
                   fontWeight: 600,
                   display: 'flex',
                   alignItems: 'center',
@@ -6845,12 +6913,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   transition: 'all 0.15s ease',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover, #1D4ED8)';
-                  e.currentTarget.style.borderColor = 'var(--accent-primary-hover, #1D4ED8)';
+                  e.currentTarget.style.backgroundColor = isDark ? 'var(--accent-primary-hover, #1D4ED8)' : '#1E293B';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--accent-primary, #2563EB)';
-                  e.currentTarget.style.borderColor = 'var(--accent-primary, #2563EB)';
+                  e.currentTarget.style.backgroundColor = isDark ? 'var(--accent-primary, #2563EB)' : '#0F172A';
                 }}
               >
                 <FiPlay size={12} style={{ fill: 'currentColor' }} />

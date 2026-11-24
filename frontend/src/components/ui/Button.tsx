@@ -93,7 +93,7 @@ export const Button: React.FC<ButtonProps> = ({
         justifyContent: 'center',
         gap: '0.5rem',
         fontWeight: 500,
-        borderRadius: '0.375rem',
+        borderRadius: '8px',
         padding,
         fontSize,
         backgroundColor: vStyle.bg,

@@ -50,6 +50,13 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
   listingCode: _listingCode,
   heroImage,
 }) => {
+  const listingCode = _listingCode || (() => {
+    try {
+      return localStorage.getItem('bolthaven_active_session_listing_code') || '';
+    } catch {
+      return '';
+    }
+  })();
   const [savedFormats, setSavedFormats] = useState<CropStudioFormat[]>(() => getSavedCropFormats());
 
   useEffect(() => {
@@ -119,6 +126,15 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     );
   }, [savedFormats, selectedFormatId, box.cropFormatId, box.templateId, box.templateText, box.title]);
 
+  // Helper to ensure an image belongs to the active listing code
+  const isImageMatchingListing = (fileName?: string, code?: string) => {
+    if (!code || !code.trim()) return true;
+    if (!fileName) return false;
+    const cleanCode = code.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanFile = fileName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return cleanFile.includes(cleanCode);
+  };
+
   // Dynamically resolve Hero / Generator node title from workflow boxes (prefer direct incoming connection, then matching node)
   const connectedUpstreamHero = useMemo(() => {
     const incoming = (connections || []).filter((c) => c.toNodeId === box.id);
@@ -142,7 +158,15 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     if (box.imageSource && box.imageSource.startsWith('node:')) {
       const targetId = box.imageSource.replace('node:', '');
       const found = (workflowBoxes || []).find((b) => b.id === targetId);
-      if (found) return found;
+      if (
+        found &&
+        (found.tabGroupMode === 'generate' ||
+          found.processKind === 'generate_image' ||
+          found.title?.toLowerCase().includes('hero') ||
+          found.browserGroupName?.toLowerCase().includes('hero'))
+      ) {
+        return found;
+      }
     }
     return workflowBoxes.find(
       (b) =>
@@ -183,7 +207,15 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     if (box.imageSource && box.imageSource.startsWith('node:')) {
       const targetId = box.imageSource.replace('node:', '');
       const found = (workflowBoxes || []).find((b) => b.id === targetId);
-      if (found) return found;
+      if (
+        found &&
+        (found.tabGroupMode === 'enhance' ||
+          found.processKind === 'enhance_images' ||
+          found.title?.toLowerCase().includes('enhance') ||
+          found.browserGroupName?.toLowerCase().includes('enhance'))
+      ) {
+        return found;
+      }
     }
     return workflowBoxes.find(
       (b) =>
@@ -205,6 +237,17 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
   const isHeroCropNode = useMemo(() => {
     // If user explicitly chose another image source in the dropdown, respect their selection!
     if (box.imageSource && box.imageSource !== 'generate' && !box.imageSource.includes('hero')) {
+      if (box.imageSource.startsWith('node:')) {
+        const targetId = box.imageSource.replace('node:', '');
+        const target = (workflowBoxes || []).find((b: any) => b.id === targetId);
+        if (target) {
+          const t = (target.title || '').toLowerCase();
+          const g = (target.browserGroupName || '').toLowerCase();
+          if (target.tabGroupMode === 'generate' || target.processKind === 'generate_image' || t.includes('hero') || g.includes('hero')) {
+            return true;
+          }
+        }
+      }
       return false;
     }
 
@@ -245,12 +288,22 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
 
   // Live hero image from prop, localStorage or event
   const [liveHeroImage, setLiveHeroImage] = useState<{ url: string; fileName?: string; condoName?: string } | null>(() => {
-    if (heroImage && heroImage.url) return heroImage;
+    if (heroImage && heroImage.url) {
+      if (!listingCode || isImageMatchingListing(heroImage.fileName, listingCode)) {
+        return heroImage;
+      }
+    }
     try {
       const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed?.url) return parsed;
+        if (parsed?.url) {
+          if (!listingCode || isImageMatchingListing(parsed.fileName, listingCode)) {
+            return parsed;
+          } else {
+            localStorage.removeItem('bolthaven_last_hero_image');
+          }
+        }
       }
     } catch (_) {}
     return null;
@@ -258,21 +311,29 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
 
   useEffect(() => {
     if (heroImage && heroImage.url) {
-      setLiveHeroImage(heroImage);
+      if (!listingCode || isImageMatchingListing(heroImage.fileName, listingCode)) {
+        setLiveHeroImage(heroImage);
+      } else {
+        setLiveHeroImage(null);
+      }
     }
-  }, [heroImage]);
+  }, [heroImage, listingCode]);
 
   useEffect(() => {
     const handleHeroUpdated = (e: any) => {
       if (e?.detail) {
-        setLiveHeroImage(e.detail);
+        if (!listingCode || isImageMatchingListing(e.detail.fileName, listingCode)) {
+          setLiveHeroImage(e.detail);
+        } else {
+          setLiveHeroImage(null);
+        }
       } else {
         try {
           const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
           if (saved) {
             const parsed = JSON.parse(saved);
             const fname = (parsed?.fileName || '').toLowerCase();
-            if (fname.includes('hero')) {
+            if (fname.includes('hero') && (!listingCode || isImageMatchingListing(parsed.fileName, listingCode))) {
               setLiveHeroImage(parsed);
             } else {
               setLiveHeroImage(null);
@@ -296,13 +357,17 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
       window.removeEventListener('storage', handleHeroUpdated);
       window.removeEventListener('ea_workflow_cleared', handleCleared);
     };
-  }, []);
+  }, [listingCode]);
 
   const effectiveHeroImage = useMemo(() => {
-    if (liveHeroImage && liveHeroImage.url) return liveHeroImage;
-    if (heroImage && heroImage.url) return heroImage;
-    return null;
-  }, [liveHeroImage, heroImage]);
+    const candidate = (liveHeroImage && liveHeroImage.url) ? liveHeroImage : (heroImage && heroImage.url) ? heroImage : null;
+    if (candidate && listingCode) {
+      if (!isImageMatchingListing(candidate.fileName, listingCode)) {
+        return null;
+      }
+    }
+    return candidate;
+  }, [liveHeroImage, heroImage, listingCode]);
 
   // Detect if this box is connected from an upstream Enhance node
   const isUpstreamEnhance = useMemo(() => {
@@ -344,6 +409,64 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     }
   }, [box.imageSource]);
 
+  // Selected source node when chosen explicitly via dropdown
+  const selectedSourceNode = useMemo(() => {
+    if (imageSource && imageSource.startsWith('node:')) {
+      const targetId = imageSource.replace('node:', '');
+      return (workflowBoxes || []).find((b: any) => b.id === targetId) || null;
+    }
+    return null;
+  }, [imageSource, workflowBoxes]);
+
+  const isTargetHero = useMemo(() => {
+    if (!selectedSourceNode) return false;
+    const t = (selectedSourceNode.title || '').toLowerCase();
+    const g = (selectedSourceNode.browserGroupName || '').toLowerCase();
+    return (
+      selectedSourceNode.tabGroupMode === 'generate' ||
+      selectedSourceNode.processKind === 'generate_image' ||
+      t.includes('hero') ||
+      g.includes('hero')
+    );
+  }, [selectedSourceNode]);
+
+  const isTargetEnhance = useMemo(() => {
+    if (!selectedSourceNode) return false;
+    const t = (selectedSourceNode.title || '').toLowerCase();
+    const g = (selectedSourceNode.browserGroupName || '').toLowerCase();
+    const pk = (selectedSourceNode.processKind || '').toLowerCase();
+    const tm = (selectedSourceNode.tabGroupMode || '').toLowerCase();
+    return (
+      tm === 'enhance' ||
+      pk === 'enhance_images' ||
+      t.includes('enhance') ||
+      g.includes('enhance')
+    );
+  }, [selectedSourceNode]);
+
+  const activeHeroImage = useMemo(() => {
+    const target = isTargetHero ? selectedSourceNode : heroNode;
+    if (target) {
+      try {
+        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(`bolthaven_hero_image_${target.id}`) : null;
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.url && isImageMatchingListing(parsed.fileName, listingCode)) {
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    if (effectiveHeroImage && effectiveHeroImage.url && isImageMatchingListing(effectiveHeroImage.fileName, listingCode)) {
+      const targetTitle = (target?.title || '').toLowerCase();
+      const fn = (effectiveHeroImage.fileName || '').toLowerCase();
+      const isTikTok = targetTitle.includes('tiktok');
+      if (isTikTok && fn.includes('tiktok')) return effectiveHeroImage;
+      if (!isTikTok && !fn.includes('tiktok')) return effectiveHeroImage;
+    }
+    return null;
+  }, [isTargetHero, selectedSourceNode, heroNode, effectiveHeroImage, listingCode]);
+
   // Source list calculation
   const currentSourceList = useMemo(() => {
     const rawList: Array<{
@@ -370,25 +493,33 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
 
     const isHeroSource =
       imageSource !== 'upload' &&
-      (imageSource === 'generate' ||
-      (typeof imageSource === 'string' && (imageSource.includes('hero') || imageSource.includes('generator'))) ||
-      (!box.imageSource && isHeroCropNode));
+      (isTargetHero ||
+        (!selectedSourceNode && (
+          imageSource === 'generate' ||
+          (typeof imageSource === 'string' && (imageSource.includes('hero') || imageSource.includes('generator'))) ||
+          (!box.imageSource && isHeroCropNode)
+        )));
 
     const isEnhanceSource =
-      imageSource === 'enhance' ||
-      (typeof imageSource === 'string' && imageSource.includes('enhance')) ||
-      (!box.imageSource && isUpstreamEnhance);
+      imageSource !== 'upload' &&
+      (isTargetEnhance ||
+        (!selectedSourceNode && (
+          imageSource === 'enhance' ||
+          (typeof imageSource === 'string' && imageSource.includes('enhance')) ||
+          (!box.imageSource && isUpstreamEnhance)
+        )));
 
     // 0. Hero / Generator Crop Node: strictly waiting or using generated hero image
     if (isHeroSource) {
-      if (effectiveHeroImage && effectiveHeroImage.url) {
+      if (activeHeroImage && activeHeroImage.url) {
+        const heroNodeLabel = (selectedSourceNode?.title || selectedSourceNode?.browserGroupName || heroLabel || 'Hero').trim();
         return [{
-          id: 'hero-1',
+          id: `${selectedSourceNode?.id || 'hero'}-1`,
           index: 1,
           displayNumber: 1,
-          url: effectiveHeroImage.url,
+          url: activeHeroImage.url,
           source: 'generate' as const,
-          label: effectiveHeroImage.condoName ? `${effectiveHeroImage.condoName} Hero` : `${heroLabel} (1 Photo)`,
+          label: activeHeroImage.condoName ? `${activeHeroImage.condoName} Hero` : `${heroNodeLabel} (1 Photo)`,
         }];
       }
       // If hero image has NOT been generated yet:
@@ -523,10 +654,25 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     if (heroNodes.length > 0) {
       heroNodes.forEach((hn) => {
         const title = (hn.title || hn.browserGroupName || 'Hero').trim();
-        const heroCount = (effectiveHeroImage && effectiveHeroImage.url) ? 1 : 0;
+        let hasImg = false;
+        try {
+          const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(`bolthaven_hero_image_${hn.id}`) : null;
+          if (raw) {
+            const p = JSON.parse(raw);
+            if (p?.url && isImageMatchingListing(p.fileName, listingCode)) hasImg = true;
+          }
+        } catch (_) {}
+        if (!hasImg && effectiveHeroImage?.url && isImageMatchingListing(effectiveHeroImage.fileName, listingCode)) {
+          const tLower = title.toLowerCase();
+          const fn = (effectiveHeroImage.fileName || '').toLowerCase();
+          const isTT = tLower.includes('tiktok');
+          if ((isTT && fn.includes('tiktok')) || (!isTT && !fn.includes('tiktok'))) {
+            hasImg = true;
+          }
+        }
         opts.push({
           value: heroNodes.length === 1 ? 'generate' : `node:${hn.id}`,
-          label: `${title} (${heroCount > 0 ? `${heroCount} Photo` : 'Waiting for Hero'})`,
+          label: `${title} (${hasImg ? '1 Photo' : 'Waiting for Hero'})`,
         });
       });
     } else if (hasIncomingHero || heroNode || isHeroCropNode) {
@@ -689,11 +835,11 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
           }}
           title="Close Settings"
           style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '6px',
-            border: '1px solid var(--border-color)',
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+            width: '32px',
+            height: '32px',
+            borderRadius: '8px',
+            border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
             color: 'var(--text-secondary)',
             display: 'flex',
             alignItems: 'center',
@@ -701,9 +847,10 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
             cursor: 'pointer',
             pointerEvents: 'auto',
             userSelect: 'none',
+            transition: 'all 0.15s ease',
           }}
         >
-          <FiX size={15} style={{ pointerEvents: 'none' }} />
+          <FiX size={14} style={{ pointerEvents: 'none' }} />
         </button>
       </div>
 
@@ -1293,18 +1440,25 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
                 }}
                 style={{
                   height: '32px',
-                  padding: '0 10px',
-                  borderRadius: '6px',
-                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                  padding: '0 12px',
+                  borderRadius: '8px',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
                   color: 'var(--text-primary)',
-                  fontSize: '0.6875rem',
-                  fontWeight: 600,
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px',
+                  gap: '5px',
                   whiteSpace: 'nowrap',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
                 }}
               >
                 <FiFolderPlus size={12} />
@@ -1329,15 +1483,34 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
           justifyContent: 'flex-end',
         }}
       >
-        <Button
-          size="sm"
-          variant="primary"
+        <button
+          type="button"
           onClick={onClose}
-          style={{ fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px' }}
+          style={{
+            height: '34px',
+            padding: '0 16px',
+            borderRadius: '8px',
+            border: '1px solid transparent',
+            backgroundColor: isDark ? 'var(--accent-primary, #2563EB)' : '#0F172A',
+            color: '#FFFFFF',
+            fontSize: '0.78125rem',
+            fontWeight: 600,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = isDark ? 'var(--accent-primary-hover, #1D4ED8)' : '#1E293B';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = isDark ? 'var(--accent-primary, #2563EB)' : '#0F172A';
+          }}
         >
           <FiCheckCircle size={13} />
           <span>Done & Apply Settings</span>
-        </Button>
+        </button>
       </div>
     </div>
   );
