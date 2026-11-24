@@ -67,13 +67,7 @@ function persistCanvasImage(sourceFilePath, fileName) {
       try { fs.copyFileSync(sourceFilePath, procPath); } catch (e) {}
     }
 
-    // 3. Copy to backend storage/uploads/facebook-import/enhanced if missing, different size, or newer mtime
-    const backendPath = path.join(backendStorageEnhancedDir, safeName);
-    if (!fs.existsSync(backendPath) || fs.statSync(backendPath).size !== sourceStat.size || fs.statSync(backendPath).mtimeMs < sourceStat.mtimeMs) {
-      try { fs.copyFileSync(sourceFilePath, backendPath); } catch (e) {}
-    }
-
-    // 4. Update manifest
+    // 3. Update manifest
     let manifest = {};
     try {
       if (fs.existsSync(CANVAS_ENHANCED_MANIFEST)) {
@@ -206,6 +200,7 @@ let automationState = {
   started_at: null,
   updated_at: null,
 };
+let automationAlerts = []; // [{ tabId, slotIndex, position, error, status, message, timestamp }]
 
 // Two-Stage Staging state (shared across HTTP handlers, scoped by group and node)
 let twoStageStates = {}; // keyed by node_id and group_name
@@ -223,10 +218,9 @@ let twoStageState = {
 
 function getAllImageCandidateDirs() {
   const dirs = [
-    defaultProcessingDir,
     path.join(os.homedir(), 'Downloads'),
     canvasCacheDir,
-    backendStorageEnhancedDir,
+    defaultProcessingDir,
   ];
   return dirs.filter((d) => d && fs.existsSync(d));
 }
@@ -234,11 +228,20 @@ function getAllImageCandidateDirs() {
 function findImageFileOnDisk(filename) {
   if (!filename) return null;
   const safeName = path.basename(filename);
-  for (const dir of getAllImageCandidateDirs()) {
-    const full = path.join(dir, safeName);
-    if (fs.existsSync(full)) {
-      return { path: full, name: safeName, dir };
-    }
+  const downloadsDir = path.join(os.homedir(), 'Downloads');
+  // ~/Downloads is user's primary source of truth
+  const dlPath = path.join(downloadsDir, safeName);
+  if (fs.existsSync(dlPath)) {
+    return { path: dlPath, name: safeName, dir: downloadsDir };
+  }
+  // Fall back to temporary canvas cache
+  const cachePath = path.join(canvasCacheDir, safeName);
+  if (fs.existsSync(cachePath)) {
+    return { path: cachePath, name: safeName, dir: canvasCacheDir };
+  }
+  const procPath = path.join(defaultProcessingDir, safeName);
+  if (fs.existsSync(procPath)) {
+    return { path: procPath, name: safeName, dir: defaultProcessingDir };
   }
   return null;
 }
@@ -2107,6 +2110,33 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     return;
   }
 
+  // ── Automation Alert Report (from extension worker when a tab encounters error/stops) ─
+  if (url.pathname === '/automation-alert' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      try {
+        const alert = JSON.parse(body || '{}');
+        alert.timestamp = Date.now();
+        automationAlerts.unshift(alert);
+        if (automationAlerts.length > 20) automationAlerts.pop();
+        console.log(`[COMPANION] 🚨 Automation Alert (Tab #${alert.slotIndex || alert.tabId}):`, alert.message || alert.error);
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ status: 'ok' }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // ── Get Automation Alerts (polled by frontend) ───────────────────────────
+  if (url.pathname === '/automation-alerts' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    return res.end(JSON.stringify({ status: 'success', alerts: automationAlerts }));
+  }
+
   // ── Automation Progress Report (from extension background worker) ─────────
   if (url.pathname === '/automation-progress' && req.method === 'POST') {
     let body = '';
@@ -2147,8 +2177,8 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
   // ── Get Automation State (polled by frontend / backend) ──────────────────
   if (url.pathname === '/automation-status' && req.method === 'GET') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ status: 'success', automation: automationState }));
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    return res.end(JSON.stringify({ status: 'success', automation: automationState, alerts: automationAlerts }));
   }
 
   // ── Requeue Command (called by extension when it receives a command for a different profile) ─
@@ -2280,9 +2310,13 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         let filename = (payload.filename || `fb_hero_${Date.now()}.png`).replace(/[\/\\]/g, '_').trim();
         const incomingListingCode = (payload.listingCode || payload.listing_code || lastActiveListingCode || '').trim();
         if (incomingListingCode) lastActiveListingCode = incomingListingCode;
-        if (incomingListingCode && filename.match(/^enhanced_(\d+)_/i)) {
-          const pos = filename.match(/^enhanced_(\d+)_/i)[1];
-          filename = `${incomingListingCode}-${pos}.png`;
+        if (incomingListingCode) {
+          if (filename.match(/^enhanced_(\d+)_/i)) {
+            const pos = filename.match(/^enhanced_(\d+)_/i)[1];
+            filename = `${incomingListingCode}-${pos}.png`;
+          } else if (!filename.toLowerCase().includes(incomingListingCode.toLowerCase())) {
+            filename = `${incomingListingCode}_${filename}`;
+          }
         }
         const condoName = payload.condo_name || '';
 
@@ -2293,12 +2327,10 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
         console.log(`[COMPANION] 📥 Direct save request for generated image: ${filename} (URL: ${imageUrl.slice(0, 80)}...)`);
 
-        // Target directories: ~/Downloads, Processing directory, Canvas Cache, and Backend Storage
+        // Target directories: ~/Downloads and temporary Canvas Cache (do NOT save permanently into project repository)
         const downloadsDir = path.join(os.homedir(), 'Downloads');
         const downloadFilePath = path.join(downloadsDir, filename);
-        const processingFilePath = path.join(defaultProcessingDir, filename);
         const canvasCacheFilePath = path.join(canvasCacheDir, filename);
-        const backendStorageFilePath = path.join(backendStorageEnhancedDir, filename);
 
         let buffer = null;
         if (imageUrl.startsWith('data:')) {
@@ -2333,23 +2365,43 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           if (!fs.existsSync(downloadFilePath)) {
             try { fs.writeFileSync(downloadFilePath, buffer); } catch (e) {}
           }
-          try { fs.writeFileSync(processingFilePath, buffer); } catch (e) {}
           try { fs.writeFileSync(canvasCacheFilePath, buffer); } catch (e) {}
-          try { fs.writeFileSync(backendStorageFilePath, buffer); } catch (e) {}
-          persistCanvasImage(processingFilePath, filename);
-          console.log(`[COMPANION] ✓ Saved generated image to disk & persistent storage:\n  - ${downloadFilePath} (${buffer.length} bytes)\n  - ${processingFilePath}\n  - ${canvasCacheFilePath}\n  - ${backendStorageFilePath}`);
+          persistCanvasImage(canvasCacheFilePath, filename);
+          console.log(`[COMPANION] ✓ Saved generated image:\n  - ${downloadFilePath} (${buffer.length} bytes)\n  - ${canvasCacheFilePath}`);
 
           // ONLY update twoStageState if this is an actual Hero image download, NOT a normal Enhance photo!
           const isHeroDownload = filename.toLowerCase().startsWith('fb_hero') || filename.toLowerCase().includes('hero') || (twoStageState && twoStageState.is_running && twoStageState.step === 'downloading_image');
           if (isHeroDownload) {
-            twoStageState = {
-              ...twoStageState,
+            const actualFilePath = fs.existsSync(downloadFilePath) ? downloadFilePath : canvasCacheFilePath;
+            const heroStateUpdate = {
               is_running: false,
               step: 'completed',
               result_url: imageUrl,
               downloaded_file: filename,
+              downloaded_file_path: actualFilePath,
+              listing_code: incomingListingCode,
+              downloaded_image_url: `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(filename)}&t=${Date.now()}`,
               updated_at: new Date().toISOString(),
             };
+            twoStageState = { ...twoStageState, ...heroStateUpdate };
+
+            // Determine matching group name from filename prefix
+            const fLow = filename.toLowerCase();
+            let inferredGroup = 'Facebook Hero IMG';
+            if (fLow.includes('bolthaven') && fLow.includes('tiktok')) inferredGroup = 'BoltHaven Tiktok Hero IMG';
+            else if (fLow.includes('dot') && fLow.includes('tiktok')) inferredGroup = 'Dot Tiktok Hero IMG';
+            else if (fLow.includes('tiktok')) inferredGroup = 'TikTok Hero';
+
+            twoStageStates[inferredGroup] = { ...(twoStageStates[inferredGroup] || {}), ...heroStateUpdate };
+            twoStageStates['Facebook Hero IMG'] = { ...(twoStageStates['Facebook Hero IMG'] || {}), ...heroStateUpdate };
+            twoStageStates['FB Hero'] = { ...(twoStageStates['FB Hero'] || {}), ...heroStateUpdate };
+
+            for (const [k, v] of Object.entries(twoStageStates)) {
+              if (v && (v.group_name || v.groupName || '').toLowerCase().includes('hero')) {
+                twoStageStates[k] = { ...v, ...heroStateUpdate };
+              }
+            }
+            console.log(`[COMPANION] 🌟 Updated two-stage hero state for "${inferredGroup}": ${filename}`);
           }
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -2845,10 +2897,12 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       try {
         const payload = JSON.parse(body || '{}');
         const condoName = payload.condo_name || (twoStageState?.condo_name) || '';
-        console.log(`[COMPANION] 🛟 Requesting on-demand download of currently generated Hero image for "${condoName}"...`);
+        const groupName = payload.group_name || payload.groupName || 'Facebook Hero IMG';
+        const listingCode = payload.listing_code || payload.listingCode || '';
+        console.log(`[COMPANION] 🛟 Requesting on-demand download of currently generated Hero image for "${condoName}" (${groupName})...`);
         pushPendingCommand({
           action: 'RECOVER_HERO_IMAGE',
-          payload: { condoName },
+          payload: { condoName, groupName, listingCode },
           created_at: new Date().toISOString(),
         });
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
@@ -3037,6 +3091,8 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
         const nodeId = payload.node_id || payload.nodeId || '';
         const prefix = payload.prefix || (groupName.toLowerCase().includes('tiktok') ? 'tiktok_hero' : 'fb_hero');
+        const incomingListingCode = (payload.listing_code || payload.listingCode || lastActiveListingCode || '').trim();
+        if (incomingListingCode) lastActiveListingCode = incomingListingCode;
 
         const initialStagingState = {
           is_running: true,
@@ -3050,6 +3106,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           node_id: nodeId,
           group_name: groupName,
           prefix: prefix,
+          listing_code: incomingListingCode,
           error: null,
           started_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -3066,6 +3123,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
             groupName,
             nodeId,
             prefix,
+            listingCode: incomingListingCode,
             initialPrompt,
             referenceImage, // 1st: manual reference image
             condoImages,    // 2nd: condo / group photos
@@ -3159,6 +3217,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       const reqNodeId = url.searchParams.get('node_id');
       const reqGroup = url.searchParams.get('group');
       const reqCondo = (url.searchParams.get('condo') || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      const reqListingCode = (url.searchParams.get('listing_code') || '').trim().toLowerCase();
 
       let state = (reqNodeId && twoStageStates[reqNodeId]) || (reqGroup && twoStageStates[reqGroup]) || null;
       if (!state && reqGroup) {
@@ -3175,23 +3234,51 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         state = twoStageState;
       }
 
+      // If a listing_code was requested, STRICTLY verify state matches this listing code!
+      if (state && reqListingCode) {
+        const stateCode = (state.listing_code || '').toLowerCase();
+        const stateFile = (state.downloaded_file || '').toLowerCase();
+        if (!stateCode.includes(reqListingCode) && !stateFile.includes(reqListingCode)) {
+          // Stale state from another listing - ignore!
+          state = null;
+        }
+      }
+
+      // If a specific group was requested, strictly ensure state belongs to that group!
+      if (state && reqGroup) {
+        const reqGLow = reqGroup.toLowerCase();
+        const stateGLow = (state.group_name || state.groupName || '').toLowerCase();
+        if (stateGLow && !stateGLow.includes(reqGLow) && !reqGLow.includes(stateGLow)) {
+          state = null;
+        }
+      }
+
       // Verify if current state matches the requested condo
       const stateCondoSanitized = (state?.condo_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const stateFileSanitized = (state?.downloaded_file || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const isRecentState = state && state.downloaded_file && (
+        !state.updated_at || (Date.now() - new Date(state.updated_at).getTime() < 30 * 60 * 1000)
+      );
       const condoMatches = !reqCondo ||
         (stateCondoSanitized && (stateCondoSanitized.includes(reqCondo) || reqCondo.includes(stateCondoSanitized))) ||
-        (stateFileSanitized && stateFileSanitized.includes(reqCondo));
+        (stateFileSanitized && stateFileSanitized.includes(reqCondo)) ||
+        (isRecentState && (!reqGroup || (state.group_name || state.groupName || '').toLowerCase().includes(reqGroup.toLowerCase().split(' ')[0])));
 
-      // If state already has downloaded_file and matches, verify path exists
+      // If state already has downloaded_file and matches, verify file ACTUALLY exists on disk in ~/Downloads or canvasCache!
       if (state && state.downloaded_file && condoMatches) {
         const found = findImageFileOnDisk(state.downloaded_file);
         if (found) {
           state.downloaded_file_path = found.path;
           state.downloaded_image_url = `http://127.0.0.1:${PORT}/hero-downloaded-image?file=${encodeURIComponent(found.name)}`;
+        } else {
+          // Deleted by user from Downloads! Do not resurrect!
+          state.downloaded_file = '';
+          state.downloaded_file_path = '';
+          state.downloaded_image_url = '';
         }
       }
 
-      // If state does not match the requested condo, or is missing downloaded_file, scan ALL candidate dirs for matching generated hero images on disk!
+      // If state does not match the requested condo/listing, or is missing downloaded_file, scan candidate dirs for matching hero image
       if (!condoMatches || !state?.downloaded_file || !findImageFileOnDisk(state.downloaded_file)) {
         const allCandidateDirs = getAllImageCandidateDirs();
         const candidateFiles = [];
@@ -3204,11 +3291,16 @@ function mergeTabGroups(scannedGroups, liveGroups) {
               if (!lower.endsWith('.png') && !lower.endsWith('.jpg') && !lower.endsWith('.webp')) continue;
               if (lower.startsWith('.')) continue;
 
+              // If listing code requested, file MUST contain the listing code!
+              if (reqListingCode && !lower.includes(reqListingCode)) {
+                continue;
+              }
+
               let isTargetType = false;
               if (reqGroup) {
                 const gLow = reqGroup.toLowerCase();
                 if (gLow.includes('facebook') || gLow.includes('fb')) {
-                  isTargetType = lower.startsWith('fb_hero');
+                  isTargetType = lower.includes('fb_hero');
                 } else if (gLow.includes('bolthaven') && gLow.includes('tiktok')) {
                   isTargetType = lower.includes('bolthaven') && lower.includes('tiktok');
                 } else if (gLow.includes('dot') && gLow.includes('tiktok')) {
@@ -3217,12 +3309,14 @@ function mergeTabGroups(scannedGroups, liveGroups) {
                   isTargetType = lower.includes('hero');
                 }
               } else {
-                isTargetType = lower.startsWith('fb_hero') || lower.includes('hero');
+                isTargetType = lower.includes('fb_hero') || lower.includes('hero');
               }
 
               if (isTargetType) {
                 const fullP = path.join(dir, f);
                 const stat = fs.statSync(fullP);
+                // Strictly exclude ancient files from previous days/sessions (max 2 hours old)
+                if (Date.now() - stat.mtimeMs > 2 * 60 * 60 * 1000) continue;
                 const sanitized = lower.replace(/[^a-z0-9]/g, '');
                 const matchesCondo = !reqCondo || sanitized.includes(reqCondo);
                 if (matchesCondo) {
@@ -3236,10 +3330,12 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         if (candidateFiles.length > 0) {
           candidateFiles.sort((a, b) => b.mtime - a.mtime);
           const best = candidateFiles[0];
-          const m = best.name.match(/^fb_hero_([A-Za-z0-9_]+)_[A-Za-z0-9]+_\d+\.png$/i);
+          const m = best.name.match(/(?:fb_hero_|hero_)([A-Za-z0-9_]+)_[A-Za-z0-9]+_\d+\.png$/i);
           const extractedCondo = m ? m[1].replace(/_+/g, ' ').trim() : (state?.condo_name || reqCondo);
           state = {
             ...(state || {}),
+            group_name: reqGroup || state?.group_name || '',
+            listing_code: reqListingCode || state?.listing_code || '',
             condo_name: extractedCondo,
             downloaded_file: best.name,
             downloaded_file_path: best.path,
@@ -3320,6 +3416,45 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     return;
   }
 
+  // ── Clear Canvas Session & Automation State ──
+  if (url.pathname === '/clear-canvas' && req.method === 'POST') {
+    lastActiveListingCode = '';
+    automationAlerts = [];
+    automationState = {
+      is_running: false,
+      property_id: null,
+      total: 0,
+      completed: 0,
+      failed: 0,
+      remaining: 0,
+      stopped_slots: [],
+      updated_at: new Date().toISOString(),
+    };
+    twoStageStates = {};
+    twoStageState = null;
+
+    // Delete temporary cached result images from project storage and canvas cache!
+    try {
+      if (fs.existsSync(canvasCacheDir)) {
+        const files = fs.readdirSync(canvasCacheDir);
+        for (const f of files) {
+          try { fs.unlinkSync(path.join(canvasCacheDir, f)); } catch (_) {}
+        }
+      }
+      if (fs.existsSync(backendStorageEnhancedDir)) {
+        const files = fs.readdirSync(backendStorageEnhancedDir);
+        for (const f of files) {
+          try { fs.unlinkSync(path.join(backendStorageEnhancedDir, f)); } catch (_) {}
+        }
+      }
+    } catch (e) {
+      console.warn('[COMPANION] Error clearing cached files on clear-canvas:', e.message);
+    }
+    console.log('[COMPANION] 🧹 Cleared active canvas session, reset states, and deleted temporary files from project storage.');
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    return res.end(JSON.stringify({ status: 'ok', cleared: true }));
+  }
+
   // ── List All Downloaded Enhanced Images (Persistent Canvas Scan) ──
   if (url.pathname === '/enhanced-images' && req.method === 'GET') {
     try {
@@ -3327,7 +3462,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       const reqListingCode = (url.searchParams.get('listing_code') || '').trim();
       const downloadsDir = path.join(os.homedir(), 'Downloads');
 
-      // Auto-persist: if any enhanced images are in ~/Downloads, immediately copy to canvasCacheDir and backend storage
+      // Auto-persist: if any enhanced images are in ~/Downloads, immediately copy to temporary canvasCacheDir
       try {
         if (fs.existsSync(downloadsDir)) {
           const dlFiles = fs.readdirSync(downloadsDir);
@@ -3341,8 +3476,8 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         }
       } catch (e) {}
 
-      // Scan all persistent locations: canvasCacheDir, backendStorageEnhancedDir, defaultProcessingDir, downloadsDir
-      const dirsToScan = [canvasCacheDir, backendStorageEnhancedDir, defaultProcessingDir, downloadsDir].filter((d) => fs.existsSync(d));
+      // Scan locations: downloadsDir (user source of truth), canvasCacheDir, defaultProcessingDir (do NOT use project repo directory)
+      const dirsToScan = [downloadsDir, canvasCacheDir, defaultProcessingDir].filter((d) => fs.existsSync(d));
       
       // Step 1: Collect all candidate enhanced files with metadata
       const allCandidates = [];
@@ -3387,16 +3522,12 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       }
 
       // Step 2: Determine active listing filter:
-      // If reqListingCode is provided, use it.
-      // Otherwise, find the newest file that has a listingPrefix to strictly isolate that session's files.
-      let activeListingFilter = reqListingCode;
-      if (!activeListingFilter && allCandidates.length > 0) {
-        // Sort newest first
-        const sortedByMtime = [...allCandidates].sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
-        const newestWithPrefix = sortedByMtime.find((c) => c.listingPrefix);
-        if (newestWithPrefix) {
-          activeListingFilter = newestWithPrefix.listingPrefix;
-        }
+      // STRICT SESSION ISOLATION:
+      // If reqListingCode is requested, only match that listing code!
+      // If no listing code requested, only use lastActiveListingCode if automation was active.
+      let activeListingFilter = (reqListingCode || '').trim();
+      if (!activeListingFilter && lastActiveListingCode && automationState.is_running) {
+        activeListingFilter = lastActiveListingCode.trim();
       }
 
       // Sync with ~/Downloads:
@@ -3438,6 +3569,20 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         } catch (e) {}
       }
 
+      if (!activeListingFilter && !reqPropertyId) {
+        // No listing code or property specified, and no active automation — return empty!
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache',
+        });
+        return res.end(JSON.stringify({
+          status: 'success',
+          count: 0,
+          images: [],
+        }));
+      }
+
       const seenPositions = new Map(); // pos -> imgObj
 
       for (const item of allCandidates) {
@@ -3469,6 +3614,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
         const imgObj = {
           filename: f,
+          path: fullPath,
           full_path: fullPath,
           size: stat.size,
           size_bytes: stat.size,
@@ -3483,35 +3629,6 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         // Prefer matching listing prefix over generic enhanced_X, or newer mtime
         if (!existing || (item.listingPrefix && !existing.listingPrefix) || stat.mtimeMs > existing.mtime) {
           seenPositions.set(key, imgObj);
-        }
-      }
-
-      // Fallback: If requested listing filter yielded 0 images, fallback to the newest available batch in cache/downloads
-      if (seenPositions.size === 0 && allCandidates.length > 0) {
-        const sortedByMtime = [...allCandidates].sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
-        const newestWithPrefix = sortedByMtime.find((c) => c.listingPrefix);
-        const fallbackFilter = newestWithPrefix ? newestWithPrefix.listingPrefix : '';
-        for (const item of allCandidates) {
-          const { filename: f, fullPath, stat, pos, listingPrefix } = item;
-          if (!fs.existsSync(fullPath)) continue;
-          if (fallbackFilter) {
-            if (!listingPrefix || listingPrefix.toLowerCase() !== fallbackFilter.toLowerCase()) continue;
-          }
-          const imgObj = {
-            filename: f,
-            full_path: fullPath,
-            size: stat.size,
-            size_bytes: stat.size,
-            mtime: stat.mtimeMs,
-            position: pos,
-            url: `http://127.0.0.1:${PORT}/downloaded-image?file=${encodeURIComponent(f)}&t=${Math.round(stat.mtimeMs)}`,
-            backend_url: `http://localhost:8085/storage/uploads/facebook-import/enhanced/${encodeURIComponent(f)}?t=${Math.round(stat.mtimeMs)}`,
-          };
-          const key = imgObj.position;
-          const existing = seenPositions.get(key);
-          if (!existing || (item.listingPrefix && !existing.listingPrefix) || stat.mtimeMs > existing.mtime) {
-            seenPositions.set(key, imgObj);
-          }
         }
       }
 
@@ -3590,24 +3707,98 @@ function mergeTabGroups(scannedGroups, liveGroups) {
 
   // ── Clear Canvas Images (called when user explicitly resets/cleans canvas) ──
   if ((url.pathname === '/clear-canvas-images' || url.pathname === '/reset-canvas-images') && req.method === 'POST') {
-    try {
-      twoStageState = null;
-      if (fs.existsSync(CANVAS_ENHANCED_MANIFEST)) {
-        try { fs.unlinkSync(CANVAS_ENHANCED_MANIFEST); } catch (e) {}
-      }
-      if (fs.existsSync(canvasCacheDir)) {
-        const files = fs.readdirSync(canvasCacheDir);
-        for (const f of files) {
-          try { fs.unlinkSync(path.join(canvasCacheDir, f)); } catch (e) {}
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      try {
+        let reqListingCode = '';
+        try {
+          const parsed = JSON.parse(body || '{}');
+          if (parsed.listing_code) reqListingCode = String(parsed.listing_code).trim();
+        } catch (_) {}
+
+        twoStageState = null;
+        const codeToPurge = reqListingCode || lastActiveListingCode || '';
+        lastActiveListingCode = '';
+        automationState = {
+          is_running: false,
+          current_step: 'idle',
+          total_steps: 0,
+          completed: 0,
+          failed: 0,
+          message: 'Canvas cleared',
+        };
+
+        if (fs.existsSync(CANVAS_ENHANCED_MANIFEST)) {
+          try { fs.unlinkSync(CANVAS_ENHANCED_MANIFEST); } catch (e) {}
         }
+        if (fs.existsSync(REFERENCE_IMAGE_CACHE_FILE)) {
+          try { fs.unlinkSync(REFERENCE_IMAGE_CACHE_FILE); } catch (e) {}
+        }
+
+        let deletedCount = 0;
+
+        // 1. Clear canvasCacheDir completely
+        if (fs.existsSync(canvasCacheDir)) {
+          const files = fs.readdirSync(canvasCacheDir);
+          for (const f of files) {
+            try {
+              fs.unlinkSync(path.join(canvasCacheDir, f));
+              deletedCount++;
+            } catch (e) {}
+          }
+        }
+
+        // 2. Clear defaultProcessingDir images (enhanced and hero files, png/jpg/jpeg/webp)
+        if (fs.existsSync(defaultProcessingDir)) {
+          const files = fs.readdirSync(defaultProcessingDir);
+          for (const f of files) {
+            const lower = f.toLowerCase();
+            if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.webp')) {
+              try {
+                fs.unlinkSync(path.join(defaultProcessingDir, f));
+                deletedCount++;
+              } catch (e) {}
+            }
+          }
+        }
+
+        // 3. Clear backendStorageEnhancedDir completely
+        if (fs.existsSync(backendStorageEnhancedDir)) {
+          const files = fs.readdirSync(backendStorageEnhancedDir);
+          for (const f of files) {
+            try {
+              fs.unlinkSync(path.join(backendStorageEnhancedDir, f));
+              deletedCount++;
+            } catch (e) {}
+          }
+        }
+
+        // 4. If a specific listing_code was provided or recorded, also purge matching files from ~/Downloads
+        const downloadsDir = path.join(os.homedir(), 'Downloads');
+        if (codeToPurge && fs.existsSync(downloadsDir)) {
+          try {
+            const dlFiles = fs.readdirSync(downloadsDir);
+            for (const f of dlFiles) {
+              if (f.toLowerCase().includes(codeToPurge.toLowerCase())) {
+                try {
+                  fs.unlinkSync(path.join(downloadsDir, f));
+                  deletedCount++;
+                } catch (e) {}
+              }
+            }
+          } catch (e) {}
+        }
+
+        console.log(`[COMPANION] 🧹 Cleared canvas images cache and storage upon user request (${deletedCount} files deleted, purged code: "${codeToPurge || 'none'}")`);
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({ status: 'success', message: 'Canvas images cache cleared', deleted: deletedCount }));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({ error: e.message }));
       }
-      console.log('[COMPANION] 🧹 Cleared canvas images cache upon user request');
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      return res.end(JSON.stringify({ status: 'success', message: 'Canvas images cache cleared' }));
-    } catch (e) {
-      res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      return res.end(JSON.stringify({ error: e.message }));
-    }
+    });
+    return;
   }
 
   // ── Serve Downloaded Hero Image ──

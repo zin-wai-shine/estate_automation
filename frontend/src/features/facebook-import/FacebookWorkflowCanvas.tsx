@@ -6158,6 +6158,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     canRun: boolean;
     canConnectNext: boolean;
     canDelete: boolean;
+    canRevertRow?: boolean;
   }
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
@@ -11267,8 +11268,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                   <FiLink style={{ fontSize: '28px', color: '#1877F2', position: 'relative', zIndex: 2, pointerEvents: 'none' }} />
                 )}
                 <NodeExecutionBadge status={triggerStatus} errorMessage={getNodeErrorMessage('trigger') || undefined} />
-                {config.trigger.enabled !== false && (hoveredNodeId === 'trigger' || activeModalNode?.type === 'trigger' || selectedNodeIds.has('trigger')) &&
-                  renderNodePlayButton('trigger', isManualTrigger ? '#10B981' : '#3B82F6', undefined, isManualTrigger ? 'Manual Input' : 'Link Importer')}
 
                 {/* Label below circle */}
                 <div
@@ -11466,8 +11465,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                 />
                 <NodeExecutionBadge status={contentStatus} errorMessage={getNodeErrorMessage('get-content') || undefined} />
-                {Boolean(config.getContent.enabled) && (hoveredNodeId === 'get-content' || activeModalNode?.type === 'get-content' || selectedNodeIds.has('get-content')) &&
-                  renderNodePlayButton('get-content', '#06B6D4', undefined, 'Get Content')}
 
                 {/* Label below circle */}
                 <div
@@ -11671,8 +11668,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                   }}
                 />
                 <NodeExecutionBadge status={imagesStatus} errorMessage={getNodeErrorMessage('get-images') || undefined} />
-                {Boolean(config.getImages.enabled) && (hoveredNodeId === 'get-images' || activeModalNode?.type === 'get-images' || selectedNodeIds.has('get-images')) &&
-                  renderNodePlayButton('get-images', '#10B981', undefined, 'Get Images')}
 
                 {/* Label below circle */}
                 <div
@@ -11859,6 +11854,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                 onClick={(e) => handleNodeClick({ type: 'ai-box', boxId: box.id }, e)}
                 onDoubleClick={(e) => handleNodeDoubleClick({ type: 'ai-box', boxId: box.id }, e)}
                 onContextMenu={(e) => {
+                  const isThisSheetCompleted = isGoogleSheetBox(box) && (
+                    boxStatus === 'success' ||
+                    Boolean(executionState?.completedNodeIds?.includes(box.id)) ||
+                    Boolean(aiGeneratedOutputs?.[box.id]) ||
+                    Boolean((box as any).outputCopy)
+                  );
                   handleNodeContextMenu(e, {
                     nodeId: box.id,
                     nodeType: 'ai-box',
@@ -11867,6 +11868,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     canRun: Boolean(onRunFromStep),
                     canConnectNext: true,
                     canDelete: true,
+                    canRevertRow: Boolean(isThisSheetCompleted),
                   });
                 }}
                 style={{
@@ -12464,160 +12466,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                     )}
                   </div>
                 )}
-
-                {/* Floating Run Step Play Button */}
-                {(() => {
-                  const isThisSheetCompleted = isGoogleSheetBox(box) && (
-                    boxStatus === 'success' ||
-                    Boolean(executionState?.completedNodeIds?.includes(box.id)) ||
-                    Boolean(aiGeneratedOutputs?.[box.id]) ||
-                    Boolean((box as any).outputCopy)
-                  );
-
-                  const hasIncomingTopWire = (config.connections || []).some((c) => {
-                    if (c.toNodeId !== box.id) return false;
-                    const fromBox = config.aiBoxes.find((b) => b.id === c.fromNodeId);
-                    return fromBox ? (fromBox.y ?? 0) < (box.y ?? 0) : true;
-                  });
-
-                  const hasTopWireOrSocket =
-                    isChromeProfile ||
-                    isChromeTabGroup ||
-                    hasIncomingTopWire ||
-                    (isAttachedCropFormat && isThisFormatBelow) ||
-                    isWatermark;
-
-                  const hasTopLabel = isTextFormat || (isAttachedCropFormat && !isThisFormatBelow);
-
-                  // Check horizontal neighbors within 180px
-                  const hasNeighborOnLeft = config.aiBoxes.some(
-                    (other) =>
-                      other.id !== box.id &&
-                      Math.abs((other.y ?? 0) - (box.y ?? 0)) < 80 &&
-                      (box.x ?? 0) > (other.x ?? 0) &&
-                      (box.x ?? 0) - (other.x ?? 0) < 180
-                  );
-                  const hasNeighborOnRight = config.aiBoxes.some(
-                    (other) =>
-                      other.id !== box.id &&
-                      Math.abs((other.y ?? 0) - (box.y ?? 0)) < 80 &&
-                      (other.x ?? 0) > (box.x ?? 0) &&
-                      (other.x ?? 0) - (box.x ?? 0) < 180
-                  );
-
-                  let playButtonSide: 'top' | 'right' | 'left' = 'top';
-
-                  if (isTextAI || isCropStudio) {
-                    playButtonSide = 'top';
-                  } else if (hasTopWireOrSocket || hasTopLabel) {
-                    // Top is occupied by wires or label! Position on clean clear side:
-                    if (hasNeighborOnLeft && !hasNeighborOnRight) {
-                      playButtonSide = 'right';
-                    } else if (hasNeighborOnRight && !hasNeighborOnLeft) {
-                      playButtonSide = 'left';
-                    } else {
-                      playButtonSide = hasNeighborOnRight ? 'left' : 'right';
-                    }
-                  }
-
-                  return (
-                    <>
-                      {Boolean(isEffectiveEnabled) && (hoveredNodeId === box.id || isSelected) &&
-                        renderNodePlayButton(
-                          box.id,
-                          isTextFormat
-                            ? '#6366F1'
-                            : isExternalBrowser
-                              ? '#0EA5E9'
-                              : isWatermark
-                                ? '#8B5CF6'
-                                : isTextAI
-                                  ? '#A855F7'
-                                  : isChromeProfile || isChromeTabGroup
-                                    ? '#38BDF8'
-                                    : isGoogleSheetBox(box)
-                                      ? '#10B981'
-                                      : '#A855F7',
-                          playButtonSide === 'left' || playButtonSide === 'right'
-                            ? undefined
-                            : isTextAI || (isCropStudio && !cropFormatsAreBelow)
-                              ? { left: '24px', top: '-38px', transform: 'none' }
-                              : isThisSheetCompleted
-                                ? { left: 'calc(50% - 17px)' }
-                                : undefined,
-                          box.title || 'Step',
-                          playButtonSide
-                        )}
-
-                      {/* Floating Revert Row Button for Google Sheet when row has been added */}
-                      {Boolean(isEffectiveEnabled) && (hoveredNodeId === box.id || isSelected) && isThisSheetCompleted && (
-                        <div
-                          className="canvas-control"
-                          onMouseEnter={() => handleNodeMouseEnter(box.id)}
-                          onMouseLeave={() => handleNodeMouseLeave(box.id)}
-                          style={{
-                            position: 'absolute',
-                            top: '-38px',
-                            left: 'calc(50% + 17px)',
-                            transform: 'translateX(-50%)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            zIndex: 55,
-                            pointerEvents: 'auto',
-                          }}
-                        >
-                          <button
-                            type="button"
-                            className="canvas-control node-step-play-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              handlePromptRevertRow(box);
-                            }}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onMouseEnter={(e) => {
-                              handleNodeMouseEnter(box.id);
-                              if (!isDeletingSheetRow) {
-                                e.currentTarget.style.borderColor = '#EF4444';
-                                e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.22)' : '#FEE2E2';
-                                e.currentTarget.style.transform = 'scale(1.08)';
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              handleNodeMouseLeave(box.id);
-                              if (!isDeletingSheetRow) {
-                                e.currentTarget.style.borderColor = isDark ? 'rgba(239, 68, 68, 0.55)' : '#FCA5A5';
-                                e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#FFFFFF';
-                                e.currentTarget.style.transform = 'scale(1)';
-                              }
-                            }}
-                            title={isDeletingSheetRow ? 'Reverting row from Google Sheet...' : 'Revert / Delete added row from Google Sheet'}
-                            disabled={isDeletingSheetRow}
-                            style={{
-                              width: '28px',
-                              height: '28px',
-                              borderRadius: '7px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
-                              border: isDark ? '1.5px solid rgba(239, 68, 68, 0.55)' : '1.5px solid #FCA5A5',
-                              color: isDark ? '#FCA5A5' : '#DC2626',
-                              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.22)',
-                              cursor: isDeletingSheetRow ? 'not-allowed' : 'pointer',
-                              transition: 'all 0.15s ease',
-                              outline: 'none',
-                            }}
-                          >
-                            <FiRotateCcw size={13} style={{ animation: isDeletingSheetRow ? 'spin 1s linear infinite' : 'none', color: '#EF4444' }} />
-                          </button>
-                          <div className="node-play-hit-bridge" style={{ width: '28px' }} />
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
               </div>
             );
           })}
@@ -13157,14 +13005,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                     {targetSubtitle}
                   </span>
                 </div>
-
-                {Boolean(isEffectiveEnabled) && (hoveredNodeId === destId || isSelected) &&
-                  renderNodePlayButton(
-                    destId,
-                    isFb ? '#1877F2' : isIg ? '#E1306C' : isTiktok ? '#00F2FE' : '#3B82F6',
-                    undefined,
-                    targetTitle
-                  )}
               </div>
             );
           })}
@@ -25744,17 +25584,60 @@ export const FacebookWorkflowCanvas = forwardRef<
             </button>
           )}
 
+          {/* Divider between Upper Actions and Delete/Reverse Section */}
+          {(contextMenu.canRevertRow || contextMenu.canDelete) && (contextMenu.canRun || contextMenu.canConnectNext) && (
+            <div
+              style={{
+                height: '1px',
+                backgroundColor: isDark ? '#30363D' : '#E2E8F0',
+                margin: '4px 2px',
+              }}
+            />
+          )}
+
+          {/* Reverse Added Row (Google Sheet) */}
+          {contextMenu.canRevertRow && contextMenu.box && (
+            <button
+              type="button"
+              className="context-menu-item"
+              onClick={() => {
+                const b = contextMenu.box;
+                setContextMenu(null);
+                if (b) handlePromptRevertRow(b);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                width: '100%',
+                padding: '7px 9px',
+                borderRadius: '5px',
+                border: 'none',
+                background: 'transparent',
+                color: isDark ? '#FCA5A5' : '#DC2626',
+                fontSize: '0.75rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+                textAlign: 'left',
+                transition: 'background-color 0.15s ease, color 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2';
+                e.currentTarget.style.color = isDark ? '#F87171' : '#EF4444';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = isDark ? '#FCA5A5' : '#DC2626';
+              }}
+            >
+              <FiRotateCcw size={13} style={{ flexShrink: 0, opacity: 0.9 }} />
+              <span>Reverse Added Row</span>
+            </button>
+          )}
+
           {/* 3. Delete */}
           {contextMenu.canDelete && (
-            <>
-              <div
-                style={{
-                  height: '1px',
-                  backgroundColor: isDark ? '#30363D' : '#E2E8F0',
-                  margin: '4px 2px',
-                }}
-              />
-              <button
+            <button
                 type="button"
                 className="context-menu-item"
                 onClick={() => {
@@ -25802,7 +25685,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                 <FiTrash2 size={13} style={{ flexShrink: 0, opacity: 0.85 }} />
                 <span>Delete</span>
               </button>
-            </>
           )}
         </div>
       )}

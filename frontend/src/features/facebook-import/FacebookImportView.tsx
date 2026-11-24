@@ -2769,8 +2769,10 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     setShowPipelineModal(false);
     try {
       localStorage.removeItem(FB_IMPORT_SESSION_KEY);
+      localStorage.removeItem('bolthaven_active_session_listing_code');
+      localStorage.removeItem('bolthaven_active_listing_code');
       Object.keys(localStorage).forEach((k) => {
-        if (k.startsWith('bolthaven_canvas_enhanced_')) {
+        if (k.startsWith('bolthaven_')) {
           localStorage.removeItem(k);
         }
       });

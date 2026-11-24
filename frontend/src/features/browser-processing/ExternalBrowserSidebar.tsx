@@ -36,6 +36,7 @@ import {
   FiSquare,
   FiMaximize2,
   FiTrash2,
+  FiDownload,
 } from 'react-icons/fi';
 import { FaChrome } from 'react-icons/fa';
 import { Button } from '../../components/ui/Button';
@@ -88,7 +89,7 @@ import {
 } from './browserPromptUtils';
 import { loadAvailablePromptTemplates } from '../facebook-import/FacebookWorkflowCanvas';
 import { extractCleanCondoNameFromAiText } from './FBHeroSettingsSidebox';
-import { AttachmentGroupsManager, type AttachmentStep, resolveAttachedPhotosFromSteps, type WorkflowImageSource } from './AttachmentGroupsManager';
+import { AttachmentGroupsManager, type AttachmentStep, resolveAttachedPhotosFromSteps, type WorkflowImageSource, clearCondoFolderCache } from './AttachmentGroupsManager';
 import type {
   BrowserProfile,
   BrowserGroupItem,
@@ -471,13 +472,18 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     if (Array.isArray(boxConfig.imageAttachmentSteps) && boxConfig.imageAttachmentSteps.length > 0) {
       return boxConfig.imageAttachmentSteps;
     }
+    const initialCondo = (
+      boxConfig.browserCondoName ||
+      boxConfig.condoFolderName ||
+      ''
+    ).trim();
     return [
       {
         id: 'group-1',
         title: 'Group 1',
-        count: 1,
-        sourceType: 'upload',
-        folderName: '',
+        count: 3,
+        sourceType: 'folder',
+        folderName: initialCondo,
         enabled: true,
       },
     ];
@@ -815,9 +821,39 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     }
   };
 
+  const effectiveListingCode = useMemo(() => {
+    return (propertyContext?.listingCode || (() => {
+      try {
+        return localStorage.getItem('bolthaven_active_session_listing_code') || '';
+      } catch {
+        return '';
+      }
+    })() || '').trim();
+  }, [propertyContext?.listingCode]);
+
+  const [copiedHeroPath, setCopiedHeroPath] = useState(false);
+  const [previewModalImage, setPreviewModalImage] = useState<{
+    url: string;
+    title?: string;
+    fileName?: string;
+    filePath?: string;
+    condoName?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!previewModalImage) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPreviewModalImage(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewModalImage]);
   const [latestHeroImage, setLatestHeroImage] = useState<{
     url: string;
     fileName?: string;
+    filePath?: string;
     condoName?: string;
     createdAt?: string;
     nodeId?: string;
@@ -895,10 +931,14 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     const fetchLatestStatus = async () => {
       try {
         const queryCondo = (condoName || condoSearchQuery || '').trim();
+        const effCode = propertyContext?.listingCode || (() => {
+          try { return localStorage.getItem('bolthaven_active_session_listing_code') || ''; } catch { return ''; }
+        })();
         const params = new URLSearchParams();
         if (boxConfig.id) params.set('node_id', boxConfig.id);
         if (targetGroupName) params.set('group', targetGroupName);
         if (queryCondo) params.set('condo', queryCondo);
+        if (effCode) params.set('listing_code', effCode);
         const url = `http://127.0.0.1:9224/two-stage-status?${params.toString()}`;
         const resp = await fetch(url);
         if (resp.ok && !isCancelled) {
@@ -910,6 +950,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               const fileLower = file.toLowerCase();
               if (!fileLower.includes('hero')) {
                 return;
+              }
+              if (effCode && !fileLower.includes(effCode.toLowerCase())) {
+                return; // Belong to another listing code
               }
               // STRICTLY verify relevance to THIS specific node!
               const candidate = {
@@ -937,6 +980,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 updateLatestHeroImage({
                   url: imgUrl,
                   fileName: file,
+                  filePath: data.state.downloaded_file_path || '',
                   condoName: stateCondo || queryCondo,
                   createdAt: data.state.updated_at,
                   nodeId: boxConfig.id,
@@ -1295,14 +1339,36 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   // Listen for global workflow cleared event (Clear Canvas Data & Results)
   useEffect(() => {
     const handleWorkflowCleared = () => {
+      clearCondoFolderCache();
       setCondoSearchQuery('');
       setMatchedCondoInfo(null);
       lastScannedKeyRef.current = '';
+      setEnhancedImages([]);
+      setQueueJobs([]);
+      setAutomationStatus(null);
+      setIsAutomating(false);
+      setAutomationMessage(null);
+      onEnhancedPhotosUpdate?.({});
+      try {
+        localStorage.removeItem('bolthaven_active_session_listing_code');
+        localStorage.removeItem('bolthaven_active_listing_code');
+      } catch {}
+      setAttachmentSteps([
+        {
+          id: 'group-1',
+          title: 'Group 1',
+          count: 3,
+          sourceType: 'folder',
+          folderName: '',
+          enabled: true,
+        },
+      ]);
       updateMultiConfig({
         browserCondoName: '',
         browserMatchedFolder: '',
         browserCondoImagesCount: 0,
         condoImages: [],
+        imageAttachmentSteps: [],
       });
     };
     window.addEventListener('ea_workflow_cleared', handleWorkflowCleared);
@@ -1559,6 +1625,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           profile_key: profKey,
+          listing_code: effectiveListingCode,
           group_name: effectiveHeroGroupName,
           node_id: boxConfig.id,
           prefix: calculatedPrefix,
@@ -1609,6 +1676,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             if (boxConfig.id) pollParams.set('node_id', boxConfig.id);
             if (targetGroupName) pollParams.set('group', targetGroupName);
             if (condoName) pollParams.set('condo', condoName);
+            if (effectiveListingCode) pollParams.set('listing_code', effectiveListingCode);
             const stResp = await fetch(`http://127.0.0.1:9224/two-stage-status?${pollParams.toString()}`);
             const stData = await stResp.json();
             if (isSidebarStoppedRef.current) {
@@ -1631,6 +1699,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   updateLatestHeroImage({
                     url: imgUrl,
                     fileName: file,
+                    filePath: stData.state.downloaded_file_path || '',
                     condoName: stData.state.condo_name || condoName,
                     createdAt: stData.state.updated_at,
                     nodeId: boxConfig.id,
@@ -1876,7 +1945,18 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       } catch (e) {}
 
       try {
-        const enhanced = await fetchEnhancedDownloadedImages(propertyContext?.id, propertyContext?.listingCode);
+        const effectiveListingCode = propertyContext?.listingCode || (() => {
+          try {
+            return localStorage.getItem('bolthaven_active_session_listing_code') || '';
+          } catch {
+            return '';
+          }
+        })();
+        if (!propertyContext?.id && !effectiveListingCode) {
+          setEnhancedImages((prev) => (prev.length > 0 ? [] : prev));
+          return;
+        }
+        const enhanced = await fetchEnhancedDownloadedImages(propertyContext?.id, effectiveListingCode);
         if (enhanced && enhanced.length > 0) {
           const maxAllowed = receivedImages.length > 0 ? receivedImages.length : 99;
           const valid = enhanced.filter((img) => (img.position || 1) <= maxAllowed);
@@ -1890,7 +1970,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               });
               onEnhancedPhotosUpdate(map);
             }
+          } else {
+            setEnhancedImages([]);
           }
+        } else {
+          setEnhancedImages((prev) => (prev.length > 0 ? [] : prev));
         }
       } catch (e) {}
 
@@ -1903,7 +1987,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isAutomating, propertyContext?.id, receivedImages.length]);
+  }, [isAutomating, propertyContext?.id, propertyContext?.listingCode, receivedImages.length]);
 
   // Notify parent of running state changes (never report running if this step is disabled)
   useEffect(() => {
@@ -2070,7 +2154,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
     const res = await startAutomation({
       property_id: propId,
-      listing_code: propertyContext?.listingCode || '',
+      listing_code: effectiveListingCode,
       profile_key: profKey,
       group_name: effectiveGroupName,
       group_tab_urls: targetUrls,
@@ -2080,7 +2164,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       reuse_session_tabs: (boxConfig as any).reuseSessionTabs ?? true,
       jobs: (createdBatchJobs.length > 0 ? createdBatchJobs : queueJobs).map((j) => ({
         ...j,
-        listing_code: propertyContext?.listingCode || (j as any).listing_code || '',
+        listing_code: effectiveListingCode || (j as any).listing_code || '',
       })),
     });
     if (isSidebarStoppedRef.current) return;
@@ -2631,6 +2715,258 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           />
         </div>
       ) : null}
+      {/* Full-view Image Modal (Lightbox) */}
+      {previewModalImage && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 999999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+            backdropFilter: 'blur(8px)',
+            padding: '20px',
+            boxSizing: 'border-box',
+          }}
+          onClick={() => setPreviewModalImage(null)}
+        >
+          <div
+            style={{
+              maxWidth: '92vw',
+              maxHeight: '92vh',
+              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid #CBD5E1',
+              borderRadius: '12px',
+              boxShadow: '0 24px 48px rgba(0, 0, 0, 0.5), 0 8px 16px rgba(0, 0, 0, 0.25)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              boxSizing: 'border-box',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 16px',
+                borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <div
+                  style={{
+                    width: '26px',
+                    height: '26px',
+                    borderRadius: '6px',
+                    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                    color: '#10B981',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiCheckCircle size={14} />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: '0.8125rem',
+                      fontWeight: 700,
+                      color: isDark ? '#F3F4F6' : '#1E293B',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {previewModalImage.title || 'Full Resolution Image Preview'}
+                  </div>
+                  {previewModalImage.fileName && (
+                    <div
+                      style={{
+                        fontSize: '0.625rem',
+                        color: isDark ? '#8B949E' : '#64748B',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {previewModalImage.fileName}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                {previewModalImage.fileName && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(previewModalImage.fileName || '')}`).catch(() => {});
+                    }}
+                    style={{
+                      height: '28px',
+                      padding: '0 10px',
+                      borderRadius: '6px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                      border: '1px solid var(--border-color)',
+                      color: isDark ? '#F3F4F6' : '#1E293B',
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                    }}
+                    title="Reveal in Finder"
+                  >
+                    <FiFolder size={12} />
+                    <span>Reveal in Finder</span>
+                  </button>
+                )}
+
+                <a
+                  href={previewModalImage.url}
+                  download={previewModalImage.fileName || 'download.png'}
+                  style={{
+                    height: '28px',
+                    padding: '0 10px',
+                    borderRadius: '6px',
+                    backgroundColor: '#2563EB',
+                    border: '1px solid #1D4ED8',
+                    color: '#FFFFFF',
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    textDecoration: 'none',
+                    boxShadow: '0 1px 3px rgba(37, 99, 235, 0.3)',
+                  }}
+                  title="Download image file"
+                >
+                  <FiDownload size={12} />
+                  <span>Download</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => setPreviewModalImage(null)}
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '6px',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                    border: 'none',
+                    color: isDark ? '#9CA3AF' : '#6B7280',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = '#EF4444')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = isDark ? '#9CA3AF' : '#6B7280')}
+                  title="Close modal (Esc)"
+                >
+                  <FiX size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Image Body */}
+            <div
+              style={{
+                padding: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#0a0a0a',
+                overflow: 'auto',
+                maxHeight: 'calc(92vh - 120px)',
+              }}
+            >
+              <img
+                src={previewModalImage.url}
+                alt={previewModalImage.title || 'Image Preview'}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: 'calc(80vh - 60px)',
+                  width: 'auto',
+                  height: 'auto',
+                  objectFit: 'contain',
+                  borderRadius: '6px',
+                  boxShadow: '0 8px 30px rgba(0, 0, 0, 0.7)',
+                  display: 'block',
+                }}
+              />
+            </div>
+
+            {/* Modal Footer (File path) */}
+            {previewModalImage.filePath && (
+              <div
+                style={{
+                  padding: '8px 14px',
+                  borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                  fontSize: '0.625rem',
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                    color: isDark ? '#93C5FD' : '#1D4ED8',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flex: 1,
+                  }}
+                  title={previewModalImage.filePath}
+                >
+                  {previewModalImage.filePath}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(previewModalImage.filePath || '');
+                    setCopiedHeroPath(true);
+                    setTimeout(() => setCopiedHeroPath(false), 2000);
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: copiedHeroPath ? '#10B981' : (isDark ? '#9CA3AF' : '#6B7280'),
+                    fontSize: '0.625rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    flexShrink: 0,
+                  }}
+                >
+                  {copiedHeroPath ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                  <span>{copiedHeroPath ? 'Copied' : 'Copy Path'}</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
   const renderImagesToEnhanceCard = () => (
@@ -2882,6 +3218,258 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         >
           No images received from &ldquo;Get Images&rdquo; yet. Connect Get Images to load photos.
         </div>
+      )}
+      {/* Full-view Image Modal (Lightbox) */}
+      {previewModalImage && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 999999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+            backdropFilter: 'blur(8px)',
+            padding: '20px',
+            boxSizing: 'border-box',
+          }}
+          onClick={() => setPreviewModalImage(null)}
+        >
+          <div
+            style={{
+              maxWidth: '92vw',
+              maxHeight: '92vh',
+              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid #CBD5E1',
+              borderRadius: '12px',
+              boxShadow: '0 24px 48px rgba(0, 0, 0, 0.5), 0 8px 16px rgba(0, 0, 0, 0.25)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              boxSizing: 'border-box',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 16px',
+                borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <div
+                  style={{
+                    width: '26px',
+                    height: '26px',
+                    borderRadius: '6px',
+                    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                    color: '#10B981',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiCheckCircle size={14} />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: '0.8125rem',
+                      fontWeight: 700,
+                      color: isDark ? '#F3F4F6' : '#1E293B',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {previewModalImage.title || 'Full Resolution Image Preview'}
+                  </div>
+                  {previewModalImage.fileName && (
+                    <div
+                      style={{
+                        fontSize: '0.625rem',
+                        color: isDark ? '#8B949E' : '#64748B',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {previewModalImage.fileName}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                {previewModalImage.fileName && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(previewModalImage.fileName || '')}`).catch(() => {});
+                    }}
+                    style={{
+                      height: '28px',
+                      padding: '0 10px',
+                      borderRadius: '6px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                      border: '1px solid var(--border-color)',
+                      color: isDark ? '#F3F4F6' : '#1E293B',
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                    }}
+                    title="Reveal in Finder"
+                  >
+                    <FiFolder size={12} />
+                    <span>Reveal in Finder</span>
+                  </button>
+                )}
+
+                <a
+                  href={previewModalImage.url}
+                  download={previewModalImage.fileName || 'download.png'}
+                  style={{
+                    height: '28px',
+                    padding: '0 10px',
+                    borderRadius: '6px',
+                    backgroundColor: '#2563EB',
+                    border: '1px solid #1D4ED8',
+                    color: '#FFFFFF',
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    textDecoration: 'none',
+                    boxShadow: '0 1px 3px rgba(37, 99, 235, 0.3)',
+                  }}
+                  title="Download image file"
+                >
+                  <FiDownload size={12} />
+                  <span>Download</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => setPreviewModalImage(null)}
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '6px',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                    border: 'none',
+                    color: isDark ? '#9CA3AF' : '#6B7280',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = '#EF4444')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = isDark ? '#9CA3AF' : '#6B7280')}
+                  title="Close modal (Esc)"
+                >
+                  <FiX size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Image Body */}
+            <div
+              style={{
+                padding: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#0a0a0a',
+                overflow: 'auto',
+                maxHeight: 'calc(92vh - 120px)',
+              }}
+            >
+              <img
+                src={previewModalImage.url}
+                alt={previewModalImage.title || 'Image Preview'}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: 'calc(80vh - 60px)',
+                  width: 'auto',
+                  height: 'auto',
+                  objectFit: 'contain',
+                  borderRadius: '6px',
+                  boxShadow: '0 8px 30px rgba(0, 0, 0, 0.7)',
+                  display: 'block',
+                }}
+              />
+            </div>
+
+            {/* Modal Footer (File path) */}
+            {previewModalImage.filePath && (
+              <div
+                style={{
+                  padding: '8px 14px',
+                  borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                  fontSize: '0.625rem',
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                    color: isDark ? '#93C5FD' : '#1D4ED8',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flex: 1,
+                  }}
+                  title={previewModalImage.filePath}
+                >
+                  {previewModalImage.filePath}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(previewModalImage.filePath || '');
+                    setCopiedHeroPath(true);
+                    setTimeout(() => setCopiedHeroPath(false), 2000);
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: copiedHeroPath ? '#10B981' : (isDark ? '#9CA3AF' : '#6B7280'),
+                    fontSize: '0.625rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    flexShrink: 0,
+                  }}
+                >
+                  {copiedHeroPath ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                  <span>{copiedHeroPath ? 'Copied' : 'Copy Path'}</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -4220,7 +4808,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 (condoName || condoSearchQuery).toLowerCase().includes(latestHeroImage.condoName.toLowerCase()) ||
                 latestHeroImage.condoName.toLowerCase().includes((condoName || condoSearchQuery).toLowerCase())
               )
-            ) && (
+            ) && (!effectiveListingCode || (latestHeroImage.fileName && latestHeroImage.fileName.toLowerCase().includes(effectiveListingCode.toLowerCase()))) && (
               <div
                 style={{
                   borderRadius: '12px',
@@ -4333,8 +4921,22 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
-                  onClick={() => window.open(latestHeroImage.url, '_blank')}
-                  title="Click to view full 2400×1200 image in new tab"
+                  onClick={() => {
+                    const resolvedHeroFilePath =
+                      latestHeroImage.filePath ||
+                      twoStageStatus?.downloaded_file_path ||
+                      (latestHeroImage.fileName
+                        ? `/Users/zinwaishine/Desktop/Project_EA/backend/storage/uploads/facebook-import/enhanced/${latestHeroImage.fileName}`
+                        : '');
+                    setPreviewModalImage({
+                      url: latestHeroImage.url,
+                      fileName: latestHeroImage.fileName,
+                      filePath: resolvedHeroFilePath,
+                      title: (boxConfig.title || '').toLowerCase().includes('tiktok') ? 'Generated TikTok Hero Image' : 'Generated Hero Image',
+                      condoName: latestHeroImage.condoName || condoName,
+                    });
+                  }}
+                  title="Click to view full image in modal"
                 >
                   <img
                     src={latestHeroImage.url}
@@ -4378,11 +4980,116 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   </div>
                 </div>
 
+                {/* File Path / Location Box */}
+                {(() => {
+                  const resolvedHeroFilePath =
+                    latestHeroImage.filePath ||
+                    twoStageStatus?.downloaded_file_path ||
+                    (latestHeroImage.fileName
+                      ? `/Users/zinwaishine/Desktop/Project_EA/backend/storage/uploads/facebook-import/enhanced/${latestHeroImage.fileName}`
+                      : '');
+                  if (!resolvedHeroFilePath) return null;
+                  return (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px',
+                        padding: '6px 8px',
+                        borderRadius: '6px',
+                        backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : '#F1F5F9',
+                        border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          fontSize: '0.625rem',
+                          color: 'var(--text-secondary)',
+                        }}
+                      >
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                          <FiFolder size={11} style={{ color: 'var(--accent-primary, #2563EB)' }} />
+                          <span>File Path:</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(resolvedHeroFilePath);
+                            setCopiedHeroPath(true);
+                            setTimeout(() => setCopiedHeroPath(false), 2000);
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: copiedHeroPath ? '#10B981' : 'var(--text-muted)',
+                            fontSize: '0.625rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            padding: '1px 4px',
+                            borderRadius: '4px',
+                          }}
+                          title="Copy file path"
+                        >
+                          {copiedHeroPath ? <FiCheck size={10} /> : <FiCopy size={10} />}
+                          <span>{copiedHeroPath ? 'Copied' : 'Copy'}</span>
+                        </button>
+                      </div>
+                      <div
+                        title={`Click to reveal file in Finder: ${resolvedHeroFilePath}`}
+                        onClick={() => {
+                          fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(latestHeroImage.fileName || '')}`).catch(() => {});
+                        }}
+                        style={{
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                          fontSize: '0.59375rem',
+                          color: isDark ? '#93C5FD' : '#1D4ED8',
+                          wordBreak: 'break-all',
+                          lineHeight: 1.35,
+                          cursor: 'pointer',
+                          padding: '4px 6px',
+                          borderRadius: '4px',
+                          backgroundColor: isDark ? 'rgba(37, 99, 235, 0.1)' : 'rgba(37, 99, 235, 0.06)',
+                          border: isDark ? '1px solid rgba(37, 99, 235, 0.2)' : '1px solid rgba(37, 99, 235, 0.12)',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(37, 99, 235, 0.1)' : 'rgba(37, 99, 235, 0.06)';
+                        }}
+                      >
+                        {resolvedHeroFilePath}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Action buttons */}
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <button
                     type="button"
-                    onClick={() => window.open(latestHeroImage.url, '_blank')}
+                    onClick={() => {
+                      const resolvedHeroFilePath =
+                        latestHeroImage.filePath ||
+                        twoStageStatus?.downloaded_file_path ||
+                        (latestHeroImage.fileName
+                          ? `/Users/zinwaishine/Desktop/Project_EA/backend/storage/uploads/facebook-import/enhanced/${latestHeroImage.fileName}`
+                          : '');
+                      setPreviewModalImage({
+                        url: latestHeroImage.url,
+                        fileName: latestHeroImage.fileName,
+                        filePath: resolvedHeroFilePath,
+                        title: (boxConfig.title || '').toLowerCase().includes('tiktok') ? 'Generated TikTok Hero Image' : 'Generated Hero Image',
+                        condoName: latestHeroImage.condoName || condoName,
+                      });
+                    }}
                     style={{
                       flex: 1,
                       height: '28px',
@@ -5497,7 +6204,14 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     }}
                   >
                     <div
-                      onClick={() => window.open(displayUrl || img.url, '_blank')}
+                      onClick={() => {
+                        setPreviewModalImage({
+                          url: displayUrl || img.url,
+                          fileName: img.filename,
+                          title: `Enhanced Photo #${img.position || item.position}`,
+                          filePath: (img as any).full_path || (img.filename ? `/Users/zinwaishine/Desktop/Project_EA/backend/storage/uploads/facebook-import/enhanced/${img.filename}` : undefined),
+                        });
+                      }}
                       style={{
                         position: 'relative',
                         width: '100%',
@@ -5509,7 +6223,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                         overflow: 'hidden',
                         cursor: 'pointer',
                       }}
-                      title="Click to view full resolution"
+                      title="Click to view full image in modal"
                     >
                       <img
                         src={displayUrl}
@@ -5576,9 +6290,46 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                         boxSizing: 'border-box',
                       }}
                     >
-                      <span style={{ fontSize: '0.5625rem', fontWeight: 500 }}>
-                        {Math.round(((img as any).size_bytes || img.size || 0) / 1024)} KB
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1, marginRight: '6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                          <span
+                            style={{
+                              fontSize: '0.59375rem',
+                              fontWeight: 600,
+                              color: 'var(--text-primary)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                            title={img.filename}
+                          >
+                            {img.filename}
+                          </span>
+                          <span style={{ fontSize: '0.53125rem', fontWeight: 500, color: 'var(--text-muted)', flexShrink: 0 }}>
+                            {Math.round(((img as any).size_bytes || img.size || 0) / 1024)} KB
+                          </span>
+                        </div>
+                        <span
+                          style={{
+                            fontSize: '0.53125rem',
+                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                            color: isDark ? '#93C5FD' : '#2563EB',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            cursor: 'pointer',
+                            lineHeight: 1.2,
+                            marginTop: '1px',
+                          }}
+                          title={`Click to reveal in Finder: ${(img as any).full_path || img.path || `~/Downloads/${img.filename}`}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(img.filename)}`).catch(() => {});
+                          }}
+                        >
+                          {(img as any).full_path || img.path || `~/Downloads/${img.filename}`}
+                        </span>
+                      </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <button
                           type="button"
@@ -5618,21 +6369,29 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                         >
                           <FiFolder size={11} />
                         </button>
-                        <a
-                          href={displayUrl || img.url}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewModalImage({
+                              url: displayUrl || img.url,
+                              fileName: img.filename,
+                              title: `Enhanced Photo #${img.position || item.position}`,
+                              filePath: (img as any).full_path || (img.filename ? `/Users/zinwaishine/Desktop/Project_EA/backend/storage/uploads/facebook-import/enhanced/${img.filename}` : undefined),
+                            });
+                          }}
                           style={{
+                            background: 'none',
+                            border: 'none',
                             color: '#10B981',
+                            cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
-                            textDecoration: 'none',
                             padding: '2px',
                           }}
-                          title="View Full Resolution"
+                          title="View Full Resolution in Modal"
                         >
-                          <FiExternalLink size={11} />
-                        </a>
+                          <FiMaximize2 size={11} />
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleDeleteEnhancedImage(img)}
@@ -5955,50 +6714,111 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         }
 
         const runButtonContent = (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
-              {/* Small Preview Button at Left */}
-              <button
-                type="button"
-                title="Preview Attached Images & Prompt in Chat"
-                onClick={() => {
-                  onCloseSettingsSidebox?.();
-                  setShowPromptViewSidebox(true);
-                }}
-                style={{
-                  height: '34px',
-                  width: '36px',
-                  minWidth: '36px',
-                  borderRadius: '6px',
-                  border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid #CBD5E1',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
-                  color: isDark ? '#C9D1D9' : '#475569',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  boxShadow: 'none',
-                  flexShrink: 0,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9';
-                  e.currentTarget.style.color = 'var(--accent-primary, #2563EB)';
-                  e.currentTarget.style.borderColor = 'var(--accent-primary, #2563EB)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC';
-                  e.currentTarget.style.color = isDark ? '#C9D1D9' : '#475569';
-                  e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1';
-                }}
-              >
-                <FiEye size={15} />
-              </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', minHeight: '36px' }}>
+            {/* Preview Button */}
+            <button
+              type="button"
+              title="Preview Attached Images & Prompt in Chat"
+              onClick={() => {
+                onCloseSettingsSidebox?.();
+                setShowPromptViewSidebox(true);
+              }}
+              style={{
+                height: '36px',
+                width: '38px',
+                minWidth: '38px',
+                borderRadius: '8px',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid #CBD5E1',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                color: isDark ? '#C9D1D9' : '#475569',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                boxShadow: 'none',
+                flexShrink: 0,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9';
+                e.currentTarget.style.color = 'var(--accent-primary, #2563EB)';
+                e.currentTarget.style.borderColor = 'var(--accent-primary, #2563EB)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC';
+                e.currentTarget.style.color = isDark ? '#C9D1D9' : '#475569';
+                e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1';
+              }}
+            >
+              <FiEye size={15} />
+            </button>
 
-              {/* Main Run Button */}
+            {isAutomating || isRunningTwoStage ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                {/* Clean Running Status Pill */}
+                <div
+                  style={{
+                    flex: 1,
+                    height: '36px',
+                    borderRadius: '8px',
+                    backgroundColor: isDark ? 'rgba(37, 99, 235, 0.12)' : 'rgba(37, 99, 235, 0.08)',
+                    border: isDark ? '1px solid rgba(59, 130, 246, 0.35)' : '1px solid rgba(37, 99, 235, 0.25)',
+                    color: isDark ? '#93C5FD' : '#1D4ED8',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '7px',
+                    padding: '0 12px',
+                    userSelect: 'none',
+                    letterSpacing: '0.01em',
+                  }}
+                >
+                  <FiLoader className="animate-spin" size={13} style={{ color: '#3B82F6' }} />
+                  <span>Running...</span>
+                </div>
+
+                {/* Sleek Stop Button */}
+                <button
+                  type="button"
+                  title="Stop active automation"
+                  onClick={handleStopGroupAutomation}
+                  style={{
+                    height: '36px',
+                    padding: '0 14px',
+                    borderRadius: '8px',
+                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
+                    border: isDark ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid #FECACA',
+                    color: isDark ? '#F87171' : '#DC2626',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.22)' : '#FEE2E2';
+                    e.currentTarget.style.borderColor = isDark ? 'rgba(239, 68, 68, 0.55)' : '#FCA5A5';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2';
+                    e.currentTarget.style.borderColor = isDark ? 'rgba(239, 68, 68, 0.35)' : '#FECACA';
+                  }}
+                >
+                  <FiSquare size={10} style={{ fill: 'currentColor' }} />
+                  <span>Stop</span>
+                </button>
+              </div>
+            ) : (
+              /* Main Run Button */
               <button
                 type="button"
-                disabled={isAutomating || isRunningTwoStage}
                 onClick={() => {
                   if (isHeroNode) {
                     handleRunTwoStageTest();
@@ -6009,12 +6829,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 }}
                 style={{
                   flex: 1,
-                  height: '34px',
-                  borderRadius: '6px',
+                  height: '36px',
+                  borderRadius: '8px',
                   border: '1px solid var(--accent-primary, #2563EB)',
-                  backgroundColor: (isAutomating || isRunningTwoStage)
-                    ? 'rgba(37, 99, 235, 0.6)'
-                    : 'var(--accent-primary, #2563EB)',
+                  backgroundColor: 'var(--accent-primary, #2563EB)',
                   color: '#FFFFFF',
                   fontSize: '0.75rem',
                   fontWeight: 600,
@@ -6022,55 +6840,22 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '6px',
-                  cursor: (isAutomating || isRunningTwoStage) ? 'not-allowed' : 'pointer',
+                  cursor: 'pointer',
                   boxShadow: 'none',
                   transition: 'all 0.15s ease',
                 }}
                 onMouseEnter={(e) => {
-                  if (!isAutomating && !isRunningTwoStage) {
-                    e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover, #1D4ED8)';
-                  }
+                  e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover, #1D4ED8)';
+                  e.currentTarget.style.borderColor = 'var(--accent-primary-hover, #1D4ED8)';
                 }}
                 onMouseLeave={(e) => {
-                  if (!isAutomating && !isRunningTwoStage) {
-                    e.currentTarget.style.backgroundColor = 'var(--accent-primary, #2563EB)';
-                  }
+                  e.currentTarget.style.backgroundColor = 'var(--accent-primary, #2563EB)';
+                  e.currentTarget.style.borderColor = 'var(--accent-primary, #2563EB)';
                 }}
               >
-                {isAutomating || isRunningTwoStage ? (
-                  <>
-                    <FiLoader className="animate-spin" size={13} />
-                    <span>Running...</span>
-                  </>
-                ) : (
-                  <>
-                    <FiPlay size={12} />
-                    <span>Run</span>
-                  </>
-                )}
+                <FiPlay size={12} style={{ fill: 'currentColor' }} />
+                <span>Run</span>
               </button>
-            </div>
-
-            {/* Stop Automation Button */}
-            {(isAutomating || isRunningTwoStage) && (
-              <Button
-                size="sm"
-                variant="danger"
-                onClick={handleStopGroupAutomation}
-                style={{
-                  fontSize: '0.6875rem',
-                  fontWeight: 600,
-                  width: '100%',
-                  height: '30px',
-                  borderRadius: '6px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                }}
-              >
-                <FiSquare size={11} /> Stop Automation
-              </Button>
             )}
           </div>
         );
@@ -6450,6 +7235,258 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           </div>
         );
       })()}
+      {/* Full-view Image Modal (Lightbox) */}
+      {previewModalImage && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 999999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+            backdropFilter: 'blur(8px)',
+            padding: '20px',
+            boxSizing: 'border-box',
+          }}
+          onClick={() => setPreviewModalImage(null)}
+        >
+          <div
+            style={{
+              maxWidth: '92vw',
+              maxHeight: '92vh',
+              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid #CBD5E1',
+              borderRadius: '12px',
+              boxShadow: '0 24px 48px rgba(0, 0, 0, 0.5), 0 8px 16px rgba(0, 0, 0, 0.25)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              boxSizing: 'border-box',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 16px',
+                borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <div
+                  style={{
+                    width: '26px',
+                    height: '26px',
+                    borderRadius: '6px',
+                    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                    color: '#10B981',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiCheckCircle size={14} />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: '0.8125rem',
+                      fontWeight: 700,
+                      color: isDark ? '#F3F4F6' : '#1E293B',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {previewModalImage.title || 'Full Resolution Image Preview'}
+                  </div>
+                  {previewModalImage.fileName && (
+                    <div
+                      style={{
+                        fontSize: '0.625rem',
+                        color: isDark ? '#8B949E' : '#64748B',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {previewModalImage.fileName}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                {previewModalImage.fileName && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(previewModalImage.fileName || '')}`).catch(() => {});
+                    }}
+                    style={{
+                      height: '28px',
+                      padding: '0 10px',
+                      borderRadius: '6px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                      border: '1px solid var(--border-color)',
+                      color: isDark ? '#F3F4F6' : '#1E293B',
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                    }}
+                    title="Reveal in Finder"
+                  >
+                    <FiFolder size={12} />
+                    <span>Reveal in Finder</span>
+                  </button>
+                )}
+
+                <a
+                  href={previewModalImage.url}
+                  download={previewModalImage.fileName || 'download.png'}
+                  style={{
+                    height: '28px',
+                    padding: '0 10px',
+                    borderRadius: '6px',
+                    backgroundColor: '#2563EB',
+                    border: '1px solid #1D4ED8',
+                    color: '#FFFFFF',
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    textDecoration: 'none',
+                    boxShadow: '0 1px 3px rgba(37, 99, 235, 0.3)',
+                  }}
+                  title="Download image file"
+                >
+                  <FiDownload size={12} />
+                  <span>Download</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => setPreviewModalImage(null)}
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '6px',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                    border: 'none',
+                    color: isDark ? '#9CA3AF' : '#6B7280',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = '#EF4444')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = isDark ? '#9CA3AF' : '#6B7280')}
+                  title="Close modal (Esc)"
+                >
+                  <FiX size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Image Body */}
+            <div
+              style={{
+                padding: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#0a0a0a',
+                overflow: 'auto',
+                maxHeight: 'calc(92vh - 120px)',
+              }}
+            >
+              <img
+                src={previewModalImage.url}
+                alt={previewModalImage.title || 'Image Preview'}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: 'calc(80vh - 60px)',
+                  width: 'auto',
+                  height: 'auto',
+                  objectFit: 'contain',
+                  borderRadius: '6px',
+                  boxShadow: '0 8px 30px rgba(0, 0, 0, 0.7)',
+                  display: 'block',
+                }}
+              />
+            </div>
+
+            {/* Modal Footer (File path) */}
+            {previewModalImage.filePath && (
+              <div
+                style={{
+                  padding: '8px 14px',
+                  borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                  fontSize: '0.625rem',
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                    color: isDark ? '#93C5FD' : '#1D4ED8',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flex: 1,
+                  }}
+                  title={previewModalImage.filePath}
+                >
+                  {previewModalImage.filePath}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(previewModalImage.filePath || '');
+                    setCopiedHeroPath(true);
+                    setTimeout(() => setCopiedHeroPath(false), 2000);
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: copiedHeroPath ? '#10B981' : (isDark ? '#9CA3AF' : '#6B7280'),
+                    fontSize: '0.625rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    flexShrink: 0,
+                  }}
+                >
+                  {copiedHeroPath ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                  <span>{copiedHeroPath ? 'Copied' : 'Copy Path'}</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

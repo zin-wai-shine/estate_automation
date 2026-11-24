@@ -979,9 +979,17 @@ export const CreateWorkflowView: React.FC = () => {
     setAiGeneratedCopy('');
     setProjectName('');
     setPropertyData(null);
+    const oldListingCode = workflowContextRef.current?.listingCode || (() => {
+      try {
+        return localStorage.getItem('bolthaven_active_session_listing_code') || '';
+      } catch {
+        return '';
+      }
+    })();
     if (workflowContextRef.current) {
       workflowContextRef.current.rawCaption = '';
       workflowContextRef.current.imageList = [];
+      workflowContextRef.current.listingCode = '';
     }
     if (editingFormat?.config) {
       handleCanvasConfigChange({
@@ -1029,16 +1037,16 @@ export const CreateWorkflowView: React.FC = () => {
     try {
       localStorage.removeItem('estate_facebook_import_session_v1');
     } catch {}
+    try {
+      localStorage.removeItem('bolthaven_active_session_listing_code');
+      localStorage.removeItem('bolthaven_active_listing_code');
+    } catch {}
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
       if (
         k &&
         (k.startsWith('ea_workflow_execution_data_') ||
-         k.startsWith('bolthaven_format_uploads_') ||
-         k.startsWith('bolthaven_canvas_enhanced_') ||
-         k.startsWith('bolthaven_last_hero_image') ||
-         k.startsWith('bolthaven_hero_image_') ||
-         k.startsWith('bolthaven_condo_') ||
+         k.startsWith('bolthaven_') ||
          k.startsWith('ea_crop_studio_images_') ||
          k.startsWith('combine_card_order_') ||
          k.startsWith('combine_preset_order_') ||
@@ -1050,7 +1058,11 @@ export const CreateWorkflowView: React.FC = () => {
     // Also notify Mac companion to clear two-stage status and cached canvas images
     try {
       fetch('http://127.0.0.1:9224/two-stage-status', { method: 'DELETE' }).catch(() => {});
-      fetch('http://127.0.0.1:9224/clear-canvas-images', { method: 'POST' }).catch(() => {});
+      fetch('http://127.0.0.1:9224/clear-canvas-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listing_code: oldListingCode }),
+      }).catch(() => {});
     } catch {}
     window.dispatchEvent(new CustomEvent('ea_workflow_cleared'));
   };
@@ -1950,9 +1962,27 @@ export const CreateWorkflowView: React.FC = () => {
       const contentEnabled = cfg.getContent?.enabled !== false;
       const imagesEnabled = cfg.getImages?.enabled !== false;
 
-      // Initialize workflow listing code
+      // Initialize workflow listing code - ALWAYS GENERATE NEW CODE WHEN RUNNING FROM START
       const codeFormatPattern = (cfg as any)?.codeFormat || 'AAA-######-AA';
-      const initialRunListingCode = generateUniqueListingCode(codeFormatPattern);
+      let sessionListingCode = '';
+      if (isFromStep) {
+        sessionListingCode = workflowContextRef.current?.listingCode || '';
+        if (!sessionListingCode) {
+          try {
+            sessionListingCode = localStorage.getItem('bolthaven_active_session_listing_code') || '';
+          } catch {}
+        }
+      }
+      if (!sessionListingCode) {
+        sessionListingCode = generateUniqueListingCode(codeFormatPattern);
+        try {
+          localStorage.setItem('bolthaven_active_session_listing_code', sessionListingCode);
+        } catch {}
+      }
+      if (workflowContextRef.current) {
+        workflowContextRef.current.listingCode = sessionListingCode;
+      }
+      const initialRunListingCode = sessionListingCode;
 
       if (!isFromStep) {
         // Phase 1: Trigger (Extract Link or Manual Input)
@@ -1984,7 +2014,7 @@ export const CreateWorkflowView: React.FC = () => {
             : '⚡ Running workflow starting from Get Images...',
           stepIndex: 2,
           totalSteps: 6,
-          listingCode: workflowContextRef.current?.listingCode || initialRunListingCode,
+          listingCode: initialRunListingCode,
         });
       }
 
@@ -3868,10 +3898,20 @@ export const CreateWorkflowView: React.FC = () => {
     }
 
     const shouldUseCode = (box as any).useGeneratedCode !== false;
-    const activeListingCode =
-      workflowContextRef.current?.listingCode ||
-      generateUniqueListingCode((box as any).codeFormat || (cfg as any)?.codeFormat || 'AAA-######-AA');
-    if (workflowContextRef.current && !workflowContextRef.current.listingCode) {
+    let sessionCode = workflowContextRef.current?.listingCode || '';
+    if (!sessionCode) {
+      try {
+        sessionCode = localStorage.getItem('bolthaven_active_session_listing_code') || '';
+      } catch {}
+    }
+    if (!sessionCode) {
+      sessionCode = generateUniqueListingCode((box as any).codeFormat || (cfg as any)?.codeFormat || 'AAA-######-AA');
+      try {
+        localStorage.setItem('bolthaven_active_session_listing_code', sessionCode);
+      } catch {}
+    }
+    const activeListingCode = sessionCode;
+    if (workflowContextRef.current) {
       workflowContextRef.current.listingCode = activeListingCode;
     }
 
@@ -4490,8 +4530,16 @@ export const CreateWorkflowView: React.FC = () => {
             await startImageQueue(propId).catch(() => {});
           }
 
+          let stepListingCode = workflowContextRef.current?.listingCode || '';
+          if (!stepListingCode) {
+            try {
+              stepListingCode = localStorage.getItem('bolthaven_active_session_listing_code') || '';
+            } catch {}
+          }
+
           await startAutomation({
             property_id: propId,
+            listing_code: stepListingCode,
             profile_key: profKey,
             group_name: groupName,
             group_tab_urls: targetBox.browserGroupTabUrls || [],
@@ -4499,7 +4547,7 @@ export const CreateWorkflowView: React.FC = () => {
             tab_mode: (targetBox as any).workerTabMode || 'existing_tabs',
             worker_count: (targetBox as any).workerTabCount || 4,
             reuse_session_tabs: (targetBox as any).reuseSessionTabs ?? true,
-            jobs: createdJobs,
+            jobs: createdJobs.map((j) => ({ ...j, listing_code: stepListingCode || (j as any).listing_code })),
           });
 
           setExecutionState((prev) => ({
