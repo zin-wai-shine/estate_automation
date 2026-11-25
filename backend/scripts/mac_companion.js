@@ -1244,10 +1244,85 @@ function handleDetectedDownload(filePath, fileName, size) {
 }
 
 // 4. HTTP Service for BoltHaven Frontend & Chrome Extension Pairing
+const DISPATCH_QUEUE_FILE = path.join(defaultProcessingDir, '.dispatch_queue.json');
+const DISPATCH_IMAGES_DIR = path.join(defaultProcessingDir, '.dispatch_images');
+
+function ensureDispatchImagesDir() {
+  if (!fs.existsSync(DISPATCH_IMAGES_DIR)) {
+    fs.mkdirSync(DISPATCH_IMAGES_DIR, { recursive: true });
+  }
+}
+
+function externalizeDispatchImage(img, itemId, idx) {
+  const rawDataUrl = (img.dataUrl && img.dataUrl.startsWith('data:image/'))
+    ? img.dataUrl
+    : ((img.url && img.url.startsWith('data:image/')) ? img.url : '');
+  if (!rawDataUrl) return img;
+  const match = rawDataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
+  if (!match) return img;
+  try {
+    ensureDispatchImagesDir();
+    const ext = match[1].replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '') || 'jpg';
+    const safeId = String(itemId || 'post').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `${safeId}_${idx}.${ext}`;
+    const filePath = path.join(DISPATCH_IMAGES_DIR, filename);
+    fs.writeFileSync(filePath, Buffer.from(match[2], 'base64'));
+    const servedUrl = `http://127.0.0.1:9224/dispatch-image/${filename}?v=${Date.now()}`;
+    return {
+      ...img,
+      url: servedUrl,
+      localPath: filePath,
+      dataUrl: '',
+    };
+  } catch (e) {
+    console.warn('[COMPANION] Failed to externalize dispatch image:', e.message);
+    return img;
+  }
+}
+
+function loadDispatchQueue() {
+  try {
+    if (fs.existsSync(DISPATCH_QUEUE_FILE)) {
+      const raw = fs.readFileSync(DISPATCH_QUEUE_FILE, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      let changed = false;
+      const migrated = parsed.map((item) => {
+        if (!Array.isArray(item.images)) return item;
+        const newImgs = item.images.map((img, idx) => {
+          if ((img.url && img.url.startsWith('data:image/')) || (img.dataUrl && img.dataUrl.startsWith('data:image/'))) {
+            changed = true;
+            return externalizeDispatchImage(img, item.id, idx);
+          }
+          return img;
+        });
+        return { ...item, images: newImgs };
+      });
+      if (changed) {
+        saveDispatchQueue(migrated);
+      }
+      return migrated;
+    }
+  } catch (e) {
+    console.warn('[COMPANION] Failed to load dispatch queue:', e.message);
+  }
+  return [];
+}
+
+function saveDispatchQueue(queue) {
+  try {
+    fs.writeFileSync(DISPATCH_QUEUE_FILE, JSON.stringify(queue, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('[COMPANION] Failed to save dispatch queue:', e.message);
+  }
+}
+
+let dispatchQueue = loadDispatchQueue();
+
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Private-Network', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
@@ -3937,6 +4012,203 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ status: 'idle' }));
+  }
+
+  // ── Materialize dispatch image URLs to local file paths (for CDP DOM.setFileInputFiles) ──
+  if (url.pathname === '/dispatch-image/materialize' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const imgs = Array.isArray(payload.images) ? payload.images : [];
+        ensureDispatchImagesDir();
+        const paths = [];
+
+        for (let i = 0; i < imgs.length; i++) {
+          const img = imgs[i] || {};
+          if (img.localPath && fs.existsSync(img.localPath)) {
+            paths.push(img.localPath);
+            continue;
+          }
+          const rawUrl = String(img.url || '');
+          // Check if it's already a /dispatch-image/<filename> URL
+          const localMatch = rawUrl.match(/\/dispatch-image\/([^?/#]+)/);
+          if (localMatch) {
+            const candidate = path.join(DISPATCH_IMAGES_DIR, path.basename(localMatch[1]));
+            if (fs.existsSync(candidate)) {
+              paths.push(candidate);
+              continue;
+            }
+          }
+          if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+            try {
+              const resp = await fetch(rawUrl);
+              if (resp.ok) {
+                const buf = Buffer.from(await resp.arrayBuffer());
+                const ct = resp.headers.get('content-type') || 'image/jpeg';
+                const ext = ct.includes('png') ? 'png' : ct.includes('webp') ? 'webp' : 'jpg';
+                const fname = `mat_${Date.now()}_${i}.${ext}`;
+                const fpath = path.join(DISPATCH_IMAGES_DIR, fname);
+                fs.writeFileSync(fpath, buf);
+                paths.push(fpath);
+              }
+            } catch (_) {}
+          }
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ status: 'ok', paths }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ status: 'error', message: err.message }));
+      }
+    });
+    return;
+  }
+
+  // ── Serve Externalized Dispatch Images ─────────────────────────────────
+  if (url.pathname.startsWith('/dispatch-image/') && req.method === 'GET') {
+    const filename = path.basename(url.pathname.slice('/dispatch-image/'.length));
+    const filePath = path.join(DISPATCH_IMAGES_DIR, filename);
+    if (!filename || !fs.existsSync(filePath)) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Image not found' }));
+    }
+    const ext = path.extname(filename).toLowerCase();
+    const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+    res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-cache' });
+    return fs.createReadStream(filePath).pipe(res);
+  }
+
+  // ── Social Post Dispatch Queue (Extension Join & Autofill) ──────────────
+  if (url.pathname === '/dispatch-post' && req.method === 'GET') {
+    const rawProfileKey = url.searchParams.get('profile_key') || '';
+    const boxId = url.searchParams.get('box_id') || '';
+    const includeAll = url.searchParams.get('all') === '1';
+    const normProfile = rawProfileKey ? normalizeProfileKey(rawProfileKey) : '';
+
+    const items = includeAll
+      ? dispatchQueue
+      : dispatchQueue.filter((item) => {
+          if (boxId && item.boxId && item.boxId === boxId) return true;
+          if (normProfile && item.profileKey && normalizeProfileKey(item.profileKey) === normProfile) return true;
+          if (!item.profileKey && !item.boxId) return true;
+          return false;
+        });
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(
+      JSON.stringify({
+        status: 'ok',
+        items,
+        totalCount: dispatchQueue.length,
+      })
+    );
+  }
+
+  if (url.pathname === '/dispatch-post' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const id = payload.id || `dispatch_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const normalizedImages = Array.isArray(payload.images)
+          ? payload.images.map((img, idx) => {
+              const baseObj = typeof img === 'string'
+                ? { id: `img_${idx}`, name: `image_${idx + 1}.jpg`, url: img, selected: true }
+                : {
+                    id: img.id || `img_${idx}`,
+                    name: img.name || img.filename || `image_${idx + 1}.jpg`,
+                    url: img.url || img.dataUrl || '',
+                    dataUrl: img.dataUrl || '',
+                    selected: img.selected !== false,
+                  };
+              return externalizeDispatchImage(baseObj, id, idx);
+            })
+          : [];
+
+        const item = {
+          id,
+          boxId: payload.boxId || '',
+          boxLabel: payload.boxLabel || payload.sourceLabel || 'Joined Post',
+          profileKey: payload.profileKey || '',
+          platform: payload.platform || 'auto', // 'meta' | 'tiktok' | 'auto'
+          title: payload.title || '',
+          description: payload.description || '',
+          hashtags: Array.isArray(payload.hashtags) ? payload.hashtags : [],
+          images: normalizedImages,
+          batchSize: Number(payload.batchSize) || 5,
+          nextBatchStart: Number(payload.nextBatchStart) || 0,
+          status: 'ready',
+          createdAt: payload.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        const existingIdx = dispatchQueue.findIndex((x) => x.id === id);
+        if (existingIdx !== -1) {
+          dispatchQueue[existingIdx] = item;
+        } else {
+          dispatchQueue.unshift(item);
+        }
+        // Keep queue bounded to last 50 items
+        if (dispatchQueue.length > 50) {
+          dispatchQueue = dispatchQueue.slice(0, 50);
+        }
+        saveDispatchQueue(dispatchQueue);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ status: 'ok', item, totalCount: dispatchQueue.length }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ status: 'error', message: err.message }));
+      }
+    });
+    return;
+  }
+
+  if (url.pathname === '/dispatch-post/ack' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const idx = dispatchQueue.findIndex((x) => x.id === payload.id);
+        if (idx !== -1) {
+          if (typeof payload.nextBatchStart === 'number') {
+            dispatchQueue[idx].nextBatchStart = payload.nextBatchStart;
+          }
+          if (payload.status) {
+            dispatchQueue[idx].status = payload.status;
+          }
+          dispatchQueue[idx].updatedAt = new Date().toISOString();
+          saveDispatchQueue(dispatchQueue);
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ status: 'ok' }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ status: 'error', message: err.message }));
+      }
+    });
+    return;
+  }
+
+  if (url.pathname === '/dispatch-post' && req.method === 'DELETE') {
+    const id = url.searchParams.get('id');
+    const profileKey = url.searchParams.get('profile_key');
+    if (id) {
+      dispatchQueue = dispatchQueue.filter((x) => x.id !== id);
+    } else if (profileKey) {
+      const norm = normalizeProfileKey(profileKey);
+      dispatchQueue = dispatchQueue.filter((x) => !x.profileKey || normalizeProfileKey(x.profileKey) !== norm);
+    } else {
+      dispatchQueue = [];
+    }
+    saveDispatchQueue(dispatchQueue);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ status: 'ok', totalCount: dispatchQueue.length }));
   }
 
   res.writeHead(404, { 'Content-Type': 'application/json' });

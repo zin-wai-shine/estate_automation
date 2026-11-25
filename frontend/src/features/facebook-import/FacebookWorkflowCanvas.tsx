@@ -73,7 +73,7 @@ import { HiSparkles } from 'react-icons/hi2';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
-import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isCropStudioBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox, AI_ENGINE_MODEL_GROUPS, CONTENT_AI_MODEL_OPTIONS } from './aiModelUtils';
+import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isCropStudioBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExtensionAutofillBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox, AI_ENGINE_MODEL_GROUPS, CONTENT_AI_MODEL_OPTIONS } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
 import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
 import { getPersistedReferenceImage, isReferenceImageExplicitlyDeleted } from '../browser-processing/referenceImageStorage';
@@ -5666,6 +5666,128 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
   }, [config.aiBoxes, config.connections, effectiveImages, allEnhancedPhotos, heroImage, executionState?.listingCode, previewSampleCode]);
 
+  // Auto-Sync Extension Autofill boxes that have extensionAutoSync enabled
+  useEffect(() => {
+    const autoSyncBoxes = (config.aiBoxes || []).filter(
+      (b) => isExtensionAutofillBox(b) && Boolean((b as any).extensionAutoSync)
+    );
+    if (autoSyncBoxes.length === 0) return;
+
+    const timer = setTimeout(() => {
+      autoSyncBoxes.forEach((box) => {
+        const joinedConns = (config.connections || []).filter((c) => c.toNodeId === box.id);
+        const joinedIds = new Set(joinedConns.map((c) => c.fromNodeId));
+        const extPlatform = (box as any).extensionPlatform || 'auto';
+        const rawDescSrcId = (box as any).extensionDescriptionSourceId || 'auto';
+        const descSrcId = rawDescSrcId !== 'auto' && joinedIds.has(rawDescSrcId) ? rawDescSrcId : 'auto';
+        const rawTitleSrcId = (box as any).extensionTitleSourceId || 'auto';
+        const titleSrcId = rawTitleSrcId !== 'auto' && joinedIds.has(rawTitleSrcId) ? rawTitleSrcId : 'auto';
+
+        let resolvedDesc = '';
+        if (joinedConns.length > 0) {
+          if (descSrcId !== 'auto') {
+            resolvedDesc = aiGeneratedOutputs?.[descSrcId] || (descSrcId === 'get-content' ? (rawContent || '') : '');
+          } else {
+            for (const c of joinedConns) {
+              if (aiGeneratedOutputs?.[c.fromNodeId]) {
+                resolvedDesc = aiGeneratedOutputs[c.fromNodeId];
+                break;
+              }
+              if (c.fromNodeId === 'get-content' && rawContent) {
+                resolvedDesc = rawContent;
+                break;
+              }
+            }
+          }
+        }
+
+        let resolvedTitle = '';
+        if (extPlatform !== 'meta' && joinedConns.length > 0) {
+          if (titleSrcId !== 'auto' && aiGeneratedOutputs?.[titleSrcId]) {
+            resolvedTitle = aiGeneratedOutputs[titleSrcId].split('\n')[0]?.trim() || '';
+          } else if (resolvedDesc) {
+            resolvedTitle = resolvedDesc.split('\n').map((l) => l.trim()).find(Boolean) || _projectName || '';
+          }
+        }
+
+        const rawImgSrcId = (box as any).extensionImageSourceId || 'auto';
+        const imgSrcId = rawImgSrcId !== 'auto' && joinedIds.has(rawImgSrcId) ? rawImgSrcId : 'auto';
+        const resolvedImgUrls: string[] = [];
+
+        const isImgCapable = (nodeId: string): boolean => {
+          if (nodeId === 'get-images') return true;
+          if ((config.combineBoxes || []).some((cb) => cb.id === nodeId)) return true;
+          const nb = config.aiBoxes.find((x) => x.id === nodeId);
+          if (!nb) return false;
+          return (
+            isWatermarkAIBox(nb) ||
+            isCropStudioBox(nb) ||
+            isEnhanceAIBox(nb) ||
+            isImageAIBox(nb) ||
+            nb.processType === 'chrome_tab_group' ||
+            nb.processType === 'external_browser'
+          );
+        };
+
+        const connImgIds = joinedConns.map((c) => c.fromNodeId).filter(isImgCapable);
+        if (connImgIds.length > 0) {
+          const targetIds = imgSrcId !== 'auto' ? [imgSrcId] : connImgIds;
+          for (const tid of targetIds) {
+            const directAssets = combineMediaAssets.filter((a) => a.formatId === tid && a.url);
+            if (directAssets.length > 0) {
+              directAssets.forEach((a) => resolvedImgUrls.push(a.url));
+              continue;
+            }
+            const combineNode = (config.combineBoxes || []).find((cb) => cb.id === tid);
+            if (combineNode) {
+              const cbConns = (config.connections || []).filter((c) => c.toNodeId === combineNode.id).map((c) => c.fromNodeId);
+              const cbAssets = combineMediaAssets.filter((a) => cbConns.includes(a.formatId || '') && a.url);
+              if (cbAssets.length > 0) {
+                cbAssets.forEach((a) => resolvedImgUrls.push(a.url));
+                continue;
+              }
+            }
+            const nb = config.aiBoxes.find((x) => x.id === tid);
+            const isEnhance = nb && (nb.title?.toLowerCase().includes('enhance') || nb.id.includes('enhance') || nb.processType === 'image_enhance');
+            if (isEnhance && Object.keys(allEnhancedPhotos || {}).length > 0) {
+              Object.values(allEnhancedPhotos || {}).forEach((u) => {
+                if (u) resolvedImgUrls.push(String(u));
+              });
+              continue;
+            }
+            (effectiveImages || images || []).forEach((img: any) => {
+              const u = normalizeMediaUrl(img.stored_url || img.source_url || img.url) || img.stored_url || img.source_url || img.url || '';
+              if (u) resolvedImgUrls.push(u);
+            });
+          }
+        }
+
+        fetch('http://127.0.0.1:9224/dispatch-post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: `ext_${box.id}`,
+            boxId: (box as any).extensionBoxId || box.id,
+            boxLabel: box.title || 'Extension Autofill',
+            profileKey: (box as any).extensionProfileKey || '',
+            platform: extPlatform,
+            title: extPlatform === 'meta' ? '' : resolvedTitle.slice(0, 90),
+            description: resolvedDesc,
+            images: resolvedImgUrls.map((u, idx) => ({
+              id: `${box.id}_img_${idx}`,
+              name: `photo_${idx + 1}.jpg`,
+              url: u,
+              selected: true,
+            })),
+            batchSize: Number((box as any).extensionBatchSize) || 5,
+          }),
+        }).catch(() => {});
+      });
+    }, 650);
+
+    return () => clearTimeout(timer);
+  }, [config.aiBoxes, config.connections, config.combineBoxes, aiGeneratedOutputs, rawContent, _projectName, combineMediaAssets, allEnhancedPhotos, effectiveImages, images]);
+
   const [isDraggingTriggerFiles, setIsDraggingTriggerFiles] = useState(false);
   const triggerFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -6870,6 +6992,14 @@ export const FacebookWorkflowCanvas = forwardRef<
 
     const fromBox = config.aiBoxes.find((b) => b.id === fromId);
     const toBox = config.aiBoxes.find((b) => b.id === toId);
+
+    // Extension Autofill Box is a terminal hub: any upstream node can join into it, nothing connects out of it
+    if (fromBox && isExtensionAutofillBox(fromBox)) {
+      return false;
+    }
+    if (toBox && isExtensionAutofillBox(toBox)) {
+      return true;
+    }
 
     // AI Format boxes only connect with AI Model container above it; never to Combine Box, output, or destinations
     if (fromBox && isTextFormatAIBox(fromBox)) {
@@ -8865,6 +8995,51 @@ export const FacebookWorkflowCanvas = forwardRef<
     return newId;
   };
 
+  // Add Dynamic Browser Extension Autofill & Dispatch Node
+  const handleAddExtensionAutofillNodeConnectedFrom = (fromNodeId?: string): string => {
+    const extBoxes = config.aiBoxes.filter((b) => isExtensionAutofillBox(b));
+    const newCount = extBoxes.length + 1;
+    const newId = `ai-box-extension-autofill-${Date.now()}`;
+    const coords = getSmartNextNodeCoords(fromNodeId, config);
+
+    const newBox: DynamicAIBoxConfig = {
+      id: newId,
+      title: `Extension Autofill #${newCount}`,
+      subtitle: 'Meta & TikTok Extension',
+      processType: 'extension_autofill',
+      provider: 'extension_autofill' as any,
+      model: 'extension-autofill',
+      templateId: '',
+      templateText: '',
+      customPrompt: '',
+      enabled: true,
+      extensionBoxId: `Box-${newCount}`,
+      extensionPlatform: 'auto',
+      extensionProfileKey: '',
+      extensionBatchSize: 5,
+      x: coords.x,
+      y: coords.y,
+    } as any;
+
+    const nextBoxes = [...config.aiBoxes, newBox];
+    let nextConns = [...(config.connections || [])];
+    if (fromNodeId) {
+      nextConns.push({
+        id: `wire-${fromNodeId}-${newId}-${Date.now()}`,
+        fromNodeId: fromNodeId,
+        toNodeId: newId,
+      });
+    }
+
+    updateConfig({
+      ...config,
+      aiBoxes: nextBoxes,
+      connections: nextConns,
+    });
+    setSelectedBoxId(newId);
+    return newId;
+  };
+
   // Add Dynamic Google Sheet Sync Node
   const handleAddGoogleSheetNodeConnectedFrom = (fromNodeId?: string): string => {
     const sheetBoxes = config.aiBoxes.filter((b) => isGoogleSheetBox(b));
@@ -9097,6 +9272,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (isEnhance) return <FiImage style={{ fontSize: `${size}px`, color: '#EC4899' }} />;
     if (isTextFormatAIBox(b)) return <FiFileText style={{ fontSize: `${size}px`, color: '#6366F1' }} />;
     if (isN8NAIBox(b)) return <FiServer style={{ fontSize: `${size}px`, color: '#FF6D5A' }} />;
+    if (isExtensionAutofillBox(b)) return <FiSend style={{ fontSize: `${size}px`, color: '#3B82F6' }} />;
     if (isGoogleSheetBox(b)) return <SiGooglesheets style={{ fontSize: `${size}px`, color: '#0F9D58' }} />;
     return <FiMessageSquare style={{ fontSize: `${size}px`, color: '#8B5CF6' }} />;
   };
@@ -10938,16 +11114,17 @@ export const FacebookWorkflowCanvas = forwardRef<
 
               // 1. Format presets are vertically attached above AI Model only;
               // Never render outgoing wires from format presets to combine boxes, output, or destinations!
+              const isToExtensionAutofill = Boolean(toBox && isExtensionAutofillBox(toBox));
               const hasCentralTextAI = config.aiBoxes.some((b) => isTextAIBox(b, config.connections) && !isTextFormatAIBox(b));
               if (fromBox && isTextFormatAIBox(fromBox) && hasCentralTextAI) {
                 const isVerticalToAi = Boolean(toBox && isTextAIBox(toBox, config.connections));
-                if (!isVerticalToAi) return null;
+                if (!isVerticalToAi && !isToExtensionAutofill) return null;
               }
 
               const hasCentralCropStudio = config.aiBoxes.some((b) => isCropStudioBox(b));
               if (fromBox && isWatermarkAIBox(fromBox) && hasCentralCropStudio) {
                 const isVerticalToCrop = Boolean(toBox && isCropStudioBox(toBox));
-                if (!isVerticalToCrop) return null;
+                if (!isVerticalToCrop && !isToExtensionAutofill) return null;
               }
 
               // 2. Do not render dangling wires to destinations if no destination is active on canvas
@@ -11896,6 +12073,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
             const isChromeProfile = isChromeProfileAIBox(box);
             const isChromeTabGroup = isChromeTabGroupAIBox(box);
+            const isExtensionAutofill = isExtensionAutofillBox(box);
             const isExternalBrowser = isExternalBrowserAIBox(box) && !isChromeProfile && !isChromeTabGroup;
             const isCropStudio = isCropStudioBox(box);
             const isTextFormat = isTextFormatAIBox(box);
@@ -11973,7 +12151,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
               >
                 <MergedNodeShape
-                  sockets={isChromeProfile || isChromeTabGroup || isTextFormat || isAttachedCropFormat ? 'none' : 'both'}
+                  sockets={isChromeProfile || isChromeTabGroup ? 'none' : isExtensionAutofill ? 'left' : (isTextFormat || isAttachedCropFormat) ? 'right' : 'both'}
                   hasTopSocket={isChromeProfile || isChromeTabGroup || (isAttachedCropFormat && isThisFormatBelow)}
                   hasBottomSocket={isTextFormat || (isAttachedCropFormat && !isThisFormatBelow)}
                   width={nodeWidth}
@@ -11987,8 +12165,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                   highlightInput={isBoxReceptive}
                   highlightOutput={dragWire?.fromType === 'input' && isValidConnection(box.id, dragWire.fromNodeId)}
                   hasReceiver={boxHasReceiver}
-                  hasSource={boxHasSource}
-                  showAddButton={!isChromeProfile && !isChromeTabGroup && !isTextFormat && !isAttachedCropFormat}
+                  hasSource={boxHasSource && !isExtensionAutofill}
+                  showAddButton={!isChromeProfile && !isChromeTabGroup && !isTextFormat && !isAttachedCropFormat && !isExtensionAutofill}
                   showTopAddButton={isTextAI || (isCropStudio && !cropFormatsAreBelow)}
                   showBottomAddButton={isExternalBrowser || (isCropStudio && cropFormatsAreBelow)}
                   onAddClick={(e) => {
@@ -12349,6 +12527,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     <FiFileText style={{ fontSize: '28px', color: isEffectiveEnabled ? '#6366F1' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isN8NAIBox(box) ? (
                     <FiServer style={{ fontSize: '28px', color: isEffectiveEnabled ? '#FF6D5A' : '#8B949E', transition: 'color 0.2s ease' }} />
+                  ) : isExtensionAutofillBox(box) ? (
+                    <FiSend style={{ fontSize: '28px', color: isEffectiveEnabled ? '#3B82F6' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isGoogleSheetBox(box) ? (
                     <SiGooglesheets style={{ fontSize: '28px', color: isEffectiveEnabled ? '#0F9D58' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : (
@@ -12573,9 +12753,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                             ? 'Image Enhancer'
                             : isTextFormatAIBox(box)
                               ? 'Format Preset'
-                              : isTextAIBox(box, config.connections)
-                                ? 'AI Model'
-                                : 'Copywriter'}
+                              : isExtensionAutofillBox(box)
+                                ? ((box as any).extensionBoxId ? `Extension · ${(box as any).extensionBoxId}` : 'Meta & TikTok Extension')
+                                : isTextAIBox(box, config.connections)
+                                  ? 'AI Model'
+                                  : 'Copywriter'}
                       </span>
                     ) : null}
 
@@ -14039,8 +14221,333 @@ export const FacebookWorkflowCanvas = forwardRef<
               >
                 {isSideboxActive && (
                   <>
-                  {/* 1. FB Hero / Enhance IMG Settings */}
-                  {showFBHeroSettingsSidebox && currentModalAIBox && (
+                  {/* 1a. Extension Autofill Settings Panel */}
+                  {showFBHeroSettingsSidebox && currentModalAIBox && isExtensionAutofillBox(currentModalAIBox) && (
+                    <div
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      {/* Header */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          padding: '0.75rem 1rem',
+                          borderBottom: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #E2E8F0',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '7px',
+                            background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#FFFFFF',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <FiSend size={13} />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>Extension Autofill Settings</div>
+                          <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Configure browser extension dispatch</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowFBHeroSettingsSidebox(false)}
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '8px',
+                            border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                            color: 'var(--text-secondary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <FiX size={14} style={{ pointerEvents: 'none' }} />
+                        </button>
+                      </div>
+
+                      {/* Settings Body */}
+                      <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+
+                        {/* Box ID */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                            Assigned Box ID
+                          </label>
+                          <input
+                            type="text"
+                            value={(currentModalAIBox as any).extensionBoxId || ''}
+                            onChange={(e) => {
+                              updateConfig({
+                                ...config,
+                                aiBoxes: config.aiBoxes.map((b) =>
+                                  b.id === currentModalAIBox.id ? ({ ...b, extensionBoxId: e.target.value } as any) : b
+                                ),
+                              });
+                            }}
+                            placeholder="e.g. Box-1"
+                            style={{
+                              width: '100%',
+                              height: '34px',
+                              padding: '0 0.625rem',
+                              borderRadius: '6px',
+                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.75rem',
+                              boxSizing: 'border-box',
+                            }}
+                          />
+                        </div>
+
+                        {/* Divider */}
+                        <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
+
+                        {/* Platform */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                            Target Platform
+                          </label>
+                          <Select
+                            options={[
+                              { value: 'auto', label: 'Auto Detect (Meta / TikTok)' },
+                              { value: 'meta', label: 'Meta Business Suite' },
+                              { value: 'tiktok', label: 'TikTok Studio (2-Step + Hashtags)' },
+                            ]}
+                            value={(currentModalAIBox as any).extensionPlatform || 'auto'}
+                            onChange={(val) => {
+                              updateConfig({
+                                ...config,
+                                aiBoxes: config.aiBoxes.map((b) =>
+                                  b.id === currentModalAIBox.id ? ({ ...b, extensionPlatform: val } as any) : b
+                                ),
+                              });
+                            }}
+                            height="34px"
+                          />
+                        </div>
+
+                        {(() => {
+                          const extPlatform = (currentModalAIBox as any).extensionPlatform || 'auto';
+                          const joinedConns = (config.connections || []).filter((c) => c.toNodeId === currentModalAIBox.id);
+                          const joinedIds = new Set(joinedConns.map((c) => c.fromNodeId));
+                          const joinedOpts = [
+                            { value: 'auto', label: 'Auto (First connected)' },
+                            ...joinedConns.map((c) => {
+                              const srcBox =
+                                config.aiBoxes.find((b) => b.id === c.fromNodeId) ||
+                                (config.combineBoxes || []).find((b) => b.id === c.fromNodeId);
+                              return {
+                                value: c.fromNodeId,
+                                label: srcBox?.title || (c.fromNodeId === 'get-content' ? 'Get Content' : c.fromNodeId === 'get-images' ? 'Get Images' : c.fromNodeId),
+                              };
+                            }),
+                          ];
+                          const safeTitleVal = (currentModalAIBox as any).extensionTitleSourceId && joinedIds.has((currentModalAIBox as any).extensionTitleSourceId)
+                            ? (currentModalAIBox as any).extensionTitleSourceId
+                            : 'auto';
+                          const safeDescVal = (currentModalAIBox as any).extensionDescriptionSourceId && joinedIds.has((currentModalAIBox as any).extensionDescriptionSourceId)
+                            ? (currentModalAIBox as any).extensionDescriptionSourceId
+                            : 'auto';
+                          const safeImgVal = (currentModalAIBox as any).extensionImageSourceId && joinedIds.has((currentModalAIBox as any).extensionImageSourceId)
+                            ? (currentModalAIBox as any).extensionImageSourceId
+                            : 'auto';
+
+                          return (
+                            <>
+                              {/* Title Source (TikTok / Auto only; hidden for Meta) */}
+                              {extPlatform !== 'meta' && (
+                                <>
+                                  <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                    <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                      Title Source (TikTok)
+                                    </label>
+                                    <Select
+                                      options={joinedOpts}
+                                      value={safeTitleVal}
+                                      onChange={(val) => {
+                                        updateConfig({
+                                          ...config,
+                                          aiBoxes: config.aiBoxes.map((b) =>
+                                            b.id === currentModalAIBox.id ? ({ ...b, extensionTitleSourceId: val } as any) : b
+                                          ),
+                                        });
+                                      }}
+                                      height="34px"
+                                    />
+                                  </div>
+                                </>
+                              )}
+
+                              <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
+
+                              {/* Description Source */}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                  Description Source
+                                </label>
+                                <Select
+                                  options={joinedOpts}
+                                  value={safeDescVal}
+                                  onChange={(val) => {
+                                    updateConfig({
+                                      ...config,
+                                      aiBoxes: config.aiBoxes.map((b) =>
+                                        b.id === currentModalAIBox.id ? ({ ...b, extensionDescriptionSourceId: val } as any) : b
+                                      ),
+                                    });
+                                  }}
+                                  height="34px"
+                                />
+                              </div>
+
+                              <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
+
+                              {/* Images Attached Source */}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                  Images Attached Source
+                                </label>
+                                <Select
+                                  options={joinedOpts}
+                                  value={safeImgVal}
+                                  onChange={(val) => {
+                                    updateConfig({
+                                      ...config,
+                                      aiBoxes: config.aiBoxes.map((b) =>
+                                        b.id === currentModalAIBox.id ? ({ ...b, extensionImageSourceId: val } as any) : b
+                                      ),
+                                    });
+                                  }}
+                                  height="34px"
+                                />
+                              </div>
+                            </>
+                          );
+                        })()}
+
+                        {/* Divider */}
+                        <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
+
+                        {/* Chrome Profile Key */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                            Chrome Profile Key <span style={{ fontWeight: 400 }}>(Optional)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={(currentModalAIBox as any).extensionProfileKey || ''}
+                            onChange={(e) => {
+                              updateConfig({
+                                ...config,
+                                aiBoxes: config.aiBoxes.map((b) =>
+                                  b.id === currentModalAIBox.id ? ({ ...b, extensionProfileKey: e.target.value } as any) : b
+                                ),
+                              });
+                            }}
+                            placeholder="e.g. Profile 14"
+                            style={{
+                              width: '100%',
+                              height: '34px',
+                              padding: '0 0.625rem',
+                              borderRadius: '6px',
+                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.75rem',
+                              boxSizing: 'border-box',
+                            }}
+                          />
+                        </div>
+
+                        {/* TikTok Batch Size (Hidden when Meta is selected) */}
+                        {((currentModalAIBox as any).extensionPlatform || 'auto') !== 'meta' && (
+                          <>
+                            <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                TikTok Batch Size
+                              </label>
+                              <Select
+                                options={[
+                                  { value: '5', label: '5 photos / click (Recommended)' },
+                                  { value: '10', label: '10 photos / click' },
+                                  { value: '35', label: 'All photos (up to 35)' },
+                                ]}
+                                value={String((currentModalAIBox as any).extensionBatchSize || 5)}
+                                onChange={(val) => {
+                                  updateConfig({
+                                    ...config,
+                                    aiBoxes: config.aiBoxes.map((b) =>
+                                      b.id === currentModalAIBox.id ? ({ ...b, extensionBatchSize: Number(val) } as any) : b
+                                    ),
+                                  });
+                                }}
+                                height="34px"
+                              />
+                            </div>
+                          </>
+                        )}
+
+                      </div>
+
+                      {/* Footer */}
+                      <div
+                        style={{
+                          padding: '0.75rem 1rem',
+                          borderTop: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #E2E8F0',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setShowFBHeroSettingsSidebox(false)}
+                          style={{
+                            width: '100%',
+                            height: '36px',
+                            borderRadius: '7px',
+                            border: 'none',
+                            backgroundColor: '#3B82F6',
+                            color: '#FFFFFF',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                          }}
+                        >
+                          <FiCheck size={13} />
+                          Done & Apply Settings
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 1b. FB Hero / Enhance IMG Settings */}
+                  {showFBHeroSettingsSidebox && currentModalAIBox && !isExtensionAutofillBox(currentModalAIBox) && (
                     <FBHeroSettingsSidebox
                       embedded
                       key={currentModalAIBox.id}
@@ -14640,7 +15147,44 @@ export const FacebookWorkflowCanvas = forwardRef<
                     </button>
                   )}
 
-                  {isAIBox && currentModalAIBox && (
+                  {/* Extension Autofill Gear Button */}
+                  {isAIBox && currentModalAIBox && isExtensionAutofillBox(currentModalAIBox) && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setShowGoogleSheetSettingsSidebox(false);
+                        setShowFBHeroSettingsSidebox((prev) => !prev);
+                      }}
+                      title="Extension Autofill Settings (Box ID, Platform, Profile, Batch Size)"
+                      aria-label="Extension Autofill Settings"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        border: showFBHeroSettingsSidebox
+                          ? '1px solid #3B82F6'
+                          : (isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)'),
+                        backgroundColor: showFBHeroSettingsSidebox
+                          ? 'rgba(59, 130, 246, 0.15)'
+                          : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
+                        color: showFBHeroSettingsSidebox ? '#3B82F6' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        pointerEvents: 'auto',
+                        userSelect: 'none',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <FiSettings size={14} style={{ pointerEvents: 'none' }} />
+                    </button>
+                  )}
+
+                  {isAIBox && currentModalAIBox && !isExtensionAutofillBox(currentModalAIBox) && (
                     isChromeTabGroupAIBox(currentModalAIBox) ||
                     isExternalBrowserAIBox(currentModalAIBox) ||
                     currentModalAIBox.title?.toLowerCase().includes('hero') ||
@@ -17724,7 +18268,418 @@ export const FacebookWorkflowCanvas = forwardRef<
                       </div>
                     )}
 
-                    {isN8NAIBox(currentModalAIBox) ? (
+                    {isExtensionAutofillBox(currentModalAIBox) ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                        {/* Extension Autofill Banner */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.625rem',
+                            padding: '0.65rem 0.75rem',
+                            borderRadius: '8px',
+                            backgroundColor: isDark ? '#0F1E36' : '#EFF6FF',
+                            border: '1px solid rgba(59, 130, 246, 0.35)',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: '30px',
+                              height: '30px',
+                              borderRadius: '7px',
+                              background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)',
+                              color: '#FFFFFF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiSend size={14} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              BoltHaven Extension Autofill Box
+                            </div>
+                            <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>
+                              Only shows &amp; dispatches inputs joined into this box to your Chrome Extension
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Joined Upstream Inputs */}
+                        <div
+                          style={{
+                            padding: '0.65rem 0.75rem',
+                            borderRadius: '8px',
+                            backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
+                            border: '1px solid var(--border-color)',
+                          }}
+                        >
+                          <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.4rem' }}>
+                            Joined Inputs ({(config.connections || []).filter((c) => c.toNodeId === currentModalAIBox.id).length})
+                          </div>
+                          {(() => {
+                            const joinedConns = (config.connections || []).filter((c) => c.toNodeId === currentModalAIBox.id);
+                            if (joinedConns.length === 0) {
+                              return (
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                  No boxes joined yet. Connect a Combine Box, Format Preset, or Photo Studio node to this box.
+                                </div>
+                              );
+                            }
+                            return (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                                {joinedConns.map((c) => {
+                                  const srcBox =
+                                    config.aiBoxes.find((b) => b.id === c.fromNodeId) ||
+                                    (config.combineBoxes || []).find((b) => b.id === c.fromNodeId);
+                                  const label = srcBox?.title || c.fromNodeId;
+                                  return (
+                                    <span
+                                      key={c.id}
+                                      style={{
+                                        fontSize: '0.68rem',
+                                        fontWeight: 600,
+                                        padding: '0.2rem 0.5rem',
+                                        borderRadius: '999px',
+                                        backgroundColor: isDark ? 'rgba(59,130,246,0.16)' : '#DBEAFE',
+                                        color: isDark ? '#93C5FD' : '#1D4ED8',
+                                        border: '1px solid rgba(59,130,246,0.3)',
+                                      }}
+                                    >
+                                      {label}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        {/* Resolved Preview & Sync to Extension */}
+                        {(() => {
+                          const joinedConns = (config.connections || []).filter((c) => c.toNodeId === currentModalAIBox.id);
+                          const joinedIds = new Set(joinedConns.map((c) => c.fromNodeId));
+                          const extPlatform = (currentModalAIBox as any).extensionPlatform || 'auto';
+                          const rawDescSrcId = (currentModalAIBox as any).extensionDescriptionSourceId || 'auto';
+                          const descSrcId = rawDescSrcId !== 'auto' && joinedIds.has(rawDescSrcId) ? rawDescSrcId : 'auto';
+                          const rawTitleSrcId = (currentModalAIBox as any).extensionTitleSourceId || 'auto';
+                          const titleSrcId = rawTitleSrcId !== 'auto' && joinedIds.has(rawTitleSrcId) ? rawTitleSrcId : 'auto';
+
+                          let resolvedDesc = '';
+                          if (joinedConns.length > 0) {
+                            if (descSrcId !== 'auto') {
+                              resolvedDesc = aiGeneratedOutputs?.[descSrcId] || (descSrcId === 'get-content' ? (rawContent || '') : '');
+                            } else {
+                              for (const c of joinedConns) {
+                                if (aiGeneratedOutputs?.[c.fromNodeId]) {
+                                  resolvedDesc = aiGeneratedOutputs[c.fromNodeId];
+                                  break;
+                                }
+                                if (c.fromNodeId === 'get-content' && rawContent) {
+                                  resolvedDesc = rawContent;
+                                  break;
+                                }
+                              }
+                            }
+                          }
+
+                          let resolvedTitle = '';
+                          if (extPlatform !== 'meta' && joinedConns.length > 0) {
+                            if (titleSrcId !== 'auto' && aiGeneratedOutputs?.[titleSrcId]) {
+                              resolvedTitle = aiGeneratedOutputs[titleSrcId].split('\n')[0]?.trim() || '';
+                            } else if (resolvedDesc) {
+                              resolvedTitle = resolvedDesc.split('\n').map((l) => l.trim()).find(Boolean) || _projectName || '';
+                            }
+                          }
+
+                          const rawImgSrcId = (currentModalAIBox as any).extensionImageSourceId || 'auto';
+                          const imgSrcId = rawImgSrcId !== 'auto' && joinedIds.has(rawImgSrcId) ? rawImgSrcId : 'auto';
+                          let resolvedImgEntries: Array<{ url: string; sourceLabel: string }> = [];
+
+                          const getNodeLabel = (nodeId: string): string => {
+                            if (nodeId === 'get-images') return 'Get Images';
+                            const cb = (config.combineBoxes || []).find((x) => x.id === nodeId);
+                            if (cb) return cb.title || 'Combine Box';
+                            const b = config.aiBoxes.find((x) => x.id === nodeId);
+                            return b?.title || nodeId;
+                          };
+
+                          const isImageCapableNode = (nodeId: string): boolean => {
+                            if (nodeId === 'get-images') return true;
+                            if ((config.combineBoxes || []).some((cb) => cb.id === nodeId)) return true;
+                            const b = config.aiBoxes.find((x) => x.id === nodeId);
+                            if (!b) return false;
+                            return (
+                              isWatermarkAIBox(b) ||
+                              isCropStudioBox(b) ||
+                              isEnhanceAIBox(b) ||
+                              isImageAIBox(b) ||
+                              b.processType === 'chrome_tab_group' ||
+                              b.processType === 'external_browser'
+                            );
+                          };
+
+                          const connectedImgNodeIds = joinedConns.map((c) => c.fromNodeId).filter(isImageCapableNode);
+
+                          if (connectedImgNodeIds.length > 0) {
+                            const targetIds = imgSrcId !== 'auto' ? [imgSrcId] : connectedImgNodeIds;
+
+                            for (const tid of targetIds) {
+                              const srcLabel = getNodeLabel(tid);
+                              const directAssets = combineMediaAssets.filter((a) => a.formatId === tid && a.url);
+                              if (directAssets.length > 0) {
+                                directAssets.forEach((a) => resolvedImgEntries.push({ url: a.url, sourceLabel: a.formatTitle || srcLabel }));
+                                continue;
+                              }
+                              const combineNode = (config.combineBoxes || []).find((cb) => cb.id === tid);
+                              if (combineNode) {
+                                const cbConns = (config.connections || []).filter((c) => c.toNodeId === combineNode.id).map((c) => c.fromNodeId);
+                                const cbAssets = combineMediaAssets.filter((a) => cbConns.includes(a.formatId || '') && a.url);
+                                if (cbAssets.length > 0) {
+                                  cbAssets.forEach((a) => resolvedImgEntries.push({ url: a.url, sourceLabel: a.formatTitle || srcLabel }));
+                                  continue;
+                                }
+                              }
+                              const b = config.aiBoxes.find((x) => x.id === tid);
+                              const isEnhance = b && (b.title?.toLowerCase().includes('enhance') || b.id.includes('enhance') || b.processType === 'image_enhance');
+                              if (isEnhance && Object.keys(allEnhancedPhotos || {}).length > 0) {
+                                Object.values(allEnhancedPhotos || {}).forEach((u) => {
+                                  if (u) resolvedImgEntries.push({ url: String(u), sourceLabel: srcLabel });
+                                });
+                                continue;
+                              }
+                              // Fallback for connected image node when combineMediaAssets hasn't populated yet
+                              (effectiveImages || images || []).forEach((img: any) => {
+                                const u = normalizeMediaUrl(img.stored_url || img.source_url || img.url) || img.stored_url || img.source_url || img.url || '';
+                                if (u) resolvedImgEntries.push({ url: u, sourceLabel: srcLabel });
+                              });
+                            }
+                          }
+
+                          const previewImgs = resolvedImgEntries.map((entry, idx: number) => ({
+                            id: `${currentModalAIBox.id}_img_${idx}`,
+                            name: `photo_${idx + 1}.jpg`,
+                            url: entry.url,
+                            sourceLabel: entry.sourceLabel,
+                            selected: true,
+                          }));
+                          const imageSourceSummary = Array.from(new Set(resolvedImgEntries.map((e) => e.sourceLabel))).join(', ');
+
+                          const handleSyncBoxToExtension = async () => {
+                            try {
+                              await fetch('http://127.0.0.1:9224/dispatch-post', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  id: `ext_${currentModalAIBox.id}`,
+                                  boxId: (currentModalAIBox as any).extensionBoxId || currentModalAIBox.id,
+                                  boxLabel: currentModalAIBox.title || 'Extension Autofill',
+                                  profileKey: (currentModalAIBox as any).extensionProfileKey || '',
+                                  platform: extPlatform,
+                                  title: extPlatform === 'meta' ? '' : resolvedTitle.slice(0, 90),
+                                  description: resolvedDesc,
+                                  images: previewImgs,
+                                  batchSize: Number((currentModalAIBox as any).extensionBatchSize) || 5,
+                                }),
+                              });
+                              setCopiedPromptId(`ext-sync-${currentModalAIBox.id}`);
+                              setTimeout(() => setCopiedPromptId(null), 2000);
+                            } catch (_) {}
+                          };
+
+                          return (
+                            <>
+                              <div
+                                style={{
+                                  padding: '0.65rem 0.75rem',
+                                  borderRadius: '8px',
+                                  backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
+                                  border: '1px solid var(--border-color)',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '0.5rem',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                  <span style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                    {extPlatform === 'meta' ? 'Meta Post Payload (Description & Images)' : 'Staged Post Payload'}
+                                  </span>
+                                  <span style={{ fontSize: '0.62rem', fontWeight: 600, color: '#3B82F6' }}>
+                                    {(currentModalAIBox as any).extensionBoxId || 'Box-1'}
+                                  </span>
+                                </div>
+
+                                {extPlatform !== 'meta' && resolvedTitle && (
+                                  <div>
+                                    <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: '2px' }}>Title</div>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {resolvedTitle}
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
+                                    Description ({resolvedDesc.length} chars)
+                                  </div>
+                                  <div
+                                    style={{
+                                      fontSize: '0.72rem',
+                                      color: resolvedDesc ? 'var(--text-primary)' : 'var(--text-muted)',
+                                      maxHeight: '84px',
+                                      overflowY: 'auto',
+                                      whiteSpace: 'pre-wrap',
+                                      lineHeight: 1.4,
+                                      padding: '0.4rem 0.5rem',
+                                      borderRadius: '6px',
+                                      backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                      border: '1px solid var(--border-color)',
+                                    }}
+                                  >
+                                    {resolvedDesc || 'No text collected yet — run workflow or connect a Content/Format node.'}
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px', gap: '6px' }}>
+                                    <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                                      Images Attached ({previewImgs.length})
+                                    </span>
+                                    {imageSourceSummary && (
+                                      <span style={{ fontSize: '0.6rem', color: '#60A5FA', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }} title={imageSourceSummary}>
+                                        From: {imageSourceSummary}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {previewImgs.length > 0 ? (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', maxHeight: '220px', overflowY: 'auto', paddingRight: '2px' }}>
+                                      {previewImgs.map((img: any, i: number) => (
+                                        <div
+                                          key={img.id}
+                                          title={img.sourceLabel ? `${img.sourceLabel} (#${i + 1})` : `#${i + 1}`}
+                                          style={{
+                                            position: 'relative',
+                                            aspectRatio: '1',
+                                            borderRadius: '5px',
+                                            overflow: 'hidden',
+                                            border: '1px solid var(--border-color)',
+                                            backgroundColor: '#0D1117',
+                                          }}
+                                        >
+                                          <img
+                                            src={img.url}
+                                            alt={`Attached ${i + 1}`}
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                      No images attached yet.
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Auto Sync Switch */}
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    padding: '0.45rem 0.6rem',
+                                    borderRadius: '6px',
+                                    backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF',
+                                    border: '1px solid var(--border-color)',
+                                    marginTop: '0.15rem',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                      Auto Sync to Extension
+                                    </span>
+                                    <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>
+                                      {(currentModalAIBox as any).extensionAutoSync
+                                        ? 'Automatically pushes updates when connected data changes'
+                                        : 'Manual sync only (click button below)'}
+                                    </span>
+                                  </div>
+                                  <ToggleSwitch
+                                    checked={Boolean((currentModalAIBox as any).extensionAutoSync)}
+                                    onChange={(nextVal) => {
+                                      updateConfig({
+                                        ...config,
+                                        aiBoxes: config.aiBoxes.map((b) =>
+                                          b.id === currentModalAIBox.id ? ({ ...b, extensionAutoSync: nextVal } as any) : b
+                                        ),
+                                      });
+                                      if (nextVal) {
+                                        handleSyncBoxToExtension();
+                                      }
+                                    }}
+                                    activeColor="#3B82F6"
+                                    size="sm"
+                                  />
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={handleSyncBoxToExtension}
+                                  style={{
+                                    width: '100%',
+                                    height: '34px',
+                                    marginTop: '0.25rem',
+                                    borderRadius: '6px',
+                                    border: 'none',
+                                    backgroundColor: copiedPromptId === `ext-sync-${currentModalAIBox.id}` ? '#10B981' : '#3B82F6',
+                                    color: '#FFFFFF',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '6px',
+                                  }}
+                                >
+                                  {copiedPromptId === `ext-sync-${currentModalAIBox.id}` ? (
+                                    <>
+                                      <FiCheck size={13} />
+                                      <span>Synced to Extension ✓</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <FiRefreshCw size={12} />
+                                      <span>Sync Box Data to Extension</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+
+                              {/* Gear hint */}
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '0.5rem',
+                                  padding: '0.55rem 0.75rem',
+                                  borderRadius: '8px',
+                                  backgroundColor: isDark ? 'rgba(59,130,246,0.07)' : '#F0F9FF',
+                                  border: '1px solid rgba(59,130,246,0.18)',
+                                }}
+                              >
+                                <FiSettings size={13} style={{ color: '#3B82F6', flexShrink: 0 }} />
+                                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                                  Click the <strong style={{ color: '#3B82F6' }}>⚙ gear icon</strong> (top-right) to configure Box ID, platform, field mapping, and profile.
+                                </span>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    ) : isN8NAIBox(currentModalAIBox) ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                         {/* n8n Engine Banner */}
                         <div
@@ -19695,7 +20650,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
               >
                 {/* Fallback Run button for other non-ExternalBrowser runnable nodes */}
-                {(!isAIBox || (currentModalAIBox && !isExternalBrowserAIBox(currentModalAIBox) && currentModalAIBox.processType !== 'chrome_profile' && !isChromeTabGroupAIBox(currentModalAIBox) && !isGoogleSheetBox(currentModalAIBox))) && (isContent || isImages || (isAIBox && currentModalAIBox)) && (
+                {(!isAIBox || (currentModalAIBox && !isExternalBrowserAIBox(currentModalAIBox) && currentModalAIBox.processType !== 'chrome_profile' && !isChromeTabGroupAIBox(currentModalAIBox) && !isGoogleSheetBox(currentModalAIBox) && !isExtensionAutofillBox(currentModalAIBox))) && (isContent || isImages || (isAIBox && currentModalAIBox)) && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
                     {isAIBox && currentModalAIBox && (
                       <button
@@ -22243,15 +23198,16 @@ export const FacebookWorkflowCanvas = forwardRef<
           if (box.id !== fromNodeId && !connectedTargetIds.has(box.id)) {
             const isCrop = isWatermarkAIBox(box);
             const isExtBrowser = isExternalBrowserAIBox(box);
-            const isEnh = isEnhanceAIBox(box, config.connections || []) && !isExtBrowser;
+            const isExtAutofill = isExtensionAutofillBox(box);
+            const isEnh = isEnhanceAIBox(box, config.connections || []) && !isExtBrowser && !isExtAutofill;
             const isTxtAI = isTextAIBox(box, config.connections);
             const isTxtFmt = isTextFormatAIBox(box);
             pushValidCandidate({
               id: box.id,
               title: box.title || 'AI Processor',
-              subtitle: isExtBrowser ? 'Chrome / ChatGPT auto' : isCrop ? 'Format & watermark' : isEnh ? 'Photo enhancement' : isTxtAI ? 'AI Engine (Text Model)' : isTxtFmt ? 'Text Format Preset' : 'Text / copywriting',
-              icon: isExtBrowser ? FiMonitor : isCrop ? FiScissors : isEnh ? FiCpu : isTxtFmt ? FiFileText : FiCpu,
-              color: isExtBrowser ? '#06B6D4' : isCrop ? '#8B5CF6' : isEnh ? '#EC4899' : isTxtFmt ? '#6366F1' : '#3B82F6',
+              subtitle: isExtAutofill ? 'Meta & TikTok Extension' : isExtBrowser ? 'Chrome / ChatGPT auto' : isCrop ? 'Format & watermark' : isEnh ? 'Photo enhancement' : isTxtAI ? 'AI Engine (Text Model)' : isTxtFmt ? 'Text Format Preset' : 'Text / copywriting',
+              icon: isExtAutofill ? FiSend : isExtBrowser ? FiMonitor : isCrop ? FiScissors : isEnh ? FiCpu : isTxtFmt ? FiFileText : FiCpu,
+              color: isExtAutofill ? '#3B82F6' : isExtBrowser ? '#06B6D4' : isCrop ? '#8B5CF6' : isEnh ? '#EC4899' : isTxtFmt ? '#6366F1' : '#3B82F6',
             });
           }
         });
@@ -22973,6 +23929,61 @@ export const FacebookWorkflowCanvas = forwardRef<
                       </div>
                       <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
                         Merge content, images & AI results into one view
+                      </div>
+                    </div>
+                    <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
+                  </button>
+
+                  {/* Browser Extension Autofill & Dispatch Node */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newExtId = handleAddExtensionAutofillNodeConnectedFrom(fromNodeId);
+                      setConnectDrawerNode(null);
+                      setActiveModalNode(newExtId);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      padding: '0.55rem 0.65rem',
+                      borderRadius: '7px',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#3B82F6';
+                      e.currentTarget.style.backgroundColor = isDark ? '#0F1E36' : '#EFF6FF';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
+                      e.currentTarget.style.backgroundColor = isDark ? '#1C2128' : '#F8FAFC';
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <FiSend size={14} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                        + Extension Autofill
+                      </div>
+                      <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                        Join selected inputs & push to Meta / TikTok Browser Extension
                       </div>
                     </div>
                     <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
@@ -24846,6 +25857,67 @@ export const FacebookWorkflowCanvas = forwardRef<
                   borderRadius: '6px',
                   border: 'none',
                   backgroundColor: '#FF6D5A',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <FiPlus size={13} /> Add
+              </button>
+            </div>
+
+            {/* Option: Browser Extension Autofill */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: isDark ? '#161B22' : '#F8FAFC',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)',
+                    color: '#FFFFFF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiSend size={15} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Extension Autofill Box
+                  </div>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                    Join selected text &amp; photos and push to Meta / TikTok Chrome Extension
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  handleAddExtensionAutofillNodeConnectedFrom();
+                  setIsAddFromTriggerOpen(false);
+                }}
+                style={{
+                  padding: '5px 10px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: '#3B82F6',
                   color: '#FFFFFF',
                   cursor: 'pointer',
                   display: 'flex',

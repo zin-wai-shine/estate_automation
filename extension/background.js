@@ -2913,3 +2913,751 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
 // Poll every 500ms for swift reaction
 setInterval(pollCompanion, 500);
 
+// ── Social Post Dispatch & Autofill Handlers ──────────────────────────────────
+async function fetchUrlAsDataUrl(rawUrl) {
+  if (!rawUrl) return '';
+  if (rawUrl.startsWith('data:')) return rawUrl;
+  const resp = await fetch(rawUrl);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${rawUrl}`);
+  const buffer = await resp.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  const mime = resp.headers.get('content-type') || 'image/jpeg';
+  return `data:${mime};base64,${btoa(binary)}`;
+}
+
+async function ensureSocialScriptInjected(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['social_autofill.js'],
+    });
+  } catch (e) {
+    console.warn('[BOLTHAVEN EXT] Could not inject social_autofill.js:', e.message);
+  }
+}
+
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+  if (request.action === 'SYNC_DISPATCH') {
+    (async () => {
+      try {
+        const stored = await chrome.storage.local.get(['profileKey', 'assignedBoxId']);
+        const profileKey = request.profileKey ?? stored.profileKey ?? '';
+        const boxId = request.boxId ?? stored.assignedBoxId ?? '';
+        const params = new URLSearchParams();
+        if (profileKey) params.set('profile_key', profileKey);
+        if (boxId) params.set('box_id', boxId);
+        // Default to fetching all staged boxes so the popup Box Selector dropdown can list every available box
+        if (request.all !== false) params.set('all', '1');
+
+        const resp = await fetch(`${COMPANION_URL}/dispatch-post?${params.toString()}`);
+        const data = await resp.json();
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        const items = rawItems.map((item) => ({
+          ...item,
+          images: Array.isArray(item.images)
+            ? item.images.map((img) => {
+                let resolvedUrl = img.url || '';
+                if (resolvedUrl.startsWith('/api/') || resolvedUrl.startsWith('/uploads/')) {
+                  resolvedUrl = `http://localhost:8080${resolvedUrl}`;
+                } else if (resolvedUrl.startsWith('/Users/') || resolvedUrl.startsWith('/tmp/')) {
+                  resolvedUrl = `${COMPANION_URL}/local-image?path=${encodeURIComponent(resolvedUrl)}`;
+                }
+                return { ...img, url: resolvedUrl };
+              })
+            : [],
+        }));
+        try {
+          await chrome.storage.local.set({ bolthavenDispatchItems: items });
+        } catch (storageErr) {
+          console.warn('[BOLTHAVEN EXT] Storage cache skipped:', storageErr.message);
+        }
+        sendResponse({ success: true, items, totalCount: data.totalCount || items.length });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (request.action === 'FILL_ACTIVE_TAB') {
+    (async () => {
+      try {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!activeTab || !activeTab.id) {
+          return sendResponse({ success: false, error: 'No active browser tab found.' });
+        }
+
+        const payload = { ...(request.payload || {}) };
+        const rawImages = Array.isArray(payload.images) ? payload.images : [];
+        const tabUrl = (activeTab.url || '').toLowerCase();
+        const isMetaTab =
+          payload.platform === 'meta' ||
+          tabUrl.includes('business.facebook.com') ||
+          tabUrl.includes('facebook.com');
+
+        if (isMetaTab) {
+          // Give the Meta tab real Chrome focus and wait for popup close to settle
+          try {
+            await chrome.windows.update(activeTab.windowId, { focused: true });
+            await chrome.tabs.update(activeTab.id, { active: true });
+            await delay(350);
+          } catch (_) {}
+
+          const fullText = (payload.description || '').trim();
+          let localPaths = [];
+          if (rawImages.length > 0) {
+            try {
+              const matResp = await fetch(`${COMPANION_URL}/dispatch-image/materialize`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ images: rawImages }),
+              });
+              const matData = await matResp.json();
+              if (matData && Array.isArray(matData.paths)) {
+                localPaths = matData.paths;
+              }
+            } catch (e) {
+              console.warn('[BOLTHAVEN EXT] Materialize failed:', e.message);
+            }
+          }
+
+          const target = { tabId: activeTab.id };
+          const cdp = (method, params = {}) => chrome.debugger.sendCommand(target, method, params);
+          const cdpClick = async (x, y) => {
+            await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+            await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+            await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+          };
+          const evalPage = async (expression) => {
+            const r = await cdp('Runtime.evaluate', { expression, returnByValue: true });
+            return r?.result?.value;
+          };
+
+          let attachedCount = 0;
+          let textFilled = false;
+          let debugNote = '';
+          let domDiagSummary = null;
+
+          await chrome.debugger.detach(target).catch(() => {});
+          await chrome.debugger.attach(target, '1.3');
+          try {
+            await cdp('Page.enable');
+            await cdp('DOM.enable');
+
+            // Helper: Collect DOM diagnostics & find best Meta Post Text editor (main doc + accessible iframes + shadow roots)
+            const detectMetaTextEditor = async () => {
+              return await evalPage(`(() => {
+                const collectRoots = () => {
+                  const roots = [{ doc: document, frameOffsetX: 0, frameOffsetY: 0, frameLabel: "main" }];
+                  const walkShadow = (rootNode, ox, oy, label) => {
+                    try {
+                      for (const el of rootNode.querySelectorAll("*")) {
+                        if (el.shadowRoot) {
+                          roots.push({ doc: el.shadowRoot, frameOffsetX: ox, frameOffsetY: oy, frameLabel: label + ">shadow" });
+                          walkShadow(el.shadowRoot, ox, oy, label + ">shadow");
+                        }
+                      }
+                    } catch (_) {}
+                  };
+                  walkShadow(document, 0, 0, "main");
+                  const iframes = Array.from(document.querySelectorAll("iframe"));
+                  iframes.forEach((ifr, idx) => {
+                    try {
+                      const idoc = ifr.contentDocument;
+                      if (idoc) {
+                        const ir = ifr.getBoundingClientRect();
+                        roots.push({ doc: idoc, frameOffsetX: ir.left, frameOffsetY: ir.top, frameLabel: "iframe#" + idx });
+                        walkShadow(idoc, ir.left, ir.top, "iframe#" + idx);
+                      }
+                    } catch (_) {}
+                  });
+                  return roots;
+                };
+
+                const roots = collectRoots();
+                const diag = [];
+                const scored = [];
+
+                for (const rCtx of roots) {
+                  const { doc, frameOffsetX, frameOffsetY, frameLabel } = rCtx;
+                  const seen = new Set();
+                  const els = [];
+                  const pushEl = (el) => {
+                    if (el && !seen.has(el)) {
+                      seen.add(el);
+                      els.push(el);
+                    }
+                  };
+                  doc.querySelectorAll('[contenteditable], [role="textbox"], textarea, input[type="text"], [data-lexical-editor], [data-slate-editor]').forEach(pushEl);
+                  try {
+                    doc.querySelectorAll("div, span, p").forEach((el) => {
+                      if (el.isContentEditable) pushEl(el);
+                    });
+                  } catch (_) {}
+
+                  for (const el of els) {
+                    const rect = el.getBoundingClientRect();
+                    const style = window.getComputedStyle(el);
+                    const isHidden =
+                      rect.width < 10 ||
+                      rect.height < 10 ||
+                      style.display === "none" ||
+                      style.visibility === "hidden" ||
+                      style.opacity === "0" ||
+                      Boolean(el.closest('[aria-hidden="true"]'));
+
+                    const ariaLabel = el.getAttribute("aria-label") || "";
+                    const placeholder = el.getAttribute("placeholder") || el.getAttribute("data-placeholder") || el.getAttribute("aria-placeholder") || "";
+                    const role = el.getAttribute("role") || "";
+                    const ce = el.getAttribute("contenteditable");
+                    const insidePostDetails = Boolean(el.closest('[data-surface*="lib:bizweb_create_post:post_details"]'));
+                    const insideComposer = Boolean(
+                      el.closest('[data-pagelet="BusinessComposerLayoutContainer"]') ||
+                      el.closest('[data-surface*="bizweb_create_post:left_panel"]')
+                    );
+                    const insidePreview = Boolean(el.closest('[data-surface*="preview"]'));
+                    const isGrammarly = el.tagName === "GRAMMARLY-EXTENSION" || Boolean(el.closest("grammarly-extension"));
+
+                    diag.push({
+                      frame: frameLabel,
+                      tag: el.tagName,
+                      role,
+                      ce,
+                      isCE: Boolean(el.isContentEditable),
+                      lexical: el.hasAttribute("data-lexical-editor"),
+                      slate: el.hasAttribute("data-slate-editor"),
+                      draft: el.classList.contains("notranslate"),
+                      w: Math.round(rect.width),
+                      h: Math.round(rect.height),
+                      hidden: isHidden,
+                      insidePostDetails,
+                      insideComposer,
+                      insidePreview,
+                      ariaLabel: ariaLabel.slice(0, 40),
+                      placeholder: placeholder.slice(0, 40),
+                    });
+
+                    if (isHidden || insidePreview || isGrammarly) continue;
+                    if (role === "combobox" || el.type === "search") continue;
+                    if (rect.width < 100 || rect.height < 12) continue;
+
+                    const isEditable = el.isContentEditable || ce === "true" || ce === "" || el.tagName === "TEXTAREA" || role === "textbox";
+                    if (!isEditable) continue;
+
+                    let score = 0;
+                    if (insidePostDetails) score += 60;
+                    if (insideComposer) score += 30;
+                    if (el.classList.contains("notranslate") || el.classList.contains("_5rpu")) score += 25;
+                    if (el.querySelector && el.querySelector('[data-contents="true"]')) score += 25;
+                    if (el.hasAttribute("data-lexical-editor") || el.hasAttribute("data-slate-editor")) score += 20;
+                    if (role === "textbox") score += 15;
+                    if (rect.width >= 200) score += 15;
+                    const labelHint = (ariaLabel + " " + placeholder).toLowerCase();
+                    if (/search|collaborator|username|page url|comment|link/.test(labelHint)) score -= 80;
+                    if (el.tagName === "INPUT") score -= 40;
+
+                    if (score > 0 || insideComposer) {
+                      scored.push({ el, score, rect, frameOffsetX, frameOffsetY, frameLabel });
+                    }
+                  }
+                }
+
+                scored.sort((a, b) => b.score - a.score);
+                const best = scored[0] || null;
+                if (!best) {
+                  return { found: false, diag: diag.slice(0, 20), iframeCount: document.querySelectorAll("iframe").length };
+                }
+
+                best.el.scrollIntoView({ block: "center" });
+                const r = best.el.getBoundingClientRect();
+                return {
+                  found: true,
+                  score: best.score,
+                  frame: best.frameLabel,
+                  tag: best.el.tagName,
+                  isTextarea: best.el.tagName === "TEXTAREA",
+                  x: best.frameOffsetX + r.left + Math.min(40, r.width / 2),
+                  y: best.frameOffsetY + r.top + Math.min(12, r.height / 2),
+                  hasText: (best.el.innerText || best.el.textContent || best.el.value || "").trim().length > 0,
+                  diag: diag.slice(0, 15),
+                };
+              })()`);
+            };
+
+            // 1. Fill Text FIRST (clean focus, before any media popover opens)
+            if (fullText) {
+              let editorInfo = await detectMetaTextEditor();
+
+              if (!editorInfo || !editorInfo.found) {
+                await evalPage(`(() => {
+                  const pd = document.querySelector('[data-surface*="lib:bizweb_create_post:post_details"]') || document;
+                  const trigger = Array.from(pd.querySelectorAll('div[role="button"], button, span')).find(n => /^text$|^write a post/i.test((n.textContent || "").trim()));
+                  if (trigger) (trigger.closest('[role="button"], button') || trigger).click();
+                })()`);
+                await delay(350);
+                editorInfo = await detectMetaTextEditor();
+              }
+
+              domDiagSummary = editorInfo?.diag || [];
+              console.log('[BOLTHAVEN META DIAG]', JSON.stringify({
+                found: Boolean(editorInfo?.found),
+                score: editorInfo?.score,
+                frame: editorInfo?.frame,
+                tag: editorInfo?.tag,
+                iframeCount: editorInfo?.iframeCount,
+                diagCount: domDiagSummary.length,
+                diag: domDiagSummary,
+              }));
+
+              if (editorInfo && editorInfo.found) {
+                await cdpClick(editorInfo.x, editorInfo.y);
+                await delay(100);
+
+                if (editorInfo.hasText) {
+                  await cdp('Input.dispatchKeyEvent', { type: 'keyDown', modifiers: 4, key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65 });
+                  await cdp('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 4, key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65 });
+                  await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
+                  await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
+                  await delay(60);
+                }
+
+                const lines = fullText.split('\n');
+                for (let li = 0; li < lines.length; li++) {
+                  if (lines[li]) {
+                    await cdp('Input.insertText', { text: lines[li] });
+                  }
+                  if (li < lines.length - 1) {
+                    await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+                    await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+                  }
+                }
+                await delay(250);
+
+                const nonEmptyLines = fullText.split('\n').map((l) => l.trim()).filter(Boolean);
+                const firstLine = (nonEmptyLines[0] || '').slice(0, 20);
+                const lastLine = (nonEmptyLines[nonEmptyLines.length - 1] || '').slice(0, 20);
+                const expectedLen = fullText.replace(/\s+/g, '').length;
+
+                textFilled = await evalPage(`(() => {
+                  const composerRoot =
+                    document.querySelector('[data-pagelet="BusinessComposerLayoutContainer"]') ||
+                    document.querySelector('[data-surface*="bizweb_create_post:left_panel"]') ||
+                    document;
+                  const surface = composerRoot.querySelector('[data-surface*="lib:bizweb_create_post:post_details"]') || composerRoot;
+                  const ed =
+                    surface.querySelector('div.notranslate._5rpu[contenteditable="true"]') ||
+                    surface.querySelector('div.notranslate[contenteditable="true"]') ||
+                    surface.querySelector('div[data-lexical-editor="true"][contenteditable="true"]') ||
+                    surface.querySelector('[contenteditable="true"][role="textbox"]') ||
+                    surface.querySelector('textarea');
+                  if (!ed) return false;
+                  const raw = (ed.innerText || ed.textContent || ed.value || '');
+                  const compactLen = raw.replace(/\\s+/g, '').length;
+                  const hasFirst = ${JSON.stringify(firstLine)} ? raw.includes(${JSON.stringify(firstLine)}) : true;
+                  const hasLast = ${JSON.stringify(lastLine)} ? raw.includes(${JSON.stringify(lastLine)}) : true;
+                  const hasLen = ${expectedLen} > 0 ? compactLen >= Math.floor(${expectedLen} * 0.85) : true;
+                  return hasFirst && hasLast && hasLen;
+                })()`);
+                if (!textFilled) debugNote += 'text-not-verified ';
+              } else {
+                debugNote += `no-editor(cands=${domDiagSummary.length},iframes=${editorInfo?.iframeCount ?? 0}) `;
+              }
+            }
+
+            // 2. Continue to Media Upload ONLY if text succeeded (or no text was requested)
+            const textOkToContinue = !fullText || textFilled;
+            if (textOkToContinue && localPaths.length > 0) {
+              await cdp('Page.setInterceptFileChooserDialog', { enabled: true });
+
+              let chooserParams = null;
+              const onDebuggerEvent = (source, method, params) => {
+                if (source.tabId === activeTab.id && method === 'Page.fileChooserOpened') {
+                  chooserParams = {
+                    mode: params?.mode || '',
+                    frameId: params?.frameId || '',
+                    backendNodeId: params?.backendNodeId || 0,
+                  };
+                  console.log('[BOLTHAVEN CDP] Page.fileChooserOpened:', JSON.stringify(chooserParams));
+                }
+              };
+              chrome.debugger.onEvent.addListener(onDebuggerEvent);
+
+              const countMediaThumbnails = () => evalPage(`(() => {
+                const mediaSurf = document.querySelector('[data-surface*="lib:bizweb_create_post:media"]');
+                const root = mediaSurf || document.querySelector('[data-surface*="bizweb_create_post:left_panel"]') || document;
+                const mediaEls = root.querySelectorAll('img, video, [style*="background-image"]').length;
+                const progressEls = root.querySelectorAll('[role="progressbar"], [aria-busy="true"]').length;
+                return { mediaEls, progressEls };
+              })()`);
+
+              const waitForMediaThumbnails = async (beforeCount, timeoutMs = 5000) => {
+                const start = Date.now();
+                let sawProgress = false;
+                while (Date.now() - start < timeoutMs) {
+                  const snap = await countMediaThumbnails();
+                  if (snap.progressEls > 0) sawProgress = true;
+                  if (snap.mediaEls > beforeCount) {
+                    return { afterCount: snap.mediaEls, sawProgress };
+                  }
+                  await delay(250);
+                }
+                const finalSnap = await countMediaThumbnails();
+                return { afterCount: finalSnap.mediaEls, sawProgress: sawProgress || finalSnap.progressEls > 0 };
+              };
+
+              let mediaStrategy = 'none';
+              let filesAssigned = false;
+              const beforeSnap = await countMediaThumbnails();
+              const beforeMediaCount = beforeSnap.mediaEls;
+
+              try {
+                // Strategy A: Direct <input type="file"> inside active Media surface
+                const inputEval = await cdp('Runtime.evaluate', {
+                  expression: `(() => {
+                    const s = document.querySelector('[data-surface*="lib:bizweb_create_post:media"]');
+                    if (s) {
+                      const inp = s.querySelector('input[type="file"]');
+                      if (inp) return inp;
+                    }
+                    return null;
+                  })()`,
+                  returnByValue: false,
+                });
+
+                if (inputEval?.result?.objectId) {
+                  mediaStrategy = 'direct-media-input';
+                  await cdp('DOM.setFileInputFiles', {
+                    objectId: inputEval.result.objectId,
+                    files: localPaths,
+                  });
+                  await cdp('Runtime.callFunctionOn', {
+                    objectId: inputEval.result.objectId,
+                    functionDeclaration: `function() {
+                      this.dispatchEvent(new Event("input", { bubbles: true }));
+                      this.dispatchEvent(new Event("change", { bubbles: true }));
+                    }`,
+                  }).catch(() => {});
+                  filesAssigned = true;
+                } else {
+                  // Strategy B: Recalculate Add photo/video button, snapshot DOM, click via CDP, and poll
+                  const addBtnInfo = await evalPage(`(() => {
+                    const composer =
+                      document.querySelector('[data-pagelet="BusinessComposerLayoutContainer"]') ||
+                      document.querySelector('[data-surface*="bizweb_create_post:left_panel"]') ||
+                      document;
+                    const mediaSurf = composer.querySelector('[data-surface*="lib:bizweb_create_post:media"]') || composer;
+                    const candidates = Array.from(mediaSurf.querySelectorAll('div[role="button"], button, span'));
+                    const el =
+                      candidates.find(n => /^add photo\\/video$|^add photos$/i.test((n.textContent || '').trim())) ||
+                      candidates.find(n => /add photo\\/video|add photo/i.test((n.textContent || '').trim()));
+                    const btn = el ? (el.closest('[role="button"], button') || el) : null;
+                    if (!btn) return null;
+                    btn.scrollIntoView({ block: 'center' });
+                    const r = btn.getBoundingClientRect();
+                    if (r.width <= 0 || r.height <= 0) return null;
+
+                    // Snapshot existing clickable labels & file input count before clicking
+                    const existingTexts = Array.from(document.querySelectorAll('[role="menuitem"], [role="menu"] [role="button"], [role="dialog"] [role="button"], div[role="button"], button'))
+                      .map(n => (n.textContent || '').trim())
+                      .filter(Boolean);
+
+                    return {
+                      x: r.left + r.width / 2,
+                      y: r.top + r.height / 2,
+                      beforeInputCount: document.querySelectorAll('input[type="file"]').length,
+                      existingTexts: Array.from(new Set(existingTexts)),
+                    };
+                  })()`);
+
+                  if (!addBtnInfo) {
+                    debugNote += 'no-add-btn ';
+                  } else {
+                    await cdpClick(addBtnInfo.x, addBtnInfo.y);
+
+                    // Bounded polling (up to 2200ms) for: (1) fileChooserIntercepted, (2) new <input type="file">, or (3) newly opened upload control anywhere in document
+                    const pollStart = Date.now();
+                    let uploadActionCoords = null;
+                    let mountedInputObjId = null;
+
+                    while (Date.now() - pollStart < 2200) {
+                      if (chooserParams && chooserParams.backendNodeId) {
+                        mediaStrategy = `file-chooser-opened(${chooserParams.mode || 'select'})`;
+                        break;
+                      }
+
+                      const mountedCheck = await cdp('Runtime.evaluate', {
+                        expression: `(() => {
+                          const s = document.querySelector('[data-surface*="lib:bizweb_create_post:media"]');
+                          if (s) { const inp = s.querySelector('input[type="file"]'); if (inp) return inp; }
+                          const all = Array.from(document.querySelectorAll('input[type="file"]'));
+                          if (all.length > ${addBtnInfo.beforeInputCount}) {
+                            const newer = all.find(el => (el.getAttribute('accept') || '').toLowerCase().includes('image')) || all[all.length - 1];
+                            if (newer) return newer;
+                          }
+                          return null;
+                        })()`,
+                        returnByValue: false,
+                      });
+
+                      if (mountedCheck?.result?.objectId) {
+                        mountedInputObjId = mountedCheck.result.objectId;
+                        mediaStrategy = 'mounted-file-input';
+                        break;
+                      }
+
+                      // Search entire document for newly rendered popover/menu upload controls (not limited to role="menu")
+                      uploadActionCoords = await evalPage(`(() => {
+                        const prevSet = new Set(${JSON.stringify(addBtnInfo.existingTexts || [])});
+                        const nodes = Array.from(document.querySelectorAll('[role="menuitem"], [role="option"], div[role="button"], button, a[role="button"]'));
+                        const scored = [];
+
+                        for (const n of nodes) {
+                          const r = n.getBoundingClientRect();
+                          if (r.width <= 0 || r.height <= 0) continue;
+                          if (n.closest('[aria-hidden="true"]')) continue;
+                          const label = (n.getAttribute('aria-label') || n.textContent || '').trim();
+                          if (!label || label.length > 80) continue;
+                          const lower = label.toLowerCase();
+
+                          if (/video|reel|template|story|cancel|close|help|learn|settings|publish|boost|finish later/.test(lower)) continue;
+
+                          const isNew = !prevSet.has(label);
+                          const inOverlay = Boolean(n.closest('[role="menu"], [role="dialog"], [role="listbox"], [data-visualcompletion]'));
+                          const dist = Math.hypot((r.left + r.width / 2) - ${addBtnInfo.x}, (r.top + r.height / 2) - ${addBtnInfo.y});
+
+                          let score = 0;
+                          if (/^(add photo|add photos|upload from desktop|upload photo|upload photos|from computer|from device)$/i.test(label)) score += 70;
+                          else if (/(upload from desktop|upload photo|from computer|from device|select from computer|choose file|add photo)/i.test(lower)) score += 40;
+                          else if (isNew && inOverlay && /photo|image|upload/i.test(lower)) score += 30;
+                          else continue;
+
+                          if (isNew) score += 25;
+                          if (inOverlay) score += 20;
+                          if (dist < 320) score += 15;
+
+                          scored.push({ x: r.left + r.width / 2, y: r.top + r.height / 2, label, score, isNew, inOverlay });
+                        }
+
+                        scored.sort((a, b) => b.score - a.score);
+                        return scored[0] || null;
+                      })()`);
+
+                      if (uploadActionCoords) {
+                        mediaStrategy = `menu-click(${uploadActionCoords.label})`;
+                        break;
+                      }
+
+                      await delay(150);
+                    }
+
+                    if (mountedInputObjId) {
+                      await cdp('DOM.setFileInputFiles', {
+                        objectId: mountedInputObjId,
+                        files: localPaths,
+                      });
+                      await cdp('Runtime.callFunctionOn', {
+                        objectId: mountedInputObjId,
+                        functionDeclaration: `function() {
+                          this.dispatchEvent(new Event("input", { bubbles: true }));
+                          this.dispatchEvent(new Event("change", { bubbles: true }));
+                        }`,
+                      }).catch(() => {});
+                      filesAssigned = true;
+                    } else if (uploadActionCoords && !chooserParams) {
+                      await cdpClick(uploadActionCoords.x, uploadActionCoords.y);
+
+                      // Poll up to 2500ms for fileChooserIntercepted OR a newly mounted <input type="file">
+                      const waitStart = Date.now();
+                      while (Date.now() - waitStart < 2500) {
+                        if (chooserParams && chooserParams.backendNodeId) break;
+                        const postClickInput = await cdp('Runtime.evaluate', {
+                          expression: `(() => {
+                            const s = document.querySelector('[data-surface*="lib:bizweb_create_post:media"]');
+                            if (s) { const inp = s.querySelector('input[type="file"]'); if (inp) return inp; }
+                            const menuInp = document.querySelector('[role="menu"] input[type="file"], [role="dialog"] input[type="file"]');
+                            if (menuInp) return menuInp;
+                            const all = Array.from(document.querySelectorAll('input[type="file"]'));
+                            return all.find(el => (el.getAttribute('accept') || '').toLowerCase().includes('image') && el.multiple) || null;
+                          })()`,
+                          returnByValue: false,
+                        });
+                        if (postClickInput?.result?.objectId) {
+                          mountedInputObjId = postClickInput.result.objectId;
+                          mediaStrategy = 'post-menu-file-input';
+                          await cdp('DOM.setFileInputFiles', {
+                            objectId: mountedInputObjId,
+                            files: localPaths,
+                          });
+                          await cdp('Runtime.callFunctionOn', {
+                            objectId: mountedInputObjId,
+                            functionDeclaration: `function() {
+                              this.dispatchEvent(new Event("input", { bubbles: true }));
+                              this.dispatchEvent(new Event("change", { bubbles: true }));
+                            }`,
+                          }).catch(() => {});
+                          filesAssigned = true;
+                          break;
+                        }
+                        await delay(150);
+                      }
+                    }
+
+                    if (!filesAssigned && chooserParams && chooserParams.backendNodeId) {
+                      mediaStrategy = `file-chooser-opened(${chooserParams.mode || 'select'})`;
+                      await cdp('DOM.setFileInputFiles', {
+                        backendNodeId: chooserParams.backendNodeId,
+                        files: localPaths,
+                      });
+                      filesAssigned = true;
+                    } else if (!filesAssigned) {
+                      await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+                      await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+                      await delay(150);
+                      debugNote += uploadActionCoords ? `file-chooser-timeout(${uploadActionCoords.label}) ` : 'no-upload-control-detected ';
+                    }
+                  }
+                }
+
+                // Wait for Meta to process and render uploaded photo thumbnails
+                let afterMediaCount = beforeMediaCount;
+                let sawProgress = false;
+                if (filesAssigned) {
+                  const resSnap = await waitForMediaThumbnails(beforeMediaCount, 5000);
+                  afterMediaCount = resSnap.afterCount;
+                  sawProgress = resSnap.sawProgress;
+                  if (afterMediaCount > beforeMediaCount) {
+                    attachedCount = localPaths.length;
+                  } else {
+                    debugNote += sawProgress
+                      ? `upload-processing-timeout(${mediaStrategy}) `
+                      : `media-not-rendered(${mediaStrategy}) `;
+                  }
+                }
+
+                const mediaDiag = await evalPage(`(() => ({
+                  inputs: Array.from(document.querySelectorAll('input[type="file"]')).map(el => ({
+                    accept: el.getAttribute('accept') || '',
+                    multiple: Boolean(el.multiple),
+                    inMedia: Boolean(el.closest('[data-surface*="lib:bizweb_create_post:media"]')),
+                  })),
+                }))()`);
+                console.log('[BOLTHAVEN MEDIA DIAG]', JSON.stringify({
+                  requested: localPaths.length,
+                  mediaStrategy,
+                  filesAssigned,
+                  beforeMediaCount,
+                  afterMediaCount,
+                  sawProgress,
+                  attachedCount,
+                  inputs: mediaDiag?.inputs || [],
+                }));
+              } finally {
+                chrome.debugger.onEvent.removeListener(onDebuggerEvent);
+                await cdp('Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => {});
+              }
+            }
+          } finally {
+            await chrome.debugger.detach(target).catch(() => {});
+          }
+
+          if (domDiagSummary) {
+            chrome.storage.local.set({ lastMetaDomDiag: domDiagSummary }).catch(() => {});
+          }
+
+          const captionFailed = Boolean(fullText) && !textFilled;
+          const mediaFailed = localPaths.length > 0 && attachedCount === 0;
+          const overallOk = !captionFailed && !mediaFailed && Boolean(attachedCount || textFilled);
+
+          await chrome.scripting.executeScript({
+            target: { tabId: activeTab.id },
+            func: (msg, ok) => {
+              const ex = document.getElementById('bolthaven-autofill-toast');
+              if (ex) ex.remove();
+              const t = document.createElement('div');
+              t.id = 'bolthaven-autofill-toast';
+              t.style.cssText = `position:fixed;bottom:20px;right:20px;z-index:2147483647;background:${ok ? '#064E3B' : '#7F1D1D'};color:#F8FAFC;border:1px solid ${ok ? '#10B981' : '#EF4444'};border-radius:10px;padding:10px 14px;font-family:-apple-system,sans-serif;font-size:12px;font-weight:600;box-shadow:0 10px 25px rgba(0,0,0,0.45);pointer-events:none;`;
+              t.textContent = `BoltHaven: ${msg}`;
+              document.body.appendChild(t);
+              setTimeout(() => t.remove(), 4500);
+            },
+            args: [
+              overallOk
+                ? `Filled Meta (${attachedCount} photos${textFilled ? ' + caption' : ''})`
+                : `Fill failed (${debugNote.trim() || 'caption verification failed'})`,
+              overallOk,
+            ],
+          }).catch(() => {});
+
+          if (!overallOk) {
+            return sendResponse({ success: false, error: `Meta fill failed (${debugNote.trim() || 'verification failed'})` });
+          }
+          return sendResponse({ success: true, platform: 'meta', attachedCount, textFilled });
+        }
+
+        await ensureSocialScriptInjected(activeTab.id);
+        await chrome.tabs.sendMessage(activeTab.id, { action: 'BOLTHAVEN_CLEAR_STAGED_IMAGES' }).catch(() => {});
+
+        // Stage each image individually to avoid Chrome's sendMessage IPC size limit
+        let stagedCount = 0;
+        for (let i = 0; i < rawImages.length; i++) {
+          const img = rawImages[i];
+          let dataUrl = img.dataUrl || '';
+          if (!dataUrl && img.url) {
+            try {
+              dataUrl = await fetchUrlAsDataUrl(img.url);
+            } catch (e) {
+              console.warn('[BOLTHAVEN EXT] Image fetch skipped:', img.url, e.message);
+            }
+          }
+          if (dataUrl) {
+            await chrome.tabs.sendMessage(activeTab.id, {
+              action: 'BOLTHAVEN_STAGE_IMAGE',
+              index: i,
+              name: img.name || `photo_${i + 1}.jpg`,
+              dataUrl,
+            });
+            stagedCount++;
+          }
+        }
+
+        delete payload.images;
+        payload.useStagedImages = stagedCount > 0;
+        payload.stagedCount = stagedCount;
+
+        const result = await chrome.tabs.sendMessage(activeTab.id, {
+          action: 'BOLTHAVEN_SOCIAL_FILL',
+          payload,
+        });
+        sendResponse(result || { success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (request.action === 'PULL_FROM_SITE') {
+    (async () => {
+      try {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!activeTab || !activeTab.id) {
+          return sendResponse({ success: false, error: 'No active browser tab found.' });
+        }
+        await ensureSocialScriptInjected(activeTab.id);
+        const result = await chrome.tabs.sendMessage(activeTab.id, {
+          action: 'BOLTHAVEN_PULL_FROM_SITE',
+        });
+        sendResponse(result || { success: false, error: 'No data found on page.' });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+});
+

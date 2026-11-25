@@ -10,6 +10,7 @@
     "storage",
     "activeTab",
     "scripting",
+    "debugger",
     "downloads",
     "clipboardRead",
     "clipboardWrite",
@@ -23,7 +24,12 @@
     "http://localhost:9224/*",
     "https://chatgpt.com/*",
     "https://*.chatgpt.com/*",
-    "https://*.oaiusercontent.com/*"
+    "https://*.oaiusercontent.com/*",
+    "https://business.facebook.com/*",
+    "https://*.facebook.com/*",
+    "https://www.tiktok.com/*",
+    "https://*.tiktok.com/*",
+    "https://*.canva.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -39,6 +45,14 @@
         "https://*.chatgpt.com/*"
       ],
       "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://business.facebook.com/*",
+        "https://www.tiktok.com/*"
+      ],
+      "js": ["social_autofill.js"],
       "run_at": "document_idle"
     }
   ]

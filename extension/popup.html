@@ -15,57 +15,60 @@
       --bg-surface: #12151C;
       --bg-surface-elevated: #181C26;
       --bg-surface-hover: #1E2330;
-      --border-subtle: rgba(255, 255, 255, 0.07);
-      --border-strong: rgba(255, 255, 255, 0.14);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
       --border-focus: #3B82F6;
       --text-primary: #F1F5F9;
       --text-secondary: #94A3B8;
       --text-muted: #64748B;
       --accent-primary: #2563EB;
       --accent-hover: #1D4ED8;
-      --accent-glow: rgba(37, 99, 235, 0.25);
+      --accent-soft: rgba(37, 99, 235, 0.14);
       --success: #10B981;
-      --success-glow: rgba(16, 185, 129, 0.2);
+      --success-glow: rgba(16, 185, 129, 0.25);
+      --warning: #F59E0B;
+      --danger: #EF4444;
+      --tiktok: #FE2C55;
+      --meta: #1877F2;
     }
 
     body {
-      width: 360px;
+      width: 390px;
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
       background: var(--bg-base);
       color: var(--text-primary);
-      padding: 14px;
+      padding: 12px 14px 14px;
       font-size: 12px;
       line-height: 1.45;
       user-select: none;
       -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
     }
 
-    /* ── Top Header ── */
+    /* ── Header ── */
     .header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding-bottom: 12px;
+      padding-bottom: 10px;
       border-bottom: 1px solid var(--border-subtle);
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
     .header-left {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 9px;
     }
     .logo-mark {
       width: 28px;
       height: 28px;
-      border-radius: 7px;
-      background: linear-gradient(180deg, #1E293B 0%, #0F172A 100%);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 2px 5px rgba(0, 0, 0, 0.4);
+      border-radius: 8px;
+      background: linear-gradient(135deg, #2563EB 0%, #1E293B 100%);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 2px 6px rgba(0, 0, 0, 0.45);
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #60A5FA;
+      color: #FFFFFF;
       flex-shrink: 0;
     }
     .title-row {
@@ -77,28 +80,26 @@
       font-size: 13px;
       font-weight: 600;
       letter-spacing: -0.2px;
-      color: var(--text-primary);
     }
     .version-chip {
-      font-size: 10px;
-      font-weight: 500;
+      font-size: 9.5px;
+      font-weight: 600;
       padding: 1px 5px;
       border-radius: 4px;
-      background: rgba(255, 255, 255, 0.05);
-      color: var(--text-muted);
-      border: 1px solid var(--border-subtle);
+      background: rgba(59, 130, 246, 0.12);
+      color: #60A5FA;
+      border: 1px solid rgba(59, 130, 246, 0.25);
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
     .subtitle-text {
-      font-size: 11px;
+      font-size: 10.5px;
       color: var(--text-muted);
-      letter-spacing: -0.1px;
     }
 
     .status-beacon {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       padding: 3px 8px;
       border-radius: 100px;
       font-size: 10px;
@@ -106,29 +107,70 @@
       background: rgba(16, 185, 129, 0.08);
       color: var(--success);
       border: 1px solid rgba(16, 185, 129, 0.22);
-      transition: all 0.2s ease;
     }
     .status-dot {
       width: 5px;
       height: 5px;
       border-radius: 50%;
-      background: var(--success);
+      background: currentColor;
       box-shadow: 0 0 6px var(--success-glow);
     }
 
-    /* ── Sections ── */
+    /* ── Segmented Nav Tabs ── */
+    .nav-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      background: var(--bg-surface);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border-subtle);
+      margin-bottom: 10px;
+    }
+    .nav-tab {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 6px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      transition: all 0.15s ease;
+    }
+    .nav-tab:hover {
+      color: var(--text-secondary);
+    }
+    .nav-tab.active {
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
+
+    .tab-panel {
+      display: none;
+    }
+    .tab-panel.active {
+      display: block;
+    }
+
+    /* ── Cards & Inputs ── */
     .section-card {
       background: var(--bg-surface);
-      border-radius: 8px;
-      padding: 11px 12px;
-      margin-bottom: 10px;
+      border-radius: 9px;
+      padding: 10px 11px;
+      margin-bottom: 9px;
       border: 1px solid var(--border-subtle);
     }
     .section-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 8px;
+      margin-bottom: 7px;
     }
     .section-label {
       font-size: 10px;
@@ -143,65 +185,305 @@
       color: var(--text-secondary);
     }
 
-    /* ── Profile Select Dropdown ── */
+    .row-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+    }
+
     .select-wrapper {
       position: relative;
       width: 100%;
     }
-    .profile-select {
+    .profile-select, .input-field {
       width: 100%;
       appearance: none;
       -webkit-appearance: none;
-      padding: 7px 30px 7px 10px;
+      padding: 6px 26px 6px 9px;
       border-radius: 6px;
       background: var(--bg-surface-elevated);
       color: var(--text-primary);
       border: 1px solid var(--border-subtle);
-      font-size: 12px;
+      font-size: 11.5px;
       font-weight: 500;
-      cursor: pointer;
       outline: none;
+      font-family: inherit;
       transition: border-color 0.15s ease, box-shadow 0.15s ease;
     }
-    .profile-select:hover {
+    .input-field {
+      padding: 6px 9px;
+      user-select: text;
+    }
+    .textarea-field {
+      width: 100%;
+      min-height: 76px;
+      max-height: 130px;
+      resize: vertical;
+      padding: 7px 9px;
+      border-radius: 6px;
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
+      font-size: 11.5px;
+      line-height: 1.45;
+      font-family: inherit;
+      outline: none;
+      user-select: text;
+    }
+    .profile-select:hover, .input-field:hover, .textarea-field:hover {
       border-color: var(--border-strong);
     }
-    .profile-select:focus {
+    .profile-select:focus, .input-field:focus, .textarea-field:focus {
       border-color: var(--border-focus);
-      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.22);
     }
     .select-arrow {
       position: absolute;
-      right: 10px;
+      right: 8px;
       top: 50%;
       transform: translateY(-50%);
       pointer-events: none;
       color: var(--text-muted);
     }
 
-    /* ── Memorized Groups & Tab List ── */
+    /* ── Toolbar Buttons ── */
+    .toolbar-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      margin-bottom: 9px;
+    }
+    .mini-btn {
+      height: 30px;
+      border-radius: 7px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      transition: all 0.14s ease;
+    }
+    .mini-btn:hover {
+      background: var(--bg-surface-hover);
+      border-color: var(--border-strong);
+    }
+    .mini-btn:active {
+      transform: scale(0.98);
+    }
+
+    /* ── Platform Pills ── */
+    .platform-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px;
+      border-radius: 100px;
+      font-size: 9.5px;
+      font-weight: 600;
+      border: 1px solid var(--border-subtle);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-secondary);
+    }
+    .platform-pill.meta {
+      background: rgba(24, 119, 242, 0.14);
+      color: #60A5FA;
+      border-color: rgba(24, 119, 242, 0.3);
+    }
+    .platform-pill.tiktok {
+      background: rgba(254, 44, 85, 0.14);
+      color: #FB7185;
+      border-color: rgba(254, 44, 85, 0.3);
+    }
+
+    /* ── Image Preview Grid ── */
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      max-height: 136px;
+      overflow-y: auto;
+      padding: 2px 0 4px;
+    }
+    .image-grid::-webkit-scrollbar,
+    .groups-list::-webkit-scrollbar {
+      width: 4px;
+    }
+    .image-grid::-webkit-scrollbar-thumb,
+    .groups-list::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.14);
+      border-radius: 4px;
+    }
+    .img-tile {
+      position: relative;
+      aspect-ratio: 1 / 1;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1.5px solid var(--border-subtle);
+      background: var(--bg-surface-elevated);
+      cursor: pointer;
+      transition: all 0.14s ease;
+    }
+    .img-tile.selected {
+      border-color: #3B82F6;
+      box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.4);
+    }
+    .img-tile:not(.selected) {
+      opacity: 0.45;
+    }
+    .img-tile img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .img-check {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      background: rgba(11, 13, 17, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #FFFFFF;
+      font-size: 10px;
+    }
+    .img-tile.selected .img-check {
+      background: #2563EB;
+      border-color: #60A5FA;
+    }
+    .img-idx {
+      position: absolute;
+      bottom: 3px;
+      left: 4px;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 0 4px;
+      border-radius: 3px;
+      background: rgba(11, 13, 17, 0.78);
+      color: #E2E8F0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    /* ── Batch Bar ── */
+    .batch-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      margin-top: 7px;
+      font-size: 10.5px;
+    }
+    .batch-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-secondary);
+    }
+    .batch-select {
+      background: var(--bg-base);
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-size: 10.5px;
+      font-weight: 600;
+      outline: none;
+    }
+    .link-btn {
+      background: transparent;
+      border: none;
+      color: #60A5FA;
+      font-size: 10.5px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .link-btn:hover {
+      text-decoration: underline;
+    }
+
+    .field-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 8px 0 4px;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    /* ── Primary & Secondary Action Buttons ── */
+    .button-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .btn {
+      width: 100%;
+      height: 35px;
+      border-radius: 7px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: linear-gradient(180deg, #2563EB 0%, #1D4ED8 100%);
+      color: #FFFFFF;
+      font-weight: 600;
+      font-size: 12px;
+      letter-spacing: -0.1px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 2px 6px rgba(37, 99, 235, 0.3);
+      transition: all 0.15s ease;
+    }
+    .btn:hover {
+      background: linear-gradient(180deg, #3B82F6 0%, #2563EB 100%);
+    }
+    .btn:active {
+      transform: translateY(1px);
+    }
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      box-shadow: none;
+      height: 32px;
+      font-size: 11.5px;
+    }
+    .btn-secondary:hover {
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+      border-color: var(--border-strong);
+    }
+
+    /* ── Worker Tabs List (Preserved) ── */
     .groups-list {
       display: flex;
       flex-direction: column;
       gap: 8px;
-      max-height: 230px;
+      max-height: 220px;
       overflow-y: auto;
       padding-right: 2px;
     }
-    .groups-list::-webkit-scrollbar {
-      width: 4px;
-    }
-    .groups-list::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    .groups-list::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.12);
-      border-radius: 4px;
-    }
-    .groups-list::-webkit-scrollbar-thumb:hover {
-      background: rgba(255, 255, 255, 0.2);
-    }
-
     .group-section {
       background: var(--bg-surface-elevated);
       border-radius: 6px;
@@ -214,9 +496,7 @@
       justify-content: space-between;
       font-size: 11.5px;
       font-weight: 600;
-      color: var(--text-primary);
       margin-bottom: 6px;
-      letter-spacing: -0.1px;
     }
     .group-badge {
       font-size: 9.5px;
@@ -228,28 +508,22 @@
       border: 1px solid var(--border-subtle);
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
-
     .group-tabs-list {
       display: flex;
       flex-direction: column;
       gap: 3px;
     }
-
     .tab-item {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
       padding: 5px 7px;
-      background: transparent;
       border-radius: 5px;
-      border: 1px solid transparent;
       font-size: 11px;
-      transition: background-color 0.12s ease, border-color 0.12s ease;
     }
     .tab-item:hover {
       background: var(--bg-surface-hover);
-      border-color: var(--border-subtle);
     }
     .tab-left {
       display: flex;
@@ -263,17 +537,12 @@
       font-weight: 600;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       color: var(--text-muted);
-      flex-shrink: 0;
       width: 16px;
       text-align: right;
     }
-    .tab-info {
-      min-width: 0;
-      flex: 1;
-    }
+    .tab-info { min-width: 0; flex: 1; }
     .tab-title {
       font-weight: 500;
-      color: var(--text-primary);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -299,73 +568,20 @@
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      flex-shrink: 0;
-      transition: all 0.12s ease;
     }
     .focus-btn:hover {
       background: rgba(255, 255, 255, 0.09);
       color: var(--text-primary);
-      border-color: var(--border-strong);
-    }
-    .focus-btn:active {
-      transform: scale(0.97);
     }
 
-    /* ── Action Buttons ── */
-    .button-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin-top: 4px;
-    }
-
-    .btn {
-      width: 100%;
-      height: 33px;
+    .empty-state {
+      color: var(--text-muted);
+      font-size: 11px;
+      text-align: center;
+      padding: 16px 8px;
+      border: 1px dashed var(--border-subtle);
       border-radius: 6px;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      background: linear-gradient(180deg, #2563EB 0%, #1D4ED8 100%);
-      color: #FFFFFF;
-      font-weight: 600;
-      font-size: 11.5px;
-      letter-spacing: -0.1px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 1px 3px rgba(0, 0, 0, 0.4);
-      transition: all 0.15s ease;
-    }
-    .btn:hover {
-      background: linear-gradient(180deg, #3B82F6 0%, #2563EB 100%);
-      border-color: rgba(255, 255, 255, 0.2);
-    }
-    .btn:active {
-      transform: translateY(1px);
-      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
-    }
-
-    .btn-secondary {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      color: var(--text-secondary);
-      box-shadow: none;
-    }
-    .btn-secondary:hover {
-      background: var(--bg-surface-elevated);
-      color: var(--text-primary);
-      border-color: var(--border-strong);
-    }
-    .btn-secondary:active {
-      transform: translateY(1px);
-    }
-
-    .btn-icon {
-      flex-shrink: 0;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
+      background: rgba(255, 255, 255, 0.01);
     }
   </style>
 </head>
@@ -374,16 +590,16 @@
   <header class="header">
     <div class="header-left">
       <div class="logo-mark">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
         </svg>
       </div>
       <div>
         <div class="title-row">
           <span class="title-text">BoltHaven Pro</span>
-          <span class="version-chip">v2.5</span>
+          <span class="version-chip">v2.6</span>
         </div>
-        <div class="subtitle-text">Tab Memory & Automation Pipeline</div>
+        <div class="subtitle-text">Social Autofill & Pipeline Companion</div>
       </div>
     </div>
     <div class="status-beacon" id="companion-beacon">
@@ -392,57 +608,170 @@
     </div>
   </header>
 
-  <!-- Profile Card -->
-  <section class="section-card">
-    <div class="section-header">
-      <span class="section-label">Active Chrome Profile</span>
-      <span id="profile-status" class="section-meta" style="color: var(--success);">Linked</span>
-    </div>
-    <div class="select-wrapper">
-      <select id="profile-select" class="profile-select">
-        <option value="">Auto-Detect Profile</option>
-        <option value="Profile 14">Hsu (Profile 14)</option>
-        <option value="Profile 2">Note Zin Wai (Profile 2)</option>
-      </select>
-      <div class="select-arrow">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="6 9 12 15 18 9"></polyline>
-        </svg>
+  <!-- Mode Tabs -->
+  <nav class="nav-tabs">
+    <button class="nav-tab active" data-tab="autofill" type="button">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 20h9"></path>
+        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+      </svg>
+      Post Autofill
+    </button>
+    <button class="nav-tab" data-tab="workers" type="button">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="7" height="7"></rect>
+        <rect x="14" y="3" width="7" height="7"></rect>
+        <rect x="14" y="14" width="7" height="7"></rect>
+        <rect x="3" y="14" width="7" height="7"></rect>
+      </svg>
+      Worker Tabs
+    </button>
+  </nav>
+
+  <!-- ════════════════════════════════════════════════════════════════════════
+       TAB 1: POST AUTOFILL (Meta Business Suite & TikTok Studio)
+       ════════════════════════════════════════════════════════════════════════ -->
+  <div id="tab-autofill" class="tab-panel active">
+    <!-- Profile & Box Assignment -->
+    <section class="section-card">
+      <div class="section-header">
+        <span class="section-label">Browser Profile & Assigned Box</span>
+        <span id="profile-status" class="section-meta" style="color: var(--success);">Isolated</span>
       </div>
-    </div>
-  </section>
+      <div class="row-2">
+        <div class="select-wrapper">
+          <select id="profile-select" class="profile-select" title="Chrome Profile">
+            <option value="">Auto-Detect Profile</option>
+          </select>
+          <div class="select-arrow">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </div>
+        </div>
+        <div class="select-wrapper">
+          <select id="box-select" class="profile-select" title="Select Extension Box from Site">
+            <option value="">All / Auto Box</option>
+          </select>
+          <div class="select-arrow">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </div>
+        </div>
+      </div>
+    </section>
 
-  <!-- Memorized Worker Pipelines -->
-  <section class="section-card">
-    <div class="section-header">
-      <span class="section-label">Worker Pipelines</span>
-      <span id="tabs-summary" class="section-meta">Sync Ready</span>
+    <!-- Sync & Input From Site Toolbar -->
+    <div class="toolbar-row">
+      <button class="mini-btn" id="sync-dispatch-btn" type="button">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+        </svg>
+        <span id="sync-dispatch-label">Sync Queue</span>
+      </button>
+      <button class="mini-btn" id="pull-site-btn" type="button">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        <span id="pull-site-label">Input from Site</span>
+      </button>
     </div>
-    <div class="groups-list" id="groups-container">
-      <div style="color: var(--text-muted); font-size: 11px; padding: 12px 0; text-align: center;">Scanning memorized worker pipelines...</div>
-    </div>
-  </section>
 
-  <!-- Actions -->
-  <div class="button-group">
-    <button class="btn" id="sync-btn" type="button">
-      <span class="btn-icon">
+    <!-- Joined Post Preview Card -->
+    <section class="section-card">
+      <div class="section-header">
+        <span class="section-label">Staged Post Preview</span>
+        <span id="platform-badge" class="platform-pill">Auto Detect</span>
+      </div>
+
+      <!-- Queue Selector (when >1 item exists) -->
+      <div id="queue-select-wrap" class="select-wrapper" style="margin-bottom: 8px; display: none;">
+        <select id="queue-select" class="profile-select"></select>
+        <div class="select-arrow">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </div>
+      </div>
+
+      <!-- Image Selection Grid -->
+      <div class="field-label-row" style="margin-top: 2px;">
+        <span>Photos (<span id="selected-img-count">0</span>/<span id="total-img-count">0</span>)</span>
+        <button id="toggle-all-imgs-btn" class="link-btn" type="button">Select All</button>
+      </div>
+      <div id="image-grid" class="image-grid">
+        <div class="empty-state" style="grid-column: 1 / -1;">Click <strong>Sync Queue</strong> to load joined photos &amp; copy.</div>
+      </div>
+
+      <!-- Batch Control (TikTok Safe Mode) -->
+      <div id="tiktok-batch-bar" class="batch-bar">
+        <div class="batch-left">
+          <span>Batch:</span>
+          <select id="batch-size-select" class="batch-select" title="Images per Fill click (5 recommended for TikTok)">
+            <option value="5" selected>5 / click</option>
+            <option value="10">10 / click</option>
+            <option value="35">All (35 max)</option>
+          </select>
+          <span id="batch-progress-text" style="color: var(--text-primary); font-weight: 600;">Ready</span>
+        </div>
+        <button id="reset-batch-btn" class="link-btn" type="button" title="Restart from photo #1">Reset</button>
+      </div>
+
+      <!-- Title (TikTok) -->
+      <div id="tiktok-title-wrap">
+        <div class="field-label-row">
+          <span>Title (TikTok)</span>
+          <span id="title-counter">0/90</span>
+        </div>
+        <input id="preview-title" class="input-field" type="text" maxlength="90" placeholder="Catchy title for TikTok..." />
+      </div>
+
+      <!-- Description & Hashtags -->
+      <div class="field-label-row">
+        <span id="desc-label-text">Description &amp; #Hashtags</span>
+        <span id="desc-counter">0 chars</span>
+      </div>
+      <textarea id="preview-desc" class="textarea-field" placeholder="Caption will appear here..."></textarea>
+    </section>
+
+    <!-- Primary Fill CTA -->
+    <div class="button-group">
+      <button class="btn" id="fill-btn" type="button">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+        <span id="fill-btn-label">Fill Active Page</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════════════
+       TAB 2: WORKER TABS (Existing Tab Memory & ChatGPT Pipelines)
+       ════════════════════════════════════════════════════════════════════════ -->
+  <div id="tab-workers" class="tab-panel">
+    <section class="section-card">
+      <div class="section-header">
+        <span class="section-label">Worker Pipelines</span>
+        <span id="tabs-summary" class="section-meta">Sync Ready</span>
+      </div>
+      <div class="groups-list" id="groups-container">
+        <div style="color: var(--text-muted); font-size: 11px; padding: 12px 0; text-align: center;">Scanning memorized worker pipelines...</div>
+      </div>
+    </section>
+
+    <div class="button-group">
+      <button class="btn" id="sync-btn" type="button">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
         </svg>
-      </span>
-      <span id="sync-btn-label">Sync Memory to BoltHaven Workflow</span>
-    </button>
-    <button class="btn btn-secondary" id="open-workers-btn" type="button">
-      <span class="btn-icon">
+        <span id="sync-btn-label">Sync Memory to BoltHaven Workflow</span>
+      </button>
+      <button class="btn btn-secondary" id="open-workers-btn" type="button">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
           <polyline points="15 3 21 3 21 9"></polyline>
           <line x1="10" y1="14" x2="21" y2="3"></line>
         </svg>
-      </span>
-      <span id="open-btn-label">Focus Active Worker Tabs</span>
-    </button>
+        <span id="open-btn-label">Focus Active Worker Tabs</span>
+      </button>
+    </div>
   </div>
 
   <script src="popup.js"></script>

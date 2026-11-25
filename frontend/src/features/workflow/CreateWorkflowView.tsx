@@ -31,7 +31,7 @@ import {
   ensureFormatsAreIsolated,
   type WorkflowFormat,
 } from './workflowFormats';
-import { isWatermarkAIBox, isCropStudioBox, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox } from '../facebook-import/aiModelUtils';
+import { isWatermarkAIBox, isCropStudioBox, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExtensionAutofillBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox } from '../facebook-import/aiModelUtils';
 import { runN8NWorkflow } from '../../services/n8nService';
 import { createBatchImageQueue, startImageQueue, focusBrowserTabGroup, openBrowserProfile, fetchTabGroups, waitForBrowserTabsReady, startAutomation, stopAutomation, getAutomationStatus, fetchImageQueue } from '../browser-processing/browserAutomationService';
 import { resolvePromptForBrowserNode, getPersistedPromptKey } from '../browser-processing/browserPromptUtils';
@@ -1456,6 +1456,29 @@ export const CreateWorkflowView: React.FC = () => {
       primaryCopy = cbText;
       setAiGeneratedCopy(cbText);
 
+      // Push joined payload to Companion Dispatch Queue for Chrome Extension Autofill
+      const firstLineTitle = (cbText || '').split('\n').map((l) => l.trim()).find(Boolean) || projName || 'Joined Post';
+      fetch('http://127.0.0.1:9224/dispatch-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: `workflow_${cb.id}`,
+          boxId: cb.id,
+          boxLabel: cb.title || 'Combine Box',
+          profileKey: (cb as any).profileKey || '',
+          platform: (cb as any).platform || 'auto',
+          title: firstLineTitle.slice(0, 90),
+          description: cbText,
+          images: cbImages.map((u: string, i: number) => ({
+            id: `${cb.id}_img_${i}`,
+            name: `photo_${i + 1}.jpg`,
+            url: u,
+            selected: true,
+          })),
+          batchSize: 5,
+        }),
+      }).catch(() => {});
+
       safeSetExecutionState(activeRunId, (prev) => ({
         ...prev!,
         completedNodeIds: Array.from(new Set([...(prev?.completedNodeIds || []), cb.id])),
@@ -2464,6 +2487,7 @@ export const CreateWorkflowView: React.FC = () => {
         const isCropStudio = isCropStudioBox(box);
         const isTextFormat = isTextFormatAIBox(box);
         const isN8N = isN8NAIBox(box);
+        const isExtensionAutofill = isExtensionAutofillBox(box);
         const isGoogleSheet = isGoogleSheetBox(box);
         const isExternalBrowser = isExternalBrowserAIBox(box);
         const executedProfileIds: string[] = [];
@@ -2521,11 +2545,73 @@ export const CreateWorkflowView: React.FC = () => {
             ? `📝 Formatting AI copy with [${box.title || 'Format Preset'}]...`
             : isN8N
             ? `🔄 Executing n8n Automation Engine [${box.title || 'n8n Workflow'}]...`
+            : isExtensionAutofill
+            ? `⚡ Pushing joined payload to Extension [${(box as any).extensionBoxId || box.title || 'Box'}]...`
             : isGoogleSheet
             ? `📊 Appending row to Google Sheet [${box.title || 'Google Sheet'}]...`
             : `⚡ Generating AI copy with [${box.title || 'AI Model'}] (${box.model || 'Gemini 2.5 Flash'})...`,
           { stepIndex: 4 }
         );
+
+        if (isExtensionAutofill) {
+          const inConns = (cfg.connections || []).filter((c: any) => c.toNodeId === box.id);
+          const inIds = inConns.map((c: any) => c.fromNodeId);
+          const extPlatform = (box as any).extensionPlatform || 'auto';
+          const descSrcId = (box as any).extensionDescriptionSourceId || 'auto';
+          const titleSrcId = (box as any).extensionTitleSourceId || 'auto';
+
+          let extText = '';
+          if (descSrcId !== 'auto' && generatedOutputsMap[descSrcId]) {
+            extText = generatedOutputsMap[descSrcId];
+          } else {
+            for (const fid of inIds) {
+              if (generatedOutputsMap[fid]) {
+                extText = generatedOutputsMap[fid];
+                break;
+              }
+            }
+          }
+          if (!extText) {
+            extText = primaryCopy || rawCaption || '';
+          }
+
+          const extImages = imageList
+            .map((img: any, idx: number) => localWatermarkedMap[idx] || img.stored_url || img.source_url)
+            .filter(Boolean);
+
+          let firstLineTitle = '';
+          if (extPlatform !== 'meta') {
+            if (titleSrcId !== 'auto' && generatedOutputsMap[titleSrcId]) {
+              firstLineTitle = generatedOutputsMap[titleSrcId].split('\n').map((l) => l.trim()).find(Boolean) || '';
+            } else {
+              firstLineTitle = (extText || '').split('\n').map((l) => l.trim()).find(Boolean) || projName || 'Joined Post';
+            }
+          }
+
+          await fetch('http://127.0.0.1:9224/dispatch-post', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: `ext_${box.id}`,
+              boxId: (box as any).extensionBoxId || box.id,
+              boxLabel: box.title || 'Extension Autofill',
+              profileKey: (box as any).extensionProfileKey || '',
+              platform: extPlatform,
+              title: extPlatform === 'meta' ? '' : firstLineTitle.slice(0, 90),
+              description: extText,
+              images: extImages.map((u: string, i: number) => ({
+                id: `${box.id}_img_${i}`,
+                name: `photo_${i + 1}.jpg`,
+                url: u,
+                selected: true,
+              })),
+              batchSize: Number((box as any).extensionBatchSize) || 5,
+            }),
+          }).catch(() => {});
+
+          updateBranchNodes([], [], [box.id], `✓ Pushed to Extension [${(box as any).extensionBoxId || box.title}]`);
+          return true;
+        }
 
         if (isWatermark || isCropStudio) {
           if (!imageList || imageList.length === 0) {
@@ -4232,6 +4318,7 @@ export const CreateWorkflowView: React.FC = () => {
         const isWatermark = isWatermarkAIBox(nextBox);
         const isCropStudio = isCropStudioBox(nextBox);
         const isTextFormat = isTextFormatAIBox(nextBox);
+        const isExtensionAutofill = isExtensionAutofillBox(nextBox);
 
         safeSetExecutionState(myRunId, (prev) => ({
           ...prev!,
@@ -4240,10 +4327,79 @@ export const CreateWorkflowView: React.FC = () => {
             ? `✂️ Processing Studio crop formats [${nextBox.title || 'Photo Format & Crop'}]...`
             : isWatermark
             ? `✂️ Applying photo crop & frame preset [${nextBox.title || 'Format'}]...`
+            : isExtensionAutofill
+            ? `🔌 Pushing joined data to Extension [${(nextBox as any).extensionBoxId || nextBox.title || 'Extension Autofill'}]...`
             : isTextFormat
             ? `📝 Formatting AI copy with [${nextBox.title || 'Format Preset'}]...`
             : `⚡ Generating AI copy with [${nextBox.title || 'AI Model'}]...`,
         }));
+
+        if (isExtensionAutofill) {
+          const inConns = (cfg.connections || []).filter((c: any) => c.toNodeId === nextBox.id);
+          const inIds = inConns.map((c: any) => c.fromNodeId);
+          const extPlatform = (nextBox as any).extensionPlatform || 'auto';
+          const descSrcId = (nextBox as any).extensionDescriptionSourceId || 'auto';
+          const titleSrcId = (nextBox as any).extensionTitleSourceId || 'auto';
+          const outMap = ctx.generatedOutputsMap || {};
+
+          let extText = '';
+          if (descSrcId !== 'auto' && outMap[descSrcId]) {
+            extText = outMap[descSrcId];
+          } else {
+            for (const fid of inIds) {
+              if (outMap[fid]) {
+                extText = outMap[fid];
+                break;
+              }
+            }
+          }
+          if (!extText) {
+            extText = ctx.primaryCopy || ctx.rawCaption || '';
+          }
+
+          const extImages = (ctx.imageList || [])
+            .map((img: any, idx: number) => ctx.localWatermarkedMap?.[idx] || img.stored_url || img.source_url)
+            .filter(Boolean);
+
+          let firstLineTitle = '';
+          if (extPlatform !== 'meta') {
+            if (titleSrcId !== 'auto' && outMap[titleSrcId]) {
+              firstLineTitle = outMap[titleSrcId].split('\n').map((l: string) => l.trim()).find(Boolean) || '';
+            } else {
+              firstLineTitle = (extText || '').split('\n').map((l: string) => l.trim()).find(Boolean) || ctx.projName || 'Joined Post';
+            }
+          }
+
+          await fetch('http://127.0.0.1:9224/dispatch-post', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: `ext_${nextBox.id}`,
+              boxId: (nextBox as any).extensionBoxId || nextBox.id,
+              boxLabel: nextBox.title || 'Extension Autofill',
+              profileKey: (nextBox as any).extensionProfileKey || '',
+              platform: extPlatform,
+              title: extPlatform === 'meta' ? '' : firstLineTitle.slice(0, 90),
+              description: extText,
+              images: extImages.map((u: string, i: number) => ({
+                id: `${nextBox.id}_img_${i}`,
+                name: `photo_${i + 1}.jpg`,
+                url: u,
+                selected: true,
+              })),
+              batchSize: Number((nextBox as any).extensionBatchSize) || 5,
+            }),
+          }).catch(() => {});
+
+          if (!updatedCompleted.includes(nextBox.id)) updatedCompleted.push(nextBox.id);
+          safeSetExecutionState(myRunId, (prev) => ({
+            ...prev!,
+            completedNodeIds: [...updatedCompleted],
+            activeNodeIds: [],
+            currentStepMessage: `✓ Pushed to Extension [${(nextBox as any).extensionBoxId || nextBox.title}]`,
+          }));
+          continue;
+        }
 
         if (isWatermark || isCropStudio) {
           if (!ctx.imageList || ctx.imageList.length === 0) {
