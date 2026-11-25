@@ -1766,6 +1766,169 @@ const server = http.createServer(async (req, res) => {
     }));
   }
 
+  // ── Native macOS Folder Picker ──
+  if (url.pathname === '/pick-folder') {
+    try {
+      const selected = execSync(
+        `osascript -e 'POSIX path of (choose folder with prompt "Select Base Folder")'`,
+        { encoding: 'utf8', timeout: 60000 }
+      ).trim().replace(/\/+$/, '');
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ status: 'ok', path: selected }));
+    } catch (e) {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ status: 'cancelled' }));
+    }
+  }
+
+  // ── Serve a local image file by full path ──
+  if (url.pathname === '/local-image' && (req.method === 'GET' || req.method === 'HEAD')) {
+    const filePath = url.searchParams.get('path') || '';
+    const ext = path.extname(filePath).toLowerCase();
+    const allowedExts = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic']);
+    if (!filePath || !allowedExts.has(ext) || !fs.existsSync(filePath)) {
+      res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ error: 'Image not found' }));
+    }
+    const mimeMap = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+      '.gif': 'image/gif',
+      '.heic': 'image/heic',
+    };
+    try {
+      const stat = fs.statSync(filePath);
+      res.writeHead(200, {
+        'Content-Type': mimeMap[ext] || 'application/octet-stream',
+        'Content-Length': stat.size,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache',
+      });
+      if (req.method === 'HEAD') return res.end();
+      return fs.createReadStream(filePath).pipe(res);
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ error: e.message }));
+    }
+  }
+
+  // ── List images from a folder matching folderName inside basePath ──
+  if (url.pathname === '/list-folder-images') {
+    const handleListFolder = (params) => {
+      try {
+        const basePath = String(params.basePath || CONDO_BASE_DIR || '').trim();
+        const rawFolderName = String(params.folderName || '').trim();
+        const rawSubPath = String(params.subPath || '').trim().replace(/^\/+|\/+$/g, '');
+        const maxCount = Number(params.maxCount);
+        const limit = !isNaN(maxCount) && maxCount > 0 ? maxCount : 0;
+
+        if (!basePath || !fs.existsSync(basePath)) {
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ status: 'not_found', error: 'Base path does not exist', basePath, images: [] }));
+        }
+
+        let targetDir = '';
+        let matchedFolder = '';
+        if (!rawFolderName) {
+          targetDir = basePath;
+          matchedFolder = path.basename(basePath);
+        } else {
+          const direct = path.join(basePath, rawFolderName);
+          if (fs.existsSync(direct) && fs.statSync(direct).isDirectory()) {
+            targetDir = direct;
+            matchedFolder = rawFolderName;
+          } else {
+            const entries = fs.readdirSync(basePath, { withFileTypes: true }).filter((d) => d.isDirectory());
+            const needle = rawFolderName.toLowerCase();
+            const exactCI = entries.find((d) => d.name.toLowerCase() === needle);
+            const partial = exactCI || entries.find((d) => d.name.toLowerCase().includes(needle) || needle.includes(d.name.toLowerCase()));
+            if (partial) {
+              targetDir = path.join(basePath, partial.name);
+              matchedFolder = partial.name;
+            }
+          }
+        }
+
+        if (!targetDir || !fs.existsSync(targetDir)) {
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ status: 'not_found', error: `No folder matching "${rawFolderName}"`, basePath, folderName: rawFolderName, images: [] }));
+        }
+
+        if (rawSubPath) {
+          const directSub = path.join(targetDir, rawSubPath);
+          if (fs.existsSync(directSub) && fs.statSync(directSub).isDirectory()) {
+            targetDir = directSub;
+            matchedFolder = `${matchedFolder}/${rawSubPath}`;
+          } else {
+            const subEntries = fs.readdirSync(targetDir, { withFileTypes: true }).filter((d) => d.isDirectory());
+            const subNeedle = rawSubPath.toLowerCase();
+            const subMatch =
+              subEntries.find((d) => d.name.toLowerCase() === subNeedle) ||
+              subEntries.find((d) => d.name.toLowerCase().includes(subNeedle));
+            if (subMatch) {
+              targetDir = path.join(targetDir, subMatch.name);
+              matchedFolder = `${matchedFolder}/${subMatch.name}`;
+            }
+          }
+        }
+
+        const imageExts = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+        const allFiles = fs
+          .readdirSync(targetDir, { withFileTypes: true })
+          .filter((f) => f.isFile() && !f.name.startsWith('.') && imageExts.has(path.extname(f.name).toLowerCase()))
+          .map((f) => f.name)
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+        const selectedFiles = limit > 0 ? allFiles.slice(0, limit) : allFiles;
+        const images = selectedFiles.map((name) => {
+          const fullPath = path.join(targetDir, name);
+          let size = 0;
+          try { size = fs.statSync(fullPath).size; } catch {}
+          return {
+            name,
+            path: fullPath,
+            size,
+            url: `http://127.0.0.1:${PORT}/local-image?path=${encodeURIComponent(fullPath)}`,
+          };
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({
+          status: 'ok',
+          basePath,
+          matchedFolder,
+          folderPath: targetDir,
+          totalFound: allFiles.length,
+          images,
+        }));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        return res.end(JSON.stringify({ status: 'error', error: e.message, images: [] }));
+      }
+    };
+
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        try {
+          handleListFolder(JSON.parse(body || '{}'));
+        } catch {
+          handleListFolder({});
+        }
+      });
+      return;
+    }
+    return handleListFolder({
+      basePath: url.searchParams.get('basePath'),
+      folderName: url.searchParams.get('folderName'),
+      subPath: url.searchParams.get('subPath'),
+      maxCount: url.searchParams.get('maxCount'),
+    });
+  }
+
   // ── Open Folder directly in macOS Finder ──
   if ((url.pathname === '/open-folder' || url.pathname === '/reveal-folder')) {
     const handleOpen = (targetPath) => {

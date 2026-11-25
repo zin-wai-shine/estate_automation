@@ -924,8 +924,16 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     return {};
   });
 
+  const customOrder = useMemo<string[]>(() => {
+    const orderBox = (workflowBoxes || []).find(
+      (b: any) => Array.isArray(b.enhancedImagesOrder) && b.enhancedImagesOrder.length > 0
+    );
+    return orderBox ? ((orderBox as any).enhancedImagesOrder as string[]) : [];
+  }, [workflowBoxes]);
+  const customOrderKey = useMemo(() => customOrder.join('|'), [customOrder]);
+
   useEffect(() => {
-    if (!effectiveImageList || effectiveImageList.length === 0) {
+    if ((!effectiveImageList || effectiveImageList.length === 0) && !isUpstreamEnhance && !(enhancedPhotos && Object.keys(enhancedPhotos).length > 0)) {
       return;
     }
     let isCancelled = false;
@@ -934,7 +942,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         const activeListingCode = listingCode || (box as any).listingCode || '';
         const downloaded = await fetchEnhancedDownloadedImages(undefined, activeListingCode);
         if (downloaded && downloaded.length > 0 && !isCancelled) {
-          const maxAllowed = effectiveImageList?.length || 6;
+          const maxAllowed = effectiveImageList?.length || 99;
           // STRICT listing code verification:
           // If activeListingCode is present, only accept files whose filename includes activeListingCode!
           // NEVER fall back to picking any random prefix from other files!
@@ -958,12 +966,25 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             return;
           }
 
+          const sortedValid = customOrder.length > 0
+            ? [...valid].sort((a, b) => {
+              const ka = a.filename || String(a.position || '');
+              const kb = b.filename || String(b.position || '');
+              const ia = customOrder.indexOf(ka);
+              const ib = customOrder.indexOf(kb);
+              if (ia === -1 && ib === -1) return (a.position || 0) - (b.position || 0);
+              if (ia === -1) return 1;
+              if (ib === -1) return -1;
+              return ia - ib;
+            })
+            : valid;
+
           const map: Record<number, string> = {};
-          valid.forEach((img) => {
+          sortedValid.forEach((img, idx) => {
             const pos = img.position || 1;
-            const pos0 = pos - 1; // 0-based index key
+            const key = customOrder.length > 0 ? idx : (pos - 1); // 0-based index key
             // Prefer companion direct downloaded-image URL which is served with CORS on port 9224
-            map[pos0] = img.url || (img.filename ? `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(img.filename)}` : '');
+            map[key] = img.url || (img.filename ? `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(img.filename)}` : '');
           });
           setCompanionEnhanced((prev) => {
             let hasChange = false;
@@ -999,13 +1020,15 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [box.id, listingCode, effectiveImageList?.length, isUpstreamEnhance]);
+  }, [box.id, listingCode, effectiveImageList?.length, isUpstreamEnhance, customOrderKey]);
 
   const mergedEnhancedPhotos = useMemo(() => {
     // Merge enhancedPhotos and companionEnhanced, normalizing all enhanced image URLs
     const merged: Record<number, string> = {};
     const maxAllowed = Math.max(effectiveImageList?.length || 0, 99);
-    const sourceObj = { ...(enhancedPhotos || {}), ...companionEnhanced };
+    const sourceObj = customOrder.length > 0
+      ? { ...companionEnhanced, ...(enhancedPhotos || {}) }
+      : { ...(enhancedPhotos || {}), ...companionEnhanced };
     Object.entries(sourceObj).forEach(([k, url]) => {
       const num = Number(k);
       // Strictly ignore any image index beyond valid bounds
@@ -1190,8 +1213,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       return rawList;
     }
 
-    // When upstream is an Enhance node, show enhanced photos where ready, and fallback to connected images for remaining
-    if (isEnhanceSource) {
+    // When upstream is an Enhance node (or custom-ordered enhanced photos exist), show enhanced photos in order
+    if (isEnhanceSource || (hasEnhancedPhotos && customOrder.length > 0)) {
       const enhancedIndices = Object.keys(mergedEnhancedPhotos).map(Number).filter((n) => !isNaN(n));
       const maxEnhanced = enhancedIndices.length > 0 ? Math.max(...enhancedIndices) + 1 : 0;
       const totalPhotos = Math.max(effectiveImageList?.length || 0, maxEnhanced);
@@ -1332,6 +1355,10 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   }, [box.imageSource, box.selectedImageIndices]);
 
   const [brokenPhotoIds, setBrokenPhotoIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setBrokenPhotoIds(new Set());
+  }, [mergedEnhancedPhotos]);
 
   const activePhotosToFormat = useMemo(() => {
     const nonBroken = currentSourceList.filter((p) => !brokenPhotoIds.has(p.id));

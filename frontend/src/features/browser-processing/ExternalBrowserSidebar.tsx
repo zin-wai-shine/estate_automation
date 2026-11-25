@@ -230,10 +230,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     boxConfig.tabGroupMode === 'generate'
       ? 'generate'
       : boxConfig.tabGroupMode === 'enhance'
-      ? 'enhance'
-      : nodeTitle.includes('enhance')
-      ? 'enhance'
-      : 'generate';
+        ? 'enhance'
+        : nodeTitle.includes('enhance')
+          ? 'enhance'
+          : 'generate';
 
   const isEnhanceNode = currentTabGroupMode === 'enhance';
   const isHeroNode = !isEnhanceNode;
@@ -329,11 +329,15 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   const [queueJobs, setQueueJobs] = useState<ImageProcessingJob[]>([]);
   const [isLoadingQueue, setIsLoadingQueue] = useState(false);
   const [enhancedImages, setEnhancedImages] = useState<EnhancedDownloadedImage[]>([]);
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [orderDraft, setOrderDraft] = useState<EnhancedDownloadedImage[]>([]);
+  const [dragOrderIdx, setDragOrderIdx] = useState<number | null>(null);
   const [isRecovering, setIsRecovering] = useState(false);
   const [isRegettingImages, setIsRegettingImages] = useState(false);
   const [regetFeedback, setRegetFeedback] = useState<string | null>(null);
   const [regettingSinglePos, setRegettingSinglePos] = useState<number | null>(null);
   const [deletingPos, setDeletingPos] = useState<number | null>(null);
+  const [hoveredEnhancedCardKey, setHoveredEnhancedCardKey] = useState<string | null>(null);
   const [cacheBustTimestamp, setCacheBustTimestamp] = useState<number>(() => Date.now());
 
   // 4. Prompt Template State (Persisted uniquely per node)
@@ -622,15 +626,15 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     const currentImgs = (matchedCondoInfo?.images && matchedCondoInfo.images.length > 0)
       ? matchedCondoInfo.images
       : (Array.isArray(boxConfig.condoImages) && boxConfig.condoImages.length > 0)
-      ? boxConfig.condoImages
-      : [];
+        ? boxConfig.condoImages
+        : [];
     currentImgs.forEach((img: any, i: number) => {
       const targetIdx =
         typeof img.index === 'number' && img.index >= 1 && img.index <= 3
           ? img.index - 1
           : i < 3
-          ? i
-          : -1;
+            ? i
+            : -1;
       if (targetIdx >= 0 && targetIdx < 3 && !slots[targetIdx]) {
         slots[targetIdx] = img;
       }
@@ -692,8 +696,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       typeof preferredSlotIndex === 'number' && preferredSlotIndex >= 0 && preferredSlotIndex < 3
         ? preferredSlotIndex
         : activeCondoSlot !== null
-        ? activeCondoSlot
-        : -1;
+          ? activeCondoSlot
+          : -1;
 
     // If no preferred slot, find first empty slot
     if (slotToUse === -1) {
@@ -918,10 +922,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       } else {
         localStorage.removeItem(`bolthaven_hero_image_${boxConfig.id}`);
       }
-    } catch (e) {}
+    } catch (e) { }
     try {
       window.dispatchEvent(new CustomEvent('ea_hero_image_updated', { detail: img }));
-    } catch (_) {}
+    } catch (_) { }
   };
 
   // Auto-fetch latest downloaded Hero image on mount or when sidebar is opened
@@ -990,7 +994,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             }
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     };
     fetchLatestStatus();
     const interval = setInterval(fetchLatestStatus, 2500);
@@ -1142,6 +1146,39 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     }
   };
 
+  const sortEnhancedByCustomOrder = <T extends { filename?: string; position?: number }>(
+    list: T[],
+    customOrderRaw?: unknown
+  ): { sorted: T[]; hasCustomOrder: boolean } => {
+    const customOrder = Array.isArray(customOrderRaw) ? (customOrderRaw as string[]) : [];
+    if (customOrder.length === 0) {
+      return { sorted: list, hasCustomOrder: false };
+    }
+    const sorted = [...list].sort((a, b) => {
+      const ka = a.filename || String(a.position || '');
+      const kb = b.filename || String(b.position || '');
+      const ia = customOrder.indexOf(ka);
+      const ib = customOrder.indexOf(kb);
+      if (ia === -1 && ib === -1) return (a.position || 0) - (b.position || 0);
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+    return { sorted, hasCustomOrder: true };
+  };
+
+  const buildEnhancedPhotoMap = (
+    list: Array<{ position?: number; backend_url?: string; url: string }>,
+    hasCustomOrder: boolean
+  ): Record<number, string> => {
+    const map: Record<number, string> = {};
+    list.forEach((img, idx) => {
+      const key = hasCustomOrder ? idx : ((img.position || 1) - 1);
+      map[key] = img.url || img.backend_url || '';
+    });
+    return map;
+  };
+
   // Re-get and sync all enhanced images from local drive / downloads
   const handleRegetEnhancedImages = async () => {
     setIsRegettingImages(true);
@@ -1159,7 +1196,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             autoWorkMissing: false,
           }),
         });
-      } catch (e) {}
+      } catch (e) { }
 
       await new Promise((r) => setTimeout(r, 600));
 
@@ -1175,14 +1212,16 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             ...img,
             url: img.url.includes('?') ? `${img.url}&_cb=${newTs}` : `${img.url}?_cb=${newTs}`,
           }));
-          setEnhancedImages(cacheBusted);
+          const { sorted, hasCustomOrder } = sortEnhancedByCustomOrder(
+            cacheBusted,
+            (boxConfig as any).enhancedImagesOrder
+          );
+          lastEnhancedSigRef.current = sorted
+            .map((img) => `${img.position}:${img.backend_url || img.url}:${(img as any).size_bytes || (img as any).size || ''}`)
+            .join('|');
+          setEnhancedImages(sorted);
           if (onEnhancedPhotosUpdate) {
-            const map: Record<number, string> = {};
-            cacheBusted.forEach((img) => {
-              const pos0 = (img.position || 1) - 1;
-              map[pos0] = img.backend_url || img.url;
-            });
-            onEnhancedPhotosUpdate(map);
+            onEnhancedPhotosUpdate(buildEnhancedPhotoMap(sorted, hasCustomOrder));
           }
         }
       }
@@ -1224,14 +1263,16 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               ...img,
               url: img.url.includes('?') ? `${img.url}&_cb=${newTs}` : `${img.url}?_cb=${newTs}`,
             }));
-            setEnhancedImages(cacheBusted);
+            const { sorted, hasCustomOrder } = sortEnhancedByCustomOrder(
+              cacheBusted,
+              (boxConfig as any).enhancedImagesOrder
+            );
+            lastEnhancedSigRef.current = sorted
+              .map((img) => `${img.position}:${img.backend_url || img.url}:${(img as any).size_bytes || (img as any).size || ''}`)
+              .join('|');
+            setEnhancedImages(sorted);
             if (onEnhancedPhotosUpdate) {
-              const map: Record<number, string> = {};
-              cacheBusted.forEach((img) => {
-                const pos0 = (img.position || 1) - 1;
-                map[pos0] = img.backend_url || img.url;
-              });
-              onEnhancedPhotosUpdate(map);
+              onEnhancedPhotosUpdate(buildEnhancedPhotoMap(sorted, hasCustomOrder));
             }
             break;
           }
@@ -1321,8 +1362,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       const autoQuery =
         aiExtractedCondoName ||
         (propertyContext?.title &&
-        propertyContext.title !== 'Featured Property Listing' &&
-        propertyContext.title !== 'Facebook Property Post'
+          propertyContext.title !== 'Featured Property Listing' &&
+          propertyContext.title !== 'Facebook Property Post'
           ? propertyContext.title
           : '') ||
         condoName;
@@ -1352,7 +1393,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       try {
         localStorage.removeItem('bolthaven_active_session_listing_code');
         localStorage.removeItem('bolthaven_active_listing_code');
-      } catch {}
+      } catch { }
       setAttachmentSteps([
         {
           id: 'group-1',
@@ -1391,8 +1432,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     const q =
       aiExtractedCondoName ||
       (propertyContext?.title &&
-      propertyContext.title !== 'Featured Property Listing' &&
-      propertyContext.title !== 'Facebook Property Post'
+        propertyContext.title !== 'Featured Property Listing' &&
+        propertyContext.title !== 'Facebook Property Post'
         ? propertyContext.title
         : '') ||
       boxConfig.browserCondoName ||
@@ -1613,7 +1654,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         workerCount: isDirectStaging ? 1 : 2,
         reuseSessionTabs: boxConfig.reuseSessionTabs !== false,
         force: true,
-      }).catch(() => {});
+      }).catch(() => { });
 
       const isTikTok = (boxConfig.title || '').toLowerCase().includes('tiktok') || effectiveHeroGroupName.toLowerCase().includes('tiktok');
       const isBoltHaven = (boxConfig.title || '').toLowerCase().includes('bolthaven') || effectiveHeroGroupName.toLowerCase().includes('bolthaven');
@@ -1760,7 +1801,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 setTwoStageMessage(`⚠️ Error: ${stData.state.error}`);
               }
             }
-          } catch (e) {}
+          } catch (e) { }
         }, 2000);
         twoStageIntervalRef.current = interval;
       } else {
@@ -1903,18 +1944,29 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     }
   }, [selectedProfileId, profiles, isTabGroupNode, targetGroupName]);
 
+  const lastEnhancedSigRef = useRef<string>('');
+  const lastQueueSigRef = useRef<string>('');
+  const lastStatusSigRef = useRef<string>('');
+
   // Load live image queue for current property only (never show historical runs)
   const loadQueue = () => {
     const currentPropId = propertyContext?.id;
     if (currentPropId) {
-      setIsLoadingQueue(true);
+      if (queueJobs.length === 0) setIsLoadingQueue(true);
       fetchImageQueue(currentPropId).then((jobs) => {
         const matching = (jobs || []).filter((j) => j.property_id === currentPropId);
-        setQueueJobs(matching);
+        const qSig = matching.map((j) => `${j.id}:${j.status}:${j.enhanced_url || ''}`).join('|');
+        if (qSig !== lastQueueSigRef.current) {
+          lastQueueSigRef.current = qSig;
+          setQueueJobs(matching);
+        }
         setIsLoadingQueue(false);
       });
     } else {
-      setQueueJobs([]);
+      if (lastQueueSigRef.current !== '') {
+        lastQueueSigRef.current = '';
+        setQueueJobs([]);
+      }
       setIsLoadingQueue(false);
     }
   };
@@ -1922,9 +1974,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   useEffect(() => {
     if (isHeroNode) return;
     loadQueue();
+    if (!isAutomating) return;
     const interval = setInterval(loadQueue, 4000);
     return () => clearInterval(interval);
-  }, [propertyContext?.id, isHeroNode]);
+  }, [propertyContext?.id, isHeroNode, isAutomating]);
 
   // Poll automation progress and downloaded enhanced images
   useEffect(() => {
@@ -1934,15 +1987,19 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       try {
         const status = await getAutomationStatus();
         if (status) {
-          setAutomationStatus(status);
-          if (!status.is_running) {
-            setIsAutomating(false);
-            if (status.completed !== undefined && status.completed > 0) {
-              setAutomationMessage(`✓ All tabs finished! ${status.completed} images enhanced.`);
+          const stSig = `${status.is_running}:${status.completed}:${status.failed}:${status.total}`;
+          if (stSig !== lastStatusSigRef.current) {
+            lastStatusSigRef.current = stSig;
+            setAutomationStatus(status);
+            if (!status.is_running) {
+              setIsAutomating(false);
+              if (status.completed !== undefined && status.completed > 0) {
+                setAutomationMessage(`✓ All tabs finished! ${status.completed} images enhanced.`);
+              }
             }
           }
         }
-      } catch (e) {}
+      } catch (e) { }
 
       try {
         const effectiveListingCode = propertyContext?.listingCode || (() => {
@@ -1953,7 +2010,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           }
         })();
         if (!propertyContext?.id && !effectiveListingCode) {
-          setEnhancedImages((prev) => (prev.length > 0 ? [] : prev));
+          if (lastEnhancedSigRef.current !== '') {
+            lastEnhancedSigRef.current = '';
+            setEnhancedImages((prev) => (prev.length > 0 ? [] : prev));
+          }
           return;
         }
         const enhanced = await fetchEnhancedDownloadedImages(propertyContext?.id, effectiveListingCode);
@@ -1961,28 +2021,35 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           const maxAllowed = receivedImages.length > 0 ? receivedImages.length : 99;
           const valid = enhanced.filter((img) => (img.position || 1) <= maxAllowed);
           if (valid.length > 0) {
-            setEnhancedImages(valid);
-            if (onEnhancedPhotosUpdate) {
-              const map: Record<number, string> = {};
-              valid.forEach((img) => {
-                const pos0 = (img.position || 1) - 1; // 0-based index key
-                map[pos0] = img.backend_url || img.url;
-              });
-              onEnhancedPhotosUpdate(map);
+            const { sorted: sortedValid, hasCustomOrder } = sortEnhancedByCustomOrder(
+              valid,
+              (boxConfig as any).enhancedImagesOrder
+            );
+            const sig = sortedValid.map((img) => `${img.position}:${img.backend_url || img.url}:${(img as any).size_bytes || (img as any).size || ''}`).join('|');
+            if (sig !== lastEnhancedSigRef.current) {
+              lastEnhancedSigRef.current = sig;
+              setEnhancedImages(sortedValid);
+              if (onEnhancedPhotosUpdate) {
+                onEnhancedPhotosUpdate(buildEnhancedPhotoMap(sortedValid, hasCustomOrder));
+              }
             }
-          } else {
+          } else if (lastEnhancedSigRef.current !== '') {
+            lastEnhancedSigRef.current = '';
             setEnhancedImages([]);
           }
-        } else {
+        } else if (lastEnhancedSigRef.current !== '') {
+          lastEnhancedSigRef.current = '';
           setEnhancedImages((prev) => (prev.length > 0 ? [] : prev));
         }
-      } catch (e) {}
+      } catch (e) { }
 
-      loadQueue();
+      if (isAutomating) {
+        loadQueue();
+      }
     };
 
     checkProgressAndImages();
-    interval = setInterval(checkProgressAndImages, isAutomating ? 1500 : 3500);
+    interval = isAutomating ? setInterval(checkProgressAndImages, 1500) : null;
 
     return () => {
       if (interval) clearInterval(interval);
@@ -2016,9 +2083,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     const targetSet = targetPositions && targetPositions.length > 0 ? new Set(targetPositions) : null;
     const imagesToProcess = targetSet
       ? activeImages.filter((img, i) => {
-          const pos = typeof img.index === 'number' && img.index > 0 ? img.index : i + 1;
-          return targetSet.has(pos);
-        })
+        const pos = typeof img.index === 'number' && img.index > 0 ? img.index : i + 1;
+        return targetSet.has(pos);
+      })
       : activeImages;
 
     const effectiveWorkerCount = isHeroNode
@@ -2053,24 +2120,24 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       workerCount: effectiveWorkerCount,
       reuseSessionTabs: (boxConfig as any).reuseSessionTabs !== false,
       force: true,
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Always use the prompt selected in the template preview / dropdown
     const promptToUse = enablePromptEnhance
       ? (resolvedPromptPreview || currentPromptText || resolvePromptForBrowserNode(
-          {
-            ...boxConfig,
-            browserPromptTemplateKey: selectedPromptKey,
-            browserPromptText: resolvedPromptPreview || currentPromptText,
-            resolvedPrompt: resolvedPromptPreview || currentPromptText,
-          },
-          {
-            title: propertyContext?.title,
-            price: propertyContext?.price,
-            width: outputWidth,
-            height: outputHeight,
-          }
-        ))
+        {
+          ...boxConfig,
+          browserPromptTemplateKey: selectedPromptKey,
+          browserPromptText: resolvedPromptPreview || currentPromptText,
+          resolvedPrompt: resolvedPromptPreview || currentPromptText,
+        },
+        {
+          title: propertyContext?.title,
+          price: propertyContext?.price,
+          width: outputWidth,
+          height: outputHeight,
+        }
+      ))
       : '';
 
     const imgs = imagesToProcess.map((img, i) => {
@@ -2320,8 +2387,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     const allPositions = activeImages.length > 0
       ? activeImages.map((img, i) => (typeof img.index === 'number' && img.index > 0 ? img.index : i + 1))
       : queueJobs.length > 0
-      ? queueJobs.map((j) => j.original_position || 1)
-      : [];
+        ? queueJobs.map((j) => j.original_position || 1)
+        : [];
     const downloadedPositions = new Set(enhancedImages.map((img) => img.position));
     return allPositions.filter((pos) => !downloadedPositions.has(pos)).sort((a, b) => a - b);
   }, [queueJobs, activeImages, enhancedImages]);
@@ -2497,16 +2564,16 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       tabs: savedLive.length > 0
         ? savedLive
         : (savedUrls.length > 0
-            ? savedUrls.map((u: string, i: number): BrowserTabItem => ({
-                id: `tab-${i + 1}`,
-                title: `${groupDisplayName} Worker #${i + 1}`,
-                url: u,
-                hostname: 'chatgpt.com',
-                is_chatgpt: true,
-                is_connected: true,
-                is_selected: i === 0,
-              }))
-            : defaultTabs),
+          ? savedUrls.map((u: string, i: number): BrowserTabItem => ({
+            id: `tab-${i + 1}`,
+            title: `${groupDisplayName} Worker #${i + 1}`,
+            url: u,
+            hostname: 'chatgpt.com',
+            is_chatgpt: true,
+            is_connected: true,
+            is_selected: i === 0,
+          }))
+          : defaultTabs),
     };
   }, [tabGroups, targetGroupName, boxConfig.browserGroupId, boxConfig._liveGroupTabs, boxConfig.browserGroupTabUrls, boxConfig.title, boxConfig.browserGroupName, isHeroNode, isEnhanceNode]);
 
@@ -2809,7 +2876,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(previewModalImage.fileName || '')}`).catch(() => {});
+                      fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(previewModalImage.fileName || '')}`).catch(() => { });
                     }}
                     style={{
                       height: '28px',
@@ -3313,7 +3380,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(previewModalImage.fileName || '')}`).catch(() => {});
+                      fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(previewModalImage.fileName || '')}`).catch(() => { });
                     }}
                     style={{
                       height: '28px',
@@ -3498,8 +3565,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               background: isTabGroupNode
                 ? 'linear-gradient(135deg, #06B6D4, #0891B2)'
                 : isProfileNode
-                ? 'linear-gradient(135deg, #3B82F6, #1D4ED8)'
-                : 'linear-gradient(135deg, #6366F1, #4F46E5)',
+                  ? 'linear-gradient(135deg, #3B82F6, #1D4ED8)'
+                  : 'linear-gradient(135deg, #6366F1, #4F46E5)',
               color: '#FFFFFF',
               display: 'flex',
               alignItems: 'center',
@@ -3514,8 +3581,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               {isTabGroupNode
                 ? `Tab Group — ${currentGroup.name || boxConfig.browserGroupName || boxConfig.title || (isHeroNode ? 'FB Hero' : 'Enhance IMG')}`
                 : isProfileNode
-                ? `Chrome Profile — ${activeProfile?.display_name || boxConfig.browserProfileName || 'Hsu'}`
-                : 'External Browser Node'}
+                  ? `Chrome Profile — ${activeProfile?.display_name || boxConfig.browserProfileName || 'Hsu'}`
+                  : 'External Browser Node'}
             </div>
             <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', rowGap: '4px', marginTop: '3px' }}>
               {isTabGroupNode ? (
@@ -3751,207 +3818,697 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               border: '1px solid var(--border-color)',
             }}
           >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-              Chrome Profile
-            </label>
-            <span
-              style={{
-                fontSize: '0.625rem',
-                color: '#10B981',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-              }}
-            >
-              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} />
-              Connected
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsAddProfileOpen(!isAddProfileOpen)}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: '2px 4px',
-              borderRadius: '4px',
-              fontSize: '0.6875rem',
-              fontWeight: 600,
-              color: isAddProfileOpen ? '#EF4444' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '3px',
-              transition: 'opacity 0.15s ease',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.75')}
-            onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-          >
-            {isAddProfileOpen ? <FiX size={12} /> : <FiPlus size={12} />}
-            <span>{isAddProfileOpen ? 'Close' : '+ Add'}</span>
-          </button>
-        </div>
-
-        {/* Chrome Profile Card Box Selection */}
-        {isProfileNode ? (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '0.65rem 0.75rem',
-              borderRadius: '6px',
-              border: '1px solid var(--border-color)',
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
-              <div
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Chrome Profile
+                </label>
+                <span
+                  style={{
+                    fontSize: '0.625rem',
+                    color: '#10B981',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} />
+                  Connected
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddProfileOpen(!isAddProfileOpen)}
                 style={{
-                  width: '30px',
-                  height: '30px',
-                  borderRadius: '6px',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
-                  color: 'var(--text-primary)',
+                  background: 'none',
+                  border: 'none',
+                  padding: '2px 4px',
+                  borderRadius: '4px',
+                  fontSize: '0.6875rem',
+                  fontWeight: 600,
+                  color: isAddProfileOpen ? '#EF4444' : 'var(--text-secondary)',
+                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
+                  gap: '3px',
+                  transition: 'opacity 0.15s ease',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.75')}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+              >
+                {isAddProfileOpen ? <FiX size={12} /> : <FiPlus size={12} />}
+                <span>{isAddProfileOpen ? 'Close' : '+ Add'}</span>
+              </button>
+            </div>
+
+            {/* Chrome Profile Card Box Selection */}
+            {isProfileNode ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.65rem 0.75rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
                 }}
               >
-                <FiMonitor size={15} />
-              </div>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <span
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
+                  <div
                     style={{
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
+                      width: '30px',
+                      height: '30px',
+                      borderRadius: '6px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
                       color: 'var(--text-primary)',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {activeProfile?.display_name || boxConfig.browserProfileName || 'Hsu'}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '0.5625rem',
-                      padding: '1px 5px',
-                      borderRadius: '4px',
-                      backgroundColor: isDark ? '#374151' : '#E2E8F0',
-                      color: isDark ? '#9CA3AF' : '#64748B',
-                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                       flexShrink: 0,
                     }}
                   >
-                    {activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro')}
-                  </span>
+                    <FiMonitor size={15} />
+                  </div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <span
+                        style={{
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          color: 'var(--text-primary)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {activeProfile?.display_name || boxConfig.browserProfileName || 'Hsu'}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '0.5625rem',
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          backgroundColor: isDark ? '#374151' : '#E2E8F0',
+                          color: isDark ? '#9CA3AF' : '#64748B',
+                          fontWeight: 600,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro')}
+                      </span>
+                    </div>
+                    {activeProfile?.email && (
+                      <div
+                        style={{
+                          fontSize: '0.625rem',
+                          color: 'var(--text-muted)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          marginTop: '1px',
+                        }}
+                      >
+                        {activeProfile.email}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                {activeProfile?.email && (
-                  <div
+                <span style={{ color: '#10B981', display: 'flex', alignItems: 'center' }}>
+                  <FiCheckCircle size={16} />
+                </span>
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.45rem',
+                  maxHeight: '240px',
+                  overflowY: 'auto',
+                  paddingRight: '2px',
+                }}
+              >
+                {profiles.map((p) => {
+                  const isSelected = selectedProfileId === p.id;
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => {
+                        setSelectedProfileId(p.id);
+                        updateMultiConfig({
+                          browserProfileId: p.id,
+                          browserProfileName: p.display_name,
+                          browserProfileKey: p.profile_key,
+                        });
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.55rem 0.65rem',
+                        borderRadius: '6px',
+                        border: isSelected
+                          ? (isDark ? '1px solid #4B5563' : '1px solid #94A3B8')
+                          : '1px solid var(--border-color)',
+                        backgroundColor: isSelected
+                          ? (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9')
+                          : (isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF'),
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isSelected) {
+                          e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#CBD5E1';
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F1F5F9';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isSelected) {
+                          e.currentTarget.style.borderColor = 'var(--border-color)';
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF';
+                        }
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
+                        <div
+                          style={{
+                            width: '30px',
+                            height: '30px',
+                            borderRadius: '6px',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
+                            color: isSelected ? 'var(--text-primary)' : 'var(--text-muted)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <FiMonitor size={15} />
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span
+                              style={{
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                color: 'var(--text-primary)',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                              }}
+                            >
+                              {p.display_name}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '0.5625rem',
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                backgroundColor: isDark ? '#374151' : '#E2E8F0',
+                                color: isDark ? '#9CA3AF' : '#64748B',
+                                fontWeight: 600,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {p.profile_key}
+                            </span>
+                          </div>
+                          {p.email ? (
+                            <div
+                              style={{
+                                fontSize: '0.625rem',
+                                color: 'var(--text-muted)',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                marginTop: '1px',
+                              }}
+                            >
+                              {p.email}
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '1px' }}>
+                              {p.integration_id}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', marginLeft: '6px', flexShrink: 0 }}>
+                        {isSelected ? (
+                          <span style={{ color: '#10B981', display: 'flex', alignItems: 'center' }}>
+                            <FiCheckCircle size={16} />
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              width: '14px',
+                              height: '14px',
+                              borderRadius: '50%',
+                              border: isDark ? '1.5px solid #4B5563' : '1.5px solid #CBD5E1',
+                              display: 'block',
+                            }}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {profiles.length === 0 && (
+              <div
+                style={{
+                  fontSize: '0.6875rem',
+                  color: 'var(--text-muted)',
+                  textAlign: 'center',
+                  padding: '0.75rem',
+                  border: '1px dashed var(--border-color)',
+                  borderRadius: '6px',
+                }}
+              >
+                No Chrome profiles discovered. Click &ldquo;+ Add&rdquo; above to scan or register.
+              </div>
+            )}
+
+            {/* Status / Feedback message */}
+            {syncMessage && (
+              <div
+                style={{
+                  padding: '0.4rem 0.6rem',
+                  borderRadius: '5px',
+                  fontSize: '0.6875rem',
+                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5',
+                  color: isDark ? '#34D399' : '#059669',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                }}
+              >
+                <FiCheckCircle size={12} />
+                <span>{syncMessage}</span>
+              </div>
+            )}
+
+            {/* Expandable Add / Discover Profile Card */}
+            {isAddProfileOpen && (
+              <div
+                style={{
+                  padding: '0.75rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.625rem',
+                  marginTop: '0.25rem',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Add or Sync Chrome Profile
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddProfileOpen(false)}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
+                  >
+                    <FiX size={13} />
+                  </button>
+                </div>
+
+                {/* Quick 1-Click Auto Sync from Mac Chrome */}
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.35rem',
+                    padding: '0.55rem',
+                    borderRadius: '6px',
+                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.2)' : '#F8FAFC',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Option 1: Auto-Detect from Mac Chrome
+                  </div>
+                  <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                    Automatically scans Google Chrome on your Mac (Default, Profile 1, 2, etc.) and imports all discovered user profiles.
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={isSyncingProfiles}
+                    onClick={handleSyncProfiles}
                     style={{
-                      fontSize: '0.625rem',
-                      color: 'var(--text-muted)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      marginTop: '1px',
+                      fontSize: '0.6875rem',
+                      fontWeight: 500,
+                      marginTop: '2px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border-color)',
                     }}
                   >
-                    {activeProfile.email}
+                    <FiRefreshCw size={11} className={isSyncingProfiles ? 'animate-spin' : ''} style={{ marginRight: '5px' }} />
+                    {isSyncingProfiles ? 'Scanning Chrome...' : 'Scan & Import All Mac Chrome Profiles'}
+                  </Button>
+                </div>
+
+                {/* Manual Registration Form */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    Option 2: Add Profile Manually
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.625rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>
+                      Display Name *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Work, Listing Team, Zin Personal"
+                      value={newProfileDisplayName}
+                      onChange={(e) => setNewProfileDisplayName(e.target.value)}
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        padding: '5px 8px',
+                        borderRadius: '4px',
+                        fontSize: '0.75rem',
+                        border: isDark ? '1px solid #374151' : '1px solid #CBD5E1',
+                        backgroundColor: isDark ? '#111827' : '#FFFFFF',
+                        color: 'var(--text-primary)',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '0.625rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>
+                      Profile Directory / Key * (e.g. Default, Profile 16, Profile 3)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Profile 16 or Default"
+                      value={newProfileKey}
+                      onChange={(e) => setNewProfileKey(e.target.value)}
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        padding: '5px 8px',
+                        borderRadius: '4px',
+                        fontSize: '0.75rem',
+                        border: isDark ? '1px solid #374151' : '1px solid #CBD5E1',
+                        backgroundColor: isDark ? '#111827' : '#FFFFFF',
+                        color: 'var(--text-primary)',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '0.625rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>
+                      Account Email (optional)
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="e.g. team@bolthavenproperty.com"
+                      value={newProfileEmail}
+                      onChange={(e) => setNewProfileEmail(e.target.value)}
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        padding: '5px 8px',
+                        borderRadius: '4px',
+                        fontSize: '0.75rem',
+                        border: isDark ? '1px solid #374151' : '1px solid #CBD5E1',
+                        backgroundColor: isDark ? '#111827' : '#FFFFFF',
+                        color: 'var(--text-primary)',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+
+                  {saveProfileError && (
+                    <div style={{ fontSize: '0.625rem', color: '#EF4444' }}>
+                      {saveProfileError}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '0.35rem', marginTop: '2px' }}>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={handleRegisterProfile}
+                      disabled={isSavingProfile || !newProfileDisplayName.trim() || !newProfileKey.trim()}
+                      style={{ flex: 1, fontSize: '0.6875rem' }}
+                    >
+                      <FiCheck size={11} style={{ marginRight: '4px' }} />
+                      {isSavingProfile ? 'Saving...' : 'Save & Select Profile'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setIsAddProfileOpen(false)}
+                      style={{ fontSize: '0.6875rem' }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeProfile && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', fontSize: '0.6875rem', color: '#94A3B8' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Integration ID:</span>
+                  <code style={{ color: isDark ? '#E2E8F0' : '#1E293B' }}>{activeProfile.integration_id}</code>
+                </div>
+                {activeProfile.email && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Account:</span>
+                    <span style={{ color: isDark ? '#CBD5E1' : '#334155' }}>{activeProfile.email}</span>
                   </div>
                 )}
               </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => fetchBrowserProfiles().then((p) => setProfiles(p))}
+                style={{ flex: 1, fontSize: '0.6875rem' }}
+              >
+                <FiRefreshCw size={11} style={{ marginRight: '4px' }} /> Refresh
+              </Button>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={handleOpenProfile}
+                disabled={isOpeningProfile}
+                style={{ flex: 1, fontSize: '0.6875rem' }}
+              >
+                {isOpeningProfile ? (
+                  <>
+                    <FiRefreshCw size={11} className="animate-spin" style={{ marginRight: '4px' }} /> Opening...
+                  </>
+                ) : (
+                  <>
+                    <FiExternalLink size={11} style={{ marginRight: '4px' }} /> Open Profile in Chrome
+                  </>
+                )}
+              </Button>
             </div>
-            <span style={{ color: '#10B981', display: 'flex', alignItems: 'center' }}>
-              <FiCheckCircle size={16} />
-            </span>
           </div>
-        ) : (
+
+          {/* Connected Tab Groups on Canvas */}
           <div
             style={{
+              padding: '0.75rem 0.875rem',
+              borderRadius: '8px',
+              backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
+              border: '1px solid var(--border-color)',
               display: 'flex',
               flexDirection: 'column',
-              gap: '0.45rem',
-              maxHeight: '240px',
-              overflowY: 'auto',
-              paddingRight: '2px',
+              gap: '0.75rem',
             }}
           >
-            {profiles.map((p) => {
-              const isSelected = selectedProfileId === p.id;
-              return (
-                <div
-                  key={p.id}
-                  onClick={() => {
-                    setSelectedProfileId(p.id);
-                    updateMultiConfig({
-                      browserProfileId: p.id,
-                      browserProfileName: p.display_name,
-                      browserProfileKey: p.profile_key,
-                    });
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '0.55rem 0.65rem',
-                    borderRadius: '6px',
-                    border: isSelected
-                      ? (isDark ? '1px solid #4B5563' : '1px solid #94A3B8')
-                      : '1px solid var(--border-color)',
-                    backgroundColor: isSelected
-                      ? (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9')
-                      : (isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF'),
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSelected) {
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FiLayers style={{ color: 'var(--text-muted)' }} /> Connected Tab Groups
+                </label>
+                <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Modular Tab Group boxes attached below this profile on canvas
+                </div>
+              </div>
+            </div>
+
+            {connectedTabGroupNodes && connectedTabGroupNodes.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {connectedTabGroupNodes.map((tg) => (
+                  <div
+                    key={tg.id}
+                    onClick={() => onOpenTabGroupNode?.(tg.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.6rem 0.75rem',
+                      borderRadius: '6px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                      border: '1px solid var(--border-color)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
                       e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#CBD5E1';
-                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : '#F1F5F9';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isSelected) {
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
+                    }}
+                    onMouseLeave={(e) => {
                       e.currentTarget.style.borderColor = 'var(--border-color)';
-                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF';
-                    }
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
-                    <div
-                      style={{
-                        width: '30px',
-                        height: '30px',
-                        borderRadius: '6px',
-                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
-                        color: isSelected ? 'var(--text-primary)' : 'var(--text-muted)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <FiMonitor size={15} />
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF';
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <div
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#E2E8F0',
+                          color: 'var(--text-primary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <FiLayers size={14} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {tg.title || tg.browserGroupName || 'Tab Group'}
+                        </div>
+                        <div style={{ fontSize: '0.625rem', color: isDark ? '#94A3B8' : '#64748B' }}>
+                          {tg.subtitle || 'Connected Box'}
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <span
-                          style={{
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            color: 'var(--text-primary)',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
-                          {p.display_name}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      style={{ fontSize: '0.625rem', padding: '2px 8px', height: 'auto', color: 'var(--text-secondary)' }}
+                    >
+                      Open Settings →
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                style={{
+                  padding: '1rem',
+                  borderRadius: '6px',
+                  border: '1px dashed var(--border-color)',
+                  textAlign: 'center',
+                  fontSize: '0.6875rem',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                No Tab Group boxes connected to this profile yet.
+                <div style={{ marginTop: '4px', fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                  Click &ldquo;+ Connect as Box&rdquo; below or click [+] on the canvas node to attach a group.
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Discovered Chrome Tab Groups */}
+          <div
+            style={{
+              padding: '0.75rem 0.875rem',
+              borderRadius: '8px',
+              backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
+              border: '1px solid var(--border-color)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FiMonitor style={{ color: 'var(--text-muted)' }} /> Discovered Chrome Tab Groups
+                </label>
+                <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Attach any discovered tab group as an independent worker box below this profile
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  const profId = activeProfile?.id || selectedProfileId;
+                  const profKey = activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
+                  const profName = activeProfile?.display_name || boxConfig.browserProfileName || (profiles[0]?.display_name || 'Note Zin Wai');
+                  if (profId) {
+                    fetchTabGroups(profId, profKey, profName).then((g) => setTabGroups(g));
+                  }
+                }}
+                style={{ fontSize: '0.625rem', padding: '2px 6px', height: 'auto' }}
+              >
+                <FiRefreshCw size={10} style={{ marginRight: '3px' }} /> Refresh
+              </Button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {(tabGroups.length > 0 ? tabGroups : [
+                {
+                  id: 'fallback-enh',
+                  name: 'Enhance IMG',
+                  tabs_count: 4,
+                  tabs: [
+                    { id: 't1', title: 'ChatGPT - Photo Enhancer', url: 'https://chatgpt.com' },
+                    { id: 't2', title: 'ChatGPT - 1:1 Preserver', url: 'https://chatgpt.com' },
+                    { id: 't3', title: 'ChatGPT - Interior Restyle', url: 'https://chatgpt.com' },
+                    { id: 't4', title: 'ChatGPT - Resolution Booster', url: 'https://chatgpt.com' },
+                  ]
+                },
+                {
+                  id: 'fallback-hero',
+                  name: 'FB Hero',
+                  tabs_count: 2,
+                  tabs: [
+                    { id: 'h1', title: 'ChatGPT - Staging Prompt Gen', url: 'https://chatgpt.com' },
+                    { id: 'h2', title: 'ChatGPT - 1080x1350 Staging Ad', url: 'https://chatgpt.com' },
+                  ]
+                }
+              ]).map((group) => {
+                const isAlreadyConnected = connectedTabGroupNodes?.some(
+                  (tg) => (tg.title || tg.browserGroupName) === group.name
+                );
+                const tabs = group.tabs || [];
+                return (
+                  <div
+                    key={group.id || group.name}
+                    style={{
+                      padding: '0.65rem 0.75rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.4rem',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--text-muted)' }} />
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {group.name}
                         </span>
                         <span
                           style={{
@@ -3961,781 +4518,714 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                             backgroundColor: isDark ? '#374151' : '#E2E8F0',
                             color: isDark ? '#9CA3AF' : '#64748B',
                             fontWeight: 600,
-                            flexShrink: 0,
                           }}
                         >
-                          {p.profile_key}
+                          {tabs.length || group.tabs_count || 0} Tabs
                         </span>
                       </div>
-                      {p.email ? (
-                        <div
-                          style={{
-                            fontSize: '0.625rem',
-                            color: 'var(--text-muted)',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            marginTop: '1px',
-                          }}
-                        >
-                          {p.email}
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '1px' }}>
-                          {p.integration_id}
-                        </div>
-                      )}
-                    </div>
-                  </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', marginLeft: '6px', flexShrink: 0 }}>
-                    {isSelected ? (
-                      <span style={{ color: '#10B981', display: 'flex', alignItems: 'center' }}>
-                        <FiCheckCircle size={16} />
-                      </span>
-                    ) : (
-                      <span
-                        style={{
-                          width: '14px',
-                          height: '14px',
-                          borderRadius: '50%',
-                          border: isDark ? '1.5px solid #4B5563' : '1.5px solid #CBD5E1',
-                          display: 'block',
-                        }}
-                      />
+                      <Button
+                        size="sm"
+                        variant={isAlreadyConnected ? 'ghost' : 'primary'}
+                        disabled={isAlreadyConnected}
+                        onClick={() => onAddTabGroupNode?.(group.name, tabs.length || group.tabs_count || 2)}
+                        style={{ fontSize: '0.625rem', padding: '3px 8px', height: 'auto' }}
+                      >
+                        {isAlreadyConnected ? '✓ Added' : '+ Connect as Box'}
+                      </Button>
+                    </div>
+
+                    {tabs.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px' }}>
+                        {tabs.slice(0, 3).map((t, idx) => (
+                          <div key={t.id || idx} style={{ fontSize: '0.625rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            • {t.title || t.url || `Worker Tab ${idx + 1}`}
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-          {profiles.length === 0 && (
-            <div
-              style={{
-                fontSize: '0.6875rem',
-                color: 'var(--text-muted)',
-                textAlign: 'center',
-                padding: '0.75rem',
-                border: '1px dashed var(--border-color)',
-                borderRadius: '6px',
-              }}
-            >
-              No Chrome profiles discovered. Click &ldquo;+ Add&rdquo; above to scan or register.
+                );
+              })}
             </div>
-          )}
-
-        {/* Status / Feedback message */}
-        {syncMessage && (
-          <div
-            style={{
-              padding: '0.4rem 0.6rem',
-              borderRadius: '5px',
-              fontSize: '0.6875rem',
-              backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5',
-              color: isDark ? '#34D399' : '#059669',
-              border: '1px solid rgba(16, 185, 129, 0.3)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
-            }}
-          >
-            <FiCheckCircle size={12} />
-            <span>{syncMessage}</span>
           </div>
-        )}
+        </>
+      ) : (
+        <>
 
-        {/* Expandable Add / Discover Profile Card */}
-        {isAddProfileOpen && (
-          <div
-            style={{
-              padding: '0.75rem',
-              borderRadius: '6px',
-              border: '1px solid var(--border-color)',
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.625rem',
-              marginTop: '0.25rem',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                Add or Sync Chrome Profile
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsAddProfileOpen(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
-              >
-                <FiX size={13} />
-              </button>
-            </div>
-
-            {/* Quick 1-Click Auto Sync from Mac Chrome */}
+          {/* SECTION: CONDO PROPERTY & GET IMAGES (from workflow) */}
+          {!isHeroNode && boxConfig.showCondoProjectCard !== false && (
             <div
               style={{
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '0.35rem',
-                padding: '0.55rem',
-                borderRadius: '6px',
-                backgroundColor: isDark ? 'rgba(0, 0, 0, 0.2)' : '#F8FAFC',
+                gap: '0.65rem',
+                padding: '0.875rem 1rem',
+                borderRadius: '12px',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
                 border: '1px solid var(--border-color)',
+                boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
               }}
             >
-              <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                Option 1: Auto-Detect from Mac Chrome
-              </div>
-              <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
-                Automatically scans Google Chrome on your Mac (Default, Profile 1, 2, etc.) and imports all discovered user profiles.
-              </div>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={isSyncingProfiles}
-                onClick={handleSyncProfiles}
-                style={{
-                  fontSize: '0.6875rem',
-                  fontWeight: 500,
-                  marginTop: '2px',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--border-color)',
-                }}
-              >
-                <FiRefreshCw size={11} className={isSyncingProfiles ? 'animate-spin' : ''} style={{ marginRight: '5px' }} />
-                {isSyncingProfiles ? 'Scanning Chrome...' : 'Scan & Import All Mac Chrome Profiles'}
-              </Button>
-            </div>
-
-            {/* Manual Registration Form */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-              <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                Option 2: Add Profile Manually
-              </div>
-              <div>
-                <label style={{ fontSize: '0.625rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>
-                  Display Name *
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Work, Listing Team, Zin Personal"
-                  value={newProfileDisplayName}
-                  onChange={(e) => setNewProfileDisplayName(e.target.value)}
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '5px 8px',
-                    borderRadius: '4px',
-                    fontSize: '0.75rem',
-                    border: isDark ? '1px solid #374151' : '1px solid #CBD5E1',
-                    backgroundColor: isDark ? '#111827' : '#FFFFFF',
-                    color: 'var(--text-primary)',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.625rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>
-                  Profile Directory / Key * (e.g. Default, Profile 16, Profile 3)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Profile 16 or Default"
-                  value={newProfileKey}
-                  onChange={(e) => setNewProfileKey(e.target.value)}
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '5px 8px',
-                    borderRadius: '4px',
-                    fontSize: '0.75rem',
-                    border: isDark ? '1px solid #374151' : '1px solid #CBD5E1',
-                    backgroundColor: isDark ? '#111827' : '#FFFFFF',
-                    color: 'var(--text-primary)',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.625rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>
-                  Account Email (optional)
-                </label>
-                <input
-                  type="email"
-                  placeholder="e.g. team@bolthavenproperty.com"
-                  value={newProfileEmail}
-                  onChange={(e) => setNewProfileEmail(e.target.value)}
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '5px 8px',
-                    borderRadius: '4px',
-                    fontSize: '0.75rem',
-                    border: isDark ? '1px solid #374151' : '1px solid #CBD5E1',
-                    backgroundColor: isDark ? '#111827' : '#FFFFFF',
-                    color: 'var(--text-primary)',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              {saveProfileError && (
-                <div style={{ fontSize: '0.625rem', color: '#EF4444' }}>
-                  {saveProfileError}
-                </div>
-              )}
-
-              <div style={{ display: 'flex', gap: '0.35rem', marginTop: '2px' }}>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={handleRegisterProfile}
-                  disabled={isSavingProfile || !newProfileDisplayName.trim() || !newProfileKey.trim()}
-                  style={{ flex: 1, fontSize: '0.6875rem' }}
-                >
-                  <FiCheck size={11} style={{ marginRight: '4px' }} />
-                  {isSavingProfile ? 'Saving...' : 'Save & Select Profile'}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => setIsAddProfileOpen(false)}
-                  style={{ fontSize: '0.6875rem' }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeProfile && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', fontSize: '0.6875rem', color: '#94A3B8' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Integration ID:</span>
-              <code style={{ color: isDark ? '#E2E8F0' : '#1E293B' }}>{activeProfile.integration_id}</code>
-            </div>
-            {activeProfile.email && (
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Account:</span>
-                <span style={{ color: isDark ? '#CBD5E1' : '#334155' }}>{activeProfile.email}</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => fetchBrowserProfiles().then((p) => setProfiles(p))}
-            style={{ flex: 1, fontSize: '0.6875rem' }}
-          >
-            <FiRefreshCw size={11} style={{ marginRight: '4px' }} /> Refresh
-          </Button>
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={handleOpenProfile}
-            disabled={isOpeningProfile}
-            style={{ flex: 1, fontSize: '0.6875rem' }}
-          >
-            {isOpeningProfile ? (
-              <>
-                <FiRefreshCw size={11} className="animate-spin" style={{ marginRight: '4px' }} /> Opening...
-              </>
-            ) : (
-              <>
-                <FiExternalLink size={11} style={{ marginRight: '4px' }} /> Open Profile in Chrome
-              </>
-            )}
-          </Button>
-        </div>
-      </div>
-
-      {/* Connected Tab Groups on Canvas */}
-      <div
-        style={{
-          padding: '0.75rem 0.875rem',
-          borderRadius: '8px',
-          backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
-          border: '1px solid var(--border-color)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.75rem',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <FiLayers style={{ color: 'var(--text-muted)' }} /> Connected Tab Groups
-            </label>
-            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Modular Tab Group boxes attached below this profile on canvas
-            </div>
-          </div>
-        </div>
-
-        {connectedTabGroupNodes && connectedTabGroupNodes.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {connectedTabGroupNodes.map((tg) => (
-              <div
-                key={tg.id}
-                onClick={() => onOpenTabGroupNode?.(tg.id)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.6rem 0.75rem',
-                  borderRadius: '6px',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-                  border: '1px solid var(--border-color)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#CBD5E1';
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--border-color)';
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF';
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                  <div
-                    style={{
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '6px',
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#E2E8F0',
-                      color: 'var(--text-primary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <FiLayers size={14} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {tg.title || tg.browserGroupName || 'Tab Group'}
-                    </div>
-                    <div style={{ fontSize: '0.625rem', color: isDark ? '#94A3B8' : '#64748B' }}>
-                      {tg.subtitle || 'Connected Box'}
-                    </div>
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  style={{ fontSize: '0.625rem', padding: '2px 8px', height: 'auto', color: 'var(--text-secondary)' }}
-                >
-                  Open Settings →
-                </Button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div
-            style={{
-              padding: '1rem',
-              borderRadius: '6px',
-              border: '1px dashed var(--border-color)',
-              textAlign: 'center',
-              fontSize: '0.6875rem',
-              color: 'var(--text-muted)',
-            }}
-          >
-            No Tab Group boxes connected to this profile yet.
-            <div style={{ marginTop: '4px', fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-              Click &ldquo;+ Connect as Box&rdquo; below or click [+] on the canvas node to attach a group.
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Discovered Chrome Tab Groups */}
-      <div
-        style={{
-          padding: '0.75rem 0.875rem',
-          borderRadius: '8px',
-          backgroundColor: isDark ? 'var(--bg-surface)' : '#F8FAFC',
-          border: '1px solid var(--border-color)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.75rem',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <FiMonitor style={{ color: 'var(--text-muted)' }} /> Discovered Chrome Tab Groups
-            </label>
-            <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Attach any discovered tab group as an independent worker box below this profile
-            </div>
-          </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              const profId = activeProfile?.id || selectedProfileId;
-              const profKey = activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
-              const profName = activeProfile?.display_name || boxConfig.browserProfileName || (profiles[0]?.display_name || 'Note Zin Wai');
-              if (profId) {
-                fetchTabGroups(profId, profKey, profName).then((g) => setTabGroups(g));
-              }
-            }}
-            style={{ fontSize: '0.625rem', padding: '2px 6px', height: 'auto' }}
-          >
-            <FiRefreshCw size={10} style={{ marginRight: '3px' }} /> Refresh
-          </Button>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {(tabGroups.length > 0 ? tabGroups : [
-            {
-              id: 'fallback-enh',
-              name: 'Enhance IMG',
-              tabs_count: 4,
-              tabs: [
-                { id: 't1', title: 'ChatGPT - Photo Enhancer', url: 'https://chatgpt.com' },
-                { id: 't2', title: 'ChatGPT - 1:1 Preserver', url: 'https://chatgpt.com' },
-                { id: 't3', title: 'ChatGPT - Interior Restyle', url: 'https://chatgpt.com' },
-                { id: 't4', title: 'ChatGPT - Resolution Booster', url: 'https://chatgpt.com' },
-              ]
-            },
-            {
-              id: 'fallback-hero',
-              name: 'FB Hero',
-              tabs_count: 2,
-              tabs: [
-                { id: 'h1', title: 'ChatGPT - Staging Prompt Gen', url: 'https://chatgpt.com' },
-                { id: 'h2', title: 'ChatGPT - 1080x1350 Staging Ad', url: 'https://chatgpt.com' },
-              ]
-            }
-          ]).map((group) => {
-            const isAlreadyConnected = connectedTabGroupNodes?.some(
-              (tg) => (tg.title || tg.browserGroupName) === group.name
-            );
-            const tabs = group.tabs || [];
-            return (
-              <div
-                key={group.id || group.name}
-                style={{
-                  padding: '0.65rem 0.75rem',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.4rem',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--text-muted)' }} />
-                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {group.name}
-                    </span>
-                    <span
+              {/* Condo / Property Name */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                    <div
                       style={{
-                        fontSize: '0.5625rem',
-                        padding: '1px 5px',
-                        borderRadius: '4px',
-                        backgroundColor: isDark ? '#374151' : '#E2E8F0',
-                        color: isDark ? '#9CA3AF' : '#64748B',
-                        fontWeight: 600,
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '7px',
+                        backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                        color: '#3B82F6',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
                       }}
                     >
-                      {tabs.length || group.tabs_count || 0} Tabs
-                    </span>
-                  </div>
-
-                  <Button
-                    size="sm"
-                    variant={isAlreadyConnected ? 'ghost' : 'primary'}
-                    disabled={isAlreadyConnected}
-                    onClick={() => onAddTabGroupNode?.(group.name, tabs.length || group.tabs_count || 2)}
-                    style={{ fontSize: '0.625rem', padding: '3px 8px', height: 'auto' }}
-                  >
-                    {isAlreadyConnected ? '✓ Added' : '+ Connect as Box'}
-                  </Button>
-                </div>
-
-                {tabs.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px' }}>
-                    {tabs.slice(0, 3).map((t, idx) => (
-                      <div key={t.id || idx} style={{ fontSize: '0.625rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        • {t.title || t.url || `Worker Tab ${idx + 1}`}
+                      <FiFolder size={14} />
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: '0.78125rem',
+                          fontWeight: 600,
+                          color: 'var(--text-primary)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        Condo / Project Name
                       </div>
-                    ))}
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          fontSize: '0.625rem',
+                          color: 'var(--text-muted)',
+                          whiteSpace: 'nowrap',
+                          marginTop: '1px',
+                        }}
+                      >
+                        <span>From {aboveBoxTitle}</span>
+                        <span style={{ opacity: 0.4 }}>•</span>
+                        <span
+                          style={{
+                            fontSize: '0.5625rem',
+                            fontWeight: 700,
+                            padding: '1px 5px',
+                            borderRadius: '4px',
+                            backgroundColor: isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(37, 99, 235, 0.08)',
+                            color: 'var(--accent-primary)',
+                            border: '1px solid rgba(59, 130, 246, 0.25)',
+                            letterSpacing: '0.02em',
+                            lineHeight: '1.2',
+                          }}
+                        >
+                          Active Project
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </>
-  ) : (
-    <>
-
-      {/* SECTION: CONDO PROPERTY & GET IMAGES (from workflow) */}
-      {!isHeroNode && boxConfig.showCondoProjectCard !== false && (
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.65rem',
-          padding: '0.875rem 1rem',
-          borderRadius: '12px',
-          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-          border: '1px solid var(--border-color)',
-          boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
-        }}
-      >
-        {/* Condo / Property Name */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-              <div
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '7px',
-                  backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                  color: '#3B82F6',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <FiFolder size={14} />
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: '0.78125rem',
-                    fontWeight: 600,
-                    color: 'var(--text-primary)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  Condo / Project Name
                 </div>
                 <div
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    fontSize: '0.625rem',
-                    color: 'var(--text-muted)',
-                    whiteSpace: 'nowrap',
-                    marginTop: '1px',
+                    padding: '0.55rem 0.75rem',
+                    borderRadius: '7px',
+                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : '#F8FAFC',
+                    border: '1px solid var(--border-color)',
+                    fontSize: '0.8125rem',
+                    fontWeight: 700,
+                    color: 'var(--text-primary)',
                   }}
                 >
-                  <span>From {aboveBoxTitle}</span>
-                  <span style={{ opacity: 0.4 }}>•</span>
-                  <span
-                    style={{
-                      fontSize: '0.5625rem',
-                      fontWeight: 700,
-                      padding: '1px 5px',
-                      borderRadius: '4px',
-                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(37, 99, 235, 0.08)',
-                      color: 'var(--accent-primary)',
-                      border: '1px solid rgba(59, 130, 246, 0.25)',
-                      letterSpacing: '0.02em',
-                      lineHeight: '1.2',
-                    }}
-                  >
-                    Active Project
-                  </span>
+                  {condoName}
                 </div>
               </div>
             </div>
-          </div>
+          )}
+
+          {/* ── TAB PROCESS MODULES (CONTROLLED BY SETTINGS) ── */}
           <div
             style={{
-              padding: '0.55rem 0.75rem',
-              borderRadius: '7px',
-              backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : '#F8FAFC',
-              border: '1px solid var(--border-color)',
-              fontSize: '0.8125rem',
-              fontWeight: 700,
-              color: 'var(--text-primary)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem',
             }}
           >
-            {condoName}
-          </div>
-        </div>
-      </div>
-      )}
-
-      {/* ── TAB PROCESS MODULES (CONTROLLED BY SETTINGS) ── */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.75rem',
-        }}
-      >
-        {isHeroNode ? (
-          /* ═════════════════════════════════════════════════════════════════════ */
-          /* 🍏 APPLE CLEAN DESIGN FOR FB HERO                                   */
-          /* ═════════════════════════════════════════════════════════════════════ */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {/* Condo Name */}
-            {boxConfig.showCondoProjectCard !== false && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.6rem 0.875rem',
-                  borderRadius: '8px',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
-                  border: '1px solid var(--border-color)',
-                }}
-              >
-                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
-                  Condo Name
-                </span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                  {condoName || condoSearchQuery || boxConfig.browserCondoName || boxConfig.title || 'Aspire Erawan Prime'}
-                </span>
-              </div>
-            )}
-
-            {/* ── NEW FLOW MODULES FOR HERO NODE ── */}
-            {isHeroNode && (
-              <>
-                {/* 1. Prompt Section (Boxless) */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
-                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
-                    Prompt
-                  </label>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <FiFileText size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+            {isHeroNode ? (
+              /* ═════════════════════════════════════════════════════════════════════ */
+              /* 🍏 APPLE CLEAN DESIGN FOR FB HERO                                   */
+              /* ═════════════════════════════════════════════════════════════════════ */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {/* Condo Name */}
+                {boxConfig.showCondoProjectCard !== false && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.6rem 0.875rem',
+                      borderRadius: '8px',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                      border: '1px solid var(--border-color)',
+                    }}
+                  >
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
+                      Condo Name
+                    </span>
                     <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                      Connected Prompt
+                      {condoName || condoSearchQuery || boxConfig.browserCondoName || boxConfig.title || 'Aspire Erawan Prime'}
                     </span>
                   </div>
+                )}
 
-                  <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {/* Upstream AI Model display (Clean, Read-only / Disabled display in Main Box) */}
-                    {promptSourceMode === 'upstream_ai' && (() => {
-                      const selectedPromptOption = effectiveUpstreamPrompts.find((p) => p.id === selectedUpstreamAiId) || effectiveUpstreamPrompts[0];
-                      const displayPromptName = selectedPromptOption ? `${selectedPromptOption.title} (AI Model)` : 'BoltHaven-FB Hero Prompt (AI Model)';
-                      return (
-                        <div
-                          style={{
-                            height: '34px',
-                            borderRadius: '6px',
-                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
-                            border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
-                            padding: '0 12px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            fontSize: '0.8125rem',
-                            fontWeight: 500,
-                            color: isDark ? '#C9D1D9' : '#334155',
-                            userSelect: 'none',
-                          }}
-                        >
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {displayPromptName}
-                          </span>
-                        </div>
-                      );
-                    })()}
+                {/* ── NEW FLOW MODULES FOR HERO NODE ── */}
+                {isHeroNode && (
+                  <>
+                    {/* 1. Prompt Section (Boxless) */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
+                      <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
+                        Prompt
+                      </label>
 
-                    {/* Custom Prompt Mode */}
-                    {promptSourceMode === 'custom' && (
-                      <textarea
-                        rows={2}
-                        value={customPromptText}
-                        onChange={(e) => {
-                          setCustomPromptText(e.target.value);
-                          updateMultiConfig({
-                            browserCustomPrompt: e.target.value,
-                            customPrompt: e.target.value,
-                          });
-                        }}
-                        placeholder="Enter custom image generation instructions..."
-                        style={{
-                          width: '100%',
-                          padding: '6px 8px',
-                          fontSize: '0.6875rem',
-                          borderRadius: '6px',
-                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-                          color: isDark ? '#F0F6FC' : '#0F172A',
-                          resize: 'vertical',
-                          boxSizing: 'border-box',
-                          outline: 'none',
-                        }}
-                      />
-                    )}
-                  </div>
-                </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <FiFileText size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
+                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                          Connected Prompt
+                        </span>
+                      </div>
 
-                {/* 2. Attached Images Section (Boxless) */}
-                {((boxConfig.useReferenceImage !== false) || (boxConfig.useCondoImages !== false)) && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: '4px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
-                        Attached Images
-                      </span>
-                      <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                        {(boxConfig.useReferenceImage !== false && referenceImage ? 1 : 0) + (boxConfig.useCondoImages !== false ? attachmentSteps.filter((s: AttachmentStep) => s.enabled).reduce((a: number, b: AttachmentStep) => a + b.count, 0) : 0)} total photos
-                      </span>
+                      <div style={{ paddingLeft: '23px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {/* Upstream AI Model display (Clean, Read-only / Disabled display in Main Box) */}
+                        {promptSourceMode === 'upstream_ai' && (() => {
+                          const selectedPromptOption = effectiveUpstreamPrompts.find((p) => p.id === selectedUpstreamAiId) || effectiveUpstreamPrompts[0];
+                          const displayPromptName = selectedPromptOption ? `${selectedPromptOption.title} (AI Model)` : 'BoltHaven-FB Hero Prompt (AI Model)';
+                          return (
+                            <div
+                              style={{
+                                height: '34px',
+                                borderRadius: '6px',
+                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                                padding: '0 12px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                fontSize: '0.8125rem',
+                                fontWeight: 500,
+                                color: isDark ? '#C9D1D9' : '#334155',
+                                userSelect: 'none',
+                              }}
+                            >
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {displayPromptName}
+                              </span>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Custom Prompt Mode */}
+                        {promptSourceMode === 'custom' && (
+                          <textarea
+                            rows={2}
+                            value={customPromptText}
+                            onChange={(e) => {
+                              setCustomPromptText(e.target.value);
+                              updateMultiConfig({
+                                browserCustomPrompt: e.target.value,
+                                customPrompt: e.target.value,
+                              });
+                            }}
+                            placeholder="Enter custom image generation instructions..."
+                            style={{
+                              width: '100%',
+                              padding: '6px 8px',
+                              fontSize: '0.6875rem',
+                              borderRadius: '6px',
+                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                              color: isDark ? '#F0F6FC' : '#0F172A',
+                              resize: 'vertical',
+                              boxSizing: 'border-box',
+                              outline: 'none',
+                            }}
+                          />
+                        )}
+                      </div>
                     </div>
 
-                    {/* Reference Layout (Boxless) */}
-                    {boxConfig.useReferenceImage !== false && renderReferenceImageCard()}
+                    {/* 2. Attached Images Section (Boxless) */}
+                    {((boxConfig.useReferenceImage !== false) || (boxConfig.useCondoImages !== false)) && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
+                            Attached Images
+                          </span>
+                          <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                            {(boxConfig.useReferenceImage !== false && referenceImage ? 1 : 0) + (boxConfig.useCondoImages !== false ? attachmentSteps.filter((s: AttachmentStep) => s.enabled).reduce((a: number, b: AttachmentStep) => a + b.count, 0) : 0)} total photos
+                          </span>
+                        </div>
 
-                    {/* Condo Photos Multi-Group Manager (Boxless) */}
-                    {boxConfig.useCondoImages !== false && (
-                      <AttachmentGroupsManager
-                        boxless={true}
-                        hideToggle={true}
-                        hideAddGroup={true}
-                        hideDeleteGroup={true}
-                        isMainBox={true}
-                        steps={attachmentSteps}
-                        onChange={handleAttachmentStepsChange}
-                        isDark={isDark}
-                        useCondoImages={true}
-                        onToggleUseCondoImages={() => {}}
-                        workflowImageSources={effectiveWorkflowImageSources}
-                        propertyImages={propertyContext?.images}
-                        enhancedImages={availableEnhancedPhotos}
-                        condoName={
-                          (condoName || condoSearchQuery || aiExtractedCondoName || matchedCondoInfo?.matched_folder || boxConfig.browserCondoName || boxConfig.condoFolderName || '').trim()
-                        }
-                      />
+                        {/* Reference Layout (Boxless) */}
+                        {boxConfig.useReferenceImage !== false && renderReferenceImageCard()}
+
+                        {/* Condo Photos Multi-Group Manager (Boxless) */}
+                        {boxConfig.useCondoImages !== false && (
+                          <AttachmentGroupsManager
+                            boxless={true}
+                            hideToggle={true}
+                            hideAddGroup={true}
+                            hideDeleteGroup={true}
+                            isMainBox={true}
+                            steps={attachmentSteps}
+                            onChange={handleAttachmentStepsChange}
+                            isDark={isDark}
+                            useCondoImages={true}
+                            onToggleUseCondoImages={() => { }}
+                            workflowImageSources={effectiveWorkflowImageSources}
+                            propertyImages={propertyContext?.images}
+                            enhancedImages={availableEnhancedPhotos}
+                            condoName={
+                              (condoName || condoSearchQuery || aiExtractedCondoName || matchedCondoInfo?.matched_folder || boxConfig.browserCondoName || boxConfig.condoFolderName || '').trim()
+                            }
+                          />
+                        )}
+                      </div>
                     )}
-                  </div>
+                  </>
                 )}
-              </>
-            )}
 
-            {/* ── MODULES FOR ENHANCE NODE (When not in Hero mode) ── */}
-            {!isHeroNode && (
-              <>
-                {Boolean(boxConfig.showImagesToEnhance) && renderImagesToEnhanceCard()}
-                {boxConfig.usePromptConfig !== false && boxConfig.showEnhancementPrompt !== false && (
+                {/* ── MODULES FOR ENHANCE NODE (When not in Hero mode) ── */}
+                {!isHeroNode && (
+                  <>
+                    {Boolean(boxConfig.showImagesToEnhance) && renderImagesToEnhanceCard()}
+                    {boxConfig.usePromptConfig !== false && boxConfig.showEnhancementPrompt !== false && (
+                      <div
+                        style={{
+                          borderRadius: '12px',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                          border: '1px solid var(--border-color)',
+                          padding: '0.875rem 1rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.65rem',
+                          boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                            <div
+                              style={{
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '7px',
+                                backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                                color: '#3B82F6',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <FiFileText size={14} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                Enhancement Prompt
+                              </div>
+                              <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                                Worker tab enhancement template
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <Select
+                          options={promptOptions.map((p) => ({
+                            value: p.id,
+                            label: p.name,
+                          }))}
+                          value={effectivePromptKey}
+                          onChange={(val) => {
+                            const strVal = String(val);
+                            setSelectedPromptKey(strVal);
+                            const found = promptOptions.find(
+                              (p) => String(p.id).trim().toLowerCase() === strVal.trim().toLowerCase() || p.name.trim().toLowerCase() === strVal.trim().toLowerCase()
+                            );
+                            const txt = found ? found.instructions : '';
+                            updateMultiConfig({
+                              browserPromptTemplateKey: strVal,
+                              ...(txt ? { browserPromptText: txt } : {}),
+                            });
+                          }}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+
+
+
+                {/* ── 4. Generated Hero Advertisement Preview Card ── */}
+                {latestHeroImage && isImageRelevantToThisNode(latestHeroImage, boxConfig, targetGroupName) && Boolean(latestHeroImage.fileName?.toLowerCase().includes('hero')) && Boolean(condoName || condoSearchQuery) && Boolean(
+                  latestHeroImage.condoName && (
+                    (condoName || condoSearchQuery).toLowerCase().includes(latestHeroImage.condoName.toLowerCase()) ||
+                    latestHeroImage.condoName.toLowerCase().includes((condoName || condoSearchQuery).toLowerCase())
+                  )
+                ) && (!effectiveListingCode || (latestHeroImage.fileName && latestHeroImage.fileName.toLowerCase().includes(effectiveListingCode.toLowerCase()))) && (
+                    <div
+                      style={{
+                        borderRadius: '12px',
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
+                        border: isDark ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(16, 185, 129, 0.4)',
+                        padding: '0.875rem 1rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.65rem',
+                        boxShadow: isDark ? '0 2px 10px rgba(0,0,0,0.3)' : '0 2px 8px rgba(16, 185, 129, 0.12)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                          <div
+                            style={{
+                              width: '26px',
+                              height: '26px',
+                              borderRadius: '6px',
+                              backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                              color: '#10B981',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiCheckCircle size={14} />
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div
+                              style={{
+                                fontSize: '0.78125rem',
+                                fontWeight: 700,
+                                color: isDark ? '#F3F4F6' : '#1E293B',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                              }}
+                            >
+                              {(boxConfig.title || '').toLowerCase().includes('tiktok') ? 'Generated TikTok Hero Image' : 'Generated Hero Image'}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: '0.625rem',
+                                color: 'var(--text-muted)',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                              }}
+                            >
+                              {latestHeroImage.condoName || condoName || ((boxConfig.title || '').toLowerCase().includes('tiktok') ? 'TikTok Hero' : 'Facebook Hero')}
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span
+                            style={{
+                              fontSize: '0.625rem',
+                              fontWeight: 700,
+                              color: '#10B981',
+                              backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              border: '1px solid rgba(16, 185, 129, 0.25)',
+                              flexShrink: 0,
+                            }}
+                          >
+                            ✓ Downloaded
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateLatestHeroImage(null);
+                              localStorage.removeItem(`bolthaven_hero_image_${boxConfig.id}`);
+                              localStorage.removeItem('bolthaven_last_hero_image');
+                              fetch('http://127.0.0.1:9224/two-stage-status', { method: 'DELETE' }).catch(() => { });
+                            }}
+                            title="Clear / Dismiss preview"
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              color: 'var(--text-muted)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              padding: '2px',
+                              borderRadius: '4px',
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.color = '#EF4444')}
+                            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                          >
+                            <FiX size={14} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Hero Image Thumbnail with Click-to-Open */}
+                      <div
+                        style={{
+                          position: 'relative',
+                          borderRadius: '8px',
+                          overflow: 'hidden',
+                          border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #E2E8F0',
+                          backgroundColor: '#0a0a0a',
+                          cursor: 'pointer',
+                          maxHeight: '190px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                        onClick={() => {
+                          const resolvedHeroFilePath =
+                            latestHeroImage.filePath ||
+                            twoStageStatus?.downloaded_file_path ||
+                            (latestHeroImage.fileName
+                              ? `/Users/zinwaishine/Desktop/Project_EA/backend/storage/uploads/facebook-import/enhanced/${latestHeroImage.fileName}`
+                              : '');
+                          setPreviewModalImage({
+                            url: latestHeroImage.url,
+                            fileName: latestHeroImage.fileName,
+                            filePath: resolvedHeroFilePath,
+                            title: (boxConfig.title || '').toLowerCase().includes('tiktok') ? 'Generated TikTok Hero Image' : 'Generated Hero Image',
+                            condoName: latestHeroImage.condoName || condoName,
+                          });
+                        }}
+                        title="Click to view full image in modal"
+                      >
+                        <img
+                          src={latestHeroImage.url}
+                          alt="Generated Facebook Hero"
+                          style={{
+                            width: '100%',
+                            height: 'auto',
+                            maxHeight: '190px',
+                            objectFit: 'contain',
+                            display: 'block',
+                          }}
+                        />
+                        <div
+                          style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            padding: '4px 8px',
+                            background: 'linear-gradient(to top, rgba(0,0,0,0.8), rgba(0,0,0,0.3) 70%, transparent)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            fontSize: '0.5625rem',
+                            color: '#FFFFFF',
+                          }}
+                        >
+                          <span
+                            style={{
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              maxWidth: '75%',
+                            }}
+                          >
+                            {latestHeroImage.fileName || 'fb_hero.png'}
+                          </span>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}>
+                            <FiMaximize2 size={10} /> View Full
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* File Path / Location Box */}
+                      {(() => {
+                        const resolvedHeroFilePath =
+                          latestHeroImage.filePath ||
+                          twoStageStatus?.downloaded_file_path ||
+                          (latestHeroImage.fileName
+                            ? `/Users/zinwaishine/Desktop/Project_EA/backend/storage/uploads/facebook-import/enhanced/${latestHeroImage.fileName}`
+                            : '');
+                        if (!resolvedHeroFilePath) return null;
+                        return (
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '4px',
+                              padding: '6px 8px',
+                              borderRadius: '6px',
+                              backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : '#F1F5F9',
+                              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                fontSize: '0.625rem',
+                                color: 'var(--text-secondary)',
+                              }}
+                            >
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                                <FiFolder size={11} style={{ color: 'var(--accent-primary, #2563EB)' }} />
+                                <span>File Path:</span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(resolvedHeroFilePath);
+                                  setCopiedHeroPath(true);
+                                  setTimeout(() => setCopiedHeroPath(false), 2000);
+                                }}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  color: copiedHeroPath ? '#10B981' : 'var(--text-muted)',
+                                  fontSize: '0.625rem',
+                                  fontWeight: 600,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '3px',
+                                  padding: '1px 4px',
+                                  borderRadius: '4px',
+                                }}
+                                title="Copy file path"
+                              >
+                                {copiedHeroPath ? <FiCheck size={10} /> : <FiCopy size={10} />}
+                                <span>{copiedHeroPath ? 'Copied' : 'Copy'}</span>
+                              </button>
+                            </div>
+                            <div
+                              title={`Click to reveal file in Finder: ${resolvedHeroFilePath}`}
+                              onClick={() => {
+                                fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(latestHeroImage.fileName || '')}`).catch(() => { });
+                              }}
+                              style={{
+                                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                                fontSize: '0.59375rem',
+                                color: isDark ? '#93C5FD' : '#1D4ED8',
+                                wordBreak: 'break-all',
+                                lineHeight: 1.35,
+                                cursor: 'pointer',
+                                padding: '4px 6px',
+                                borderRadius: '4px',
+                                backgroundColor: isDark ? 'rgba(37, 99, 235, 0.1)' : 'rgba(37, 99, 235, 0.06)',
+                                border: isDark ? '1px solid rgba(37, 99, 235, 0.2)' : '1px solid rgba(37, 99, 235, 0.12)',
+                                transition: 'all 0.15s ease',
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = isDark ? 'rgba(37, 99, 235, 0.1)' : 'rgba(37, 99, 235, 0.06)';
+                              }}
+                            >
+                              {resolvedHeroFilePath}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Action buttons */}
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const resolvedHeroFilePath =
+                              latestHeroImage.filePath ||
+                              twoStageStatus?.downloaded_file_path ||
+                              (latestHeroImage.fileName
+                                ? `/Users/zinwaishine/Desktop/Project_EA/backend/storage/uploads/facebook-import/enhanced/${latestHeroImage.fileName}`
+                                : '');
+                            setPreviewModalImage({
+                              url: latestHeroImage.url,
+                              fileName: latestHeroImage.fileName,
+                              filePath: resolvedHeroFilePath,
+                              title: (boxConfig.title || '').toLowerCase().includes('tiktok') ? 'Generated TikTok Hero Image' : 'Generated Hero Image',
+                              condoName: latestHeroImage.condoName || condoName,
+                            });
+                          }}
+                          style={{
+                            flex: 1,
+                            height: '30px',
+                            borderRadius: '8px',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                            border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                            color: isDark ? '#F3F4F6' : '#1E293B',
+                            fontSize: '0.6875rem',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '5px',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
+                          }}
+                        >
+                          <FiMaximize2 size={12} /> <span>Open Full Size</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(latestHeroImage.fileName || '')}`).catch(() => { });
+                          }}
+                          style={{
+                            flex: 1,
+                            height: '30px',
+                            borderRadius: '8px',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                            border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                            color: isDark ? '#F3F4F6' : '#1E293B',
+                            fontSize: '0.6875rem',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '5px',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
+                          }}
+                        >
+                          <FiFolder size={12} /> <span>Reveal in Finder</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+              </div>
+            ) : (
+              /* ═════════════════════════════════════════════════════════════════════ */
+              /* STANDARD WORKER TAB GROUP (e.g. ENHANCE IMG 4 TABS)                 */
+              /* ═════════════════════════════════════════════════════════════════════ */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {/* 1. Images to Enhance Card */}
+                {boxConfig.showImagesToEnhance !== false && renderImagesToEnhanceCard()}
+
+                {/* 2. Enhancement Prompt Card */}
+                {boxConfig.showEnhancementPrompt !== false && boxConfig.usePromptConfig !== false && (
                   <div
                     style={{
                       borderRadius: '12px',
@@ -4770,1947 +5260,1495 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                             Enhancement Prompt
                           </div>
                           <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                            Worker tab enhancement template
+                            {promptSourceMode === 'custom'
+                              ? 'Custom Prompt Override'
+                              : `${promptOptions.find((p) => String(p.id).toLowerCase() === selectedPromptKey.toLowerCase())?.name || 'Preset Enhancement Template'}`}
                           </div>
                         </div>
                       </div>
-                    </div>
 
-                    <Select
-                      options={promptOptions.map((p) => ({
-                        value: p.id,
-                        label: p.name,
-                      }))}
-                      value={effectivePromptKey}
-                      onChange={(val) => {
-                        const strVal = String(val);
-                        setSelectedPromptKey(strVal);
-                        const found = promptOptions.find(
-                          (p) => String(p.id).trim().toLowerCase() === strVal.trim().toLowerCase() || p.name.trim().toLowerCase() === strVal.trim().toLowerCase()
-                        );
-                        const txt = found ? found.instructions : '';
-                        updateMultiConfig({
-                          browserPromptTemplateKey: strVal,
-                          ...(txt ? { browserPromptText: txt } : {}),
-                        });
-                      }}
-                    />
-                  </div>
-                )}
-              </>
-            )}
-
-
-
-            {/* ── 4. Generated Hero Advertisement Preview Card ── */}
-            {latestHeroImage && isImageRelevantToThisNode(latestHeroImage, boxConfig, targetGroupName) && Boolean(latestHeroImage.fileName?.toLowerCase().includes('hero')) && Boolean(condoName || condoSearchQuery) && Boolean(
-              latestHeroImage.condoName && (
-                (condoName || condoSearchQuery).toLowerCase().includes(latestHeroImage.condoName.toLowerCase()) ||
-                latestHeroImage.condoName.toLowerCase().includes((condoName || condoSearchQuery).toLowerCase())
-              )
-            ) && (!effectiveListingCode || (latestHeroImage.fileName && latestHeroImage.fileName.toLowerCase().includes(effectiveListingCode.toLowerCase()))) && (
-              <div
-                style={{
-                  borderRadius: '12px',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-                  border: isDark ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(16, 185, 129, 0.4)',
-                  padding: '0.875rem 1rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.65rem',
-                  boxShadow: isDark ? '0 2px 10px rgba(0,0,0,0.3)' : '0 2px 8px rgba(16, 185, 129, 0.12)',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                    <div
-                      style={{
-                        width: '26px',
-                        height: '26px',
-                        borderRadius: '6px',
-                        backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                        color: '#10B981',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <FiCheckCircle size={14} />
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div
+                      <span
                         style={{
-                          fontSize: '0.78125rem',
+                          fontSize: '0.5625rem',
                           fontWeight: 700,
-                          color: isDark ? '#F3F4F6' : '#1E293B',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
+                          padding: '2px 8px',
+                          borderRadius: '10px',
+                          backgroundColor: promptSourceMode === 'custom' ? 'rgba(139, 92, 246, 0.15)' : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
+                          color: promptSourceMode === 'custom' ? '#8B5CF6' : 'var(--text-secondary)',
+                          border: promptSourceMode === 'custom' ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid var(--border-color)',
+                          letterSpacing: '0.02em',
                         }}
                       >
-                        {(boxConfig.title || '').toLowerCase().includes('tiktok') ? 'Generated TikTok Hero Image' : 'Generated Hero Image'}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: '0.625rem',
-                          color: 'var(--text-muted)',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
-                        {latestHeroImage.condoName || condoName || ((boxConfig.title || '').toLowerCase().includes('tiktok') ? 'TikTok Hero' : 'Facebook Hero')}
-                      </div>
+                        {promptSourceMode === 'custom' ? 'Custom' : 'Preset'}
+                      </span>
                     </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span
-                      style={{
-                        fontSize: '0.625rem',
-                        fontWeight: 700,
-                        color: '#10B981',
-                        backgroundColor: 'rgba(16, 185, 129, 0.12)',
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        border: '1px solid rgba(16, 185, 129, 0.25)',
-                        flexShrink: 0,
-                      }}
-                    >
-                      ✓ Downloaded
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateLatestHeroImage(null);
-                        localStorage.removeItem(`bolthaven_hero_image_${boxConfig.id}`);
-                        localStorage.removeItem('bolthaven_last_hero_image');
-                        fetch('http://127.0.0.1:9224/two-stage-status', { method: 'DELETE' }).catch(() => {});
-                      }}
-                      title="Clear / Dismiss preview"
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: 'var(--text-muted)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: '2px',
-                        borderRadius: '4px',
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.color = '#EF4444')}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
-                    >
-                      <FiX size={14} />
-                    </button>
-                  </div>
-                </div>
 
-                {/* Hero Image Thumbnail with Click-to-Open */}
-                <div
-                  style={{
-                    position: 'relative',
-                    borderRadius: '8px',
-                    overflow: 'hidden',
-                    border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #E2E8F0',
-                    backgroundColor: '#0a0a0a',
-                    cursor: 'pointer',
-                    maxHeight: '190px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                  onClick={() => {
-                    const resolvedHeroFilePath =
-                      latestHeroImage.filePath ||
-                      twoStageStatus?.downloaded_file_path ||
-                      (latestHeroImage.fileName
-                        ? `/Users/zinwaishine/Desktop/Project_EA/backend/storage/uploads/facebook-import/enhanced/${latestHeroImage.fileName}`
-                        : '');
-                    setPreviewModalImage({
-                      url: latestHeroImage.url,
-                      fileName: latestHeroImage.fileName,
-                      filePath: resolvedHeroFilePath,
-                      title: (boxConfig.title || '').toLowerCase().includes('tiktok') ? 'Generated TikTok Hero Image' : 'Generated Hero Image',
-                      condoName: latestHeroImage.condoName || condoName,
-                    });
-                  }}
-                  title="Click to view full image in modal"
-                >
-                  <img
-                    src={latestHeroImage.url}
-                    alt="Generated Facebook Hero"
-                    style={{
-                      width: '100%',
-                      height: 'auto',
-                      maxHeight: '190px',
-                      objectFit: 'contain',
-                      display: 'block',
-                    }}
-                  />
-                  <div
-                    style={{
-                      position: 'absolute',
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      padding: '4px 8px',
-                      background: 'linear-gradient(to top, rgba(0,0,0,0.8), rgba(0,0,0,0.3) 70%, transparent)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      fontSize: '0.5625rem',
-                      color: '#FFFFFF',
-                    }}
-                  >
-                    <span
-                      style={{
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        maxWidth: '75%',
-                      }}
-                    >
-                      {latestHeroImage.fileName || 'fb_hero.png'}
-                    </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}>
-                      <FiMaximize2 size={10} /> View Full
-                    </span>
-                  </div>
-                </div>
-
-                {/* File Path / Location Box */}
-                {(() => {
-                  const resolvedHeroFilePath =
-                    latestHeroImage.filePath ||
-                    twoStageStatus?.downloaded_file_path ||
-                    (latestHeroImage.fileName
-                      ? `/Users/zinwaishine/Desktop/Project_EA/backend/storage/uploads/facebook-import/enhanced/${latestHeroImage.fileName}`
-                      : '');
-                  if (!resolvedHeroFilePath) return null;
-                  return (
+                    {/* Clean Read-Only Display of Active Prompt Template (Configured in Settings) */}
                     <div
                       style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '4px',
-                        padding: '6px 8px',
+                        height: '34px',
                         borderRadius: '6px',
-                        backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : '#F1F5F9',
-                        border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                        border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                        padding: '0 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        fontSize: '0.8125rem',
+                        fontWeight: 500,
+                        color: isDark ? '#C9D1D9' : '#334155',
+                        userSelect: 'none',
                       }}
                     >
-                      <div
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {promptSourceMode === 'custom'
+                          ? (customPromptText || 'Custom Prompt')
+                          : (promptOptions.find((p) => String(p.id).toLowerCase() === selectedPromptKey.toLowerCase())?.name || 'Enhance Image')}
+                      </span>
+                    </div>
+
+                    {/* View Prompt Button & Quick Copy Button */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onCloseSettingsSidebox?.();
+                          setShowPromptViewSidebox(true);
+                        }}
                         style={{
+                          flex: 1,
+                          height: '32px',
+                          borderRadius: '8px',
+                          border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'space-between',
-                          fontSize: '0.625rem',
-                          color: 'var(--text-secondary)',
-                        }}
-                      >
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
-                          <FiFolder size={11} style={{ color: 'var(--accent-primary, #2563EB)' }} />
-                          <span>File Path:</span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(resolvedHeroFilePath);
-                            setCopiedHeroPath(true);
-                            setTimeout(() => setCopiedHeroPath(false), 2000);
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            color: copiedHeroPath ? '#10B981' : 'var(--text-muted)',
-                            fontSize: '0.625rem',
-                            fontWeight: 600,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '3px',
-                            padding: '1px 4px',
-                            borderRadius: '4px',
-                          }}
-                          title="Copy file path"
-                        >
-                          {copiedHeroPath ? <FiCheck size={10} /> : <FiCopy size={10} />}
-                          <span>{copiedHeroPath ? 'Copied' : 'Copy'}</span>
-                        </button>
-                      </div>
-                      <div
-                        title={`Click to reveal file in Finder: ${resolvedHeroFilePath}`}
-                        onClick={() => {
-                          fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(latestHeroImage.fileName || '')}`).catch(() => {});
-                        }}
-                        style={{
-                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                          fontSize: '0.59375rem',
-                          color: isDark ? '#93C5FD' : '#1D4ED8',
-                          wordBreak: 'break-all',
-                          lineHeight: 1.35,
+                          justifyContent: 'center',
+                          gap: '6px',
                           cursor: 'pointer',
-                          padding: '4px 6px',
-                          borderRadius: '4px',
-                          backgroundColor: isDark ? 'rgba(37, 99, 235, 0.1)' : 'rgba(37, 99, 235, 0.06)',
-                          border: isDark ? '1px solid rgba(37, 99, 235, 0.2)' : '1px solid rgba(37, 99, 235, 0.12)',
                           transition: 'all 0.15s ease',
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.12)';
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(37, 99, 235, 0.1)' : 'rgba(37, 99, 235, 0.06)';
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
                         }}
                       >
-                        {resolvedHeroFilePath}
-                      </div>
-                    </div>
-                  );
-                })()}
+                        <FiFileText size={13} style={{ color: 'var(--text-secondary)' }} />
+                        <span>View Prompt Template</span>
+                      </button>
 
-                {/* Action buttons */}
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const resolvedHeroFilePath =
-                        latestHeroImage.filePath ||
-                        twoStageStatus?.downloaded_file_path ||
-                        (latestHeroImage.fileName
-                          ? `/Users/zinwaishine/Desktop/Project_EA/backend/storage/uploads/facebook-import/enhanced/${latestHeroImage.fileName}`
-                          : '');
-                      setPreviewModalImage({
-                        url: latestHeroImage.url,
-                        fileName: latestHeroImage.fileName,
-                        filePath: resolvedHeroFilePath,
-                        title: (boxConfig.title || '').toLowerCase().includes('tiktok') ? 'Generated TikTok Hero Image' : 'Generated Hero Image',
-                        condoName: latestHeroImage.condoName || condoName,
-                      });
-                    }}
-                    style={{
-                      flex: 1,
-                      height: '30px',
-                      borderRadius: '8px',
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-                      border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
-                      color: isDark ? '#F3F4F6' : '#1E293B',
-                      fontSize: '0.6875rem',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '5px',
-                      transition: 'all 0.15s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
-                    }}
-                  >
-                    <FiMaximize2 size={12} /> <span>Open Full Size</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(latestHeroImage.fileName || '')}`).catch(() => {});
-                    }}
-                    style={{
-                      flex: 1,
-                      height: '30px',
-                      borderRadius: '8px',
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-                      border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
-                      color: isDark ? '#F3F4F6' : '#1E293B',
-                      fontSize: '0.6875rem',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '5px',
-                      transition: 'all 0.15s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
-                    }}
-                  >
-                    <FiFolder size={12} /> <span>Reveal in Finder</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-) : (
-          /* ═════════════════════════════════════════════════════════════════════ */
-          /* STANDARD WORKER TAB GROUP (e.g. ENHANCE IMG 4 TABS)                 */
-          /* ═════════════════════════════════════════════════════════════════════ */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {/* 1. Images to Enhance Card */}
-            {boxConfig.showImagesToEnhance !== false && renderImagesToEnhanceCard()}
-
-            {/* 2. Enhancement Prompt Card */}
-            {boxConfig.showEnhancementPrompt !== false && boxConfig.usePromptConfig !== false && (
-            <div
-              style={{
-                borderRadius: '12px',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-                border: '1px solid var(--border-color)',
-                padding: '0.875rem 1rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.65rem',
-                boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                  <div
-                    style={{
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '7px',
-                      backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                      color: '#3B82F6',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <FiFileText size={14} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      Enhancement Prompt
-                    </div>
-                    <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                      {promptSourceMode === 'custom'
-                        ? 'Custom Prompt Override'
-                        : `${promptOptions.find((p) => String(p.id).toLowerCase() === selectedPromptKey.toLowerCase())?.name || 'Preset Enhancement Template'}`}
-                    </div>
-                  </div>
-                </div>
-
-                <span
-                  style={{
-                    fontSize: '0.5625rem',
-                    fontWeight: 700,
-                    padding: '2px 8px',
-                    borderRadius: '10px',
-                    backgroundColor: promptSourceMode === 'custom' ? 'rgba(139, 92, 246, 0.15)' : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
-                    color: promptSourceMode === 'custom' ? '#8B5CF6' : 'var(--text-secondary)',
-                    border: promptSourceMode === 'custom' ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid var(--border-color)',
-                    letterSpacing: '0.02em',
-                  }}
-                >
-                  {promptSourceMode === 'custom' ? 'Custom' : 'Preset'}
-                </span>
-              </div>
-
-              {/* Clean Read-Only Display of Active Prompt Template (Configured in Settings) */}
-              <div
-                style={{
-                  height: '34px',
-                  borderRadius: '6px',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
-                  border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
-                  padding: '0 12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  fontSize: '0.8125rem',
-                  fontWeight: 500,
-                  color: isDark ? '#C9D1D9' : '#334155',
-                  userSelect: 'none',
-                }}
-              >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {promptSourceMode === 'custom'
-                    ? (customPromptText || 'Custom Prompt')
-                    : (promptOptions.find((p) => String(p.id).toLowerCase() === selectedPromptKey.toLowerCase())?.name || 'Enhance Image')}
-                </span>
-              </div>
-
-              {/* View Prompt Button & Quick Copy Button */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onCloseSettingsSidebox?.();
-                    setShowPromptViewSidebox(true);
-                  }}
-                  style={{
-                    flex: 1,
-                    height: '32px',
-                    borderRadius: '8px',
-                    border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.75rem',
-                    fontWeight: 500,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
-                  }}
-                >
-                  <FiFileText size={13} style={{ color: 'var(--text-secondary)' }} />
-                  <span>View Prompt Template</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleCopyPrompt}
-                  title="Copy full prompt"
-                  style={{
-                    height: '32px',
-                    padding: '0 12px',
-                    borderRadius: '8px',
-                    border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-                    color: isCopied ? '#10B981' : 'var(--text-secondary)',
-                    fontSize: '0.75rem',
-                    fontWeight: 500,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
-                  }}
-                >
-                  {isCopied ? <FiCheck size={12} /> : <FiCopy size={12} />}
-                  <span>{isCopied ? 'Copied' : 'Copy'}</span>
-                </button>
-              </div>
-
-              {/* Auto-Run Toggle & Status Bar (Integrated inside Enhancement Prompt Box) */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '6px 10px',
-                  borderRadius: '6px',
-                  background: autoRunEnabled ? 'rgba(16, 185, 129, 0.08)' : isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
-                  border: autoRunEnabled ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid var(--border-color)',
-                  marginTop: '4px',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span
-                    style={{
-                      width: '7px',
-                      height: '7px',
-                      borderRadius: '50%',
-                      backgroundColor: autoRunEnabled ? '#10B981' : '#94A3B8',
-                      boxShadow: autoRunEnabled ? '0 0 8px rgba(16, 185, 129, 0.6)' : 'none',
-                    }}
-                  />
-                  <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: autoRunEnabled ? '#10B981' : 'var(--text-secondary)' }}>
-                    {autoRunCountdown !== null
-                      ? `⚡ Auto-starting in ${autoRunCountdown}s...`
-                      : autoRunEnabled
-                      ? 'Auto-Run: Active (Auto-runs tabs & photos)'
-                      : 'Auto-Run: Off (Manual click)'}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {autoRunCountdown !== null && (
-                    <button
-                      type="button"
-                      onClick={handleCancelAutoRun}
-                      style={{
-                        border: 'none',
-                        background: 'rgba(239, 68, 68, 0.12)',
-                        color: '#EF4444',
-                        fontSize: '0.625rem',
-                        fontWeight: 600,
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  )}
-                  <ToggleSwitch
-                    checked={autoRunEnabled}
-                    onChange={(val) => handleToggleAutoRun(val)}
-                    size="sm"
-                    activeColor="#10B981"
-                  />
-                </div>
-              </div>
-            </div>
-            )}
-          </div>
-        )}
-
-        {/* Two-Stage Hero Feedback Banner (when running or status message present) */}
-        {isHeroNode && twoStageMessage && (
-          <div
-            style={{
-              fontSize: '0.6875rem',
-              fontWeight: 500,
-              padding: '7px 11px',
-              borderRadius: '8px',
-              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
-              border: '1px solid rgba(59, 130, 246, 0.25)',
-              color: isDark ? '#93C5FD' : '#2563EB',
-              lineHeight: 1.35,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '8px',
-            }}
-          >
-            <span>{twoStageMessage}</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    setTwoStageMessage('⬇️ Syncing generated Hero image from browser tab...');
-                    await fetch('http://127.0.0.1:9224/recover-hero-image', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ condo_name: condoName || aiExtractedCondoName || 'hero' }),
-                    });
-                  } catch (e) {}
-                }}
-                title="Download the completed Hero image from the active browser tab"
-                style={{
-                  background: isDark ? '#238636' : '#16A34A',
-                  border: 'none',
-                  color: '#FFFFFF',
-                  cursor: 'pointer',
-                  fontSize: '0.625rem',
-                  fontWeight: 600,
-                  padding: '3px 7px',
-                  borderRadius: '4px',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                Download Now
-              </button>
-              {isRunningTwoStage && (
-                <button
-                  type="button"
-                  onClick={handleStopGroupAutomation}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: '#EF4444',
-                    cursor: 'pointer',
-                    fontSize: '0.625rem',
-                    fontWeight: 700,
-                    textDecoration: 'underline',
-                    padding: 0,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* If missing photos exist from previous run, provide 1-click clean "Resume Missing Photos" button */}
-        {missingPositions.length > 0 && enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && !isHeroNode && (
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
-              handleStartGroupAutomation(missingPositions);
-            }}
-            style={{
-              width: '100%',
-              height: '36px',
-              borderRadius: '6px',
-              border: '1px solid rgba(245, 158, 11, 0.3)',
-              backgroundColor: 'rgba(245, 158, 11, 0.09)',
-              color: '#F59E0B',
-              fontSize: '0.8125rem',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              cursor: 'pointer',
-              marginBottom: '6px',
-              transition: 'all 0.15s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.18)';
-              e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.45)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.09)';
-              e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.3)';
-            }}
-            title={`Queue and enhance missing photos: ${missingPositions.map((p) => '#' + p).join(', ')}`}
-          >
-            <FiPlay size={12} />
-            <span>Resume Missing Photos ({missingPositions.length})</span>
-          </button>
-        )}
-      </div>
-
-      {/* SECTION C — CHROME TAB GROUPS MULTI-PIPELINE (RELATIVE TO SELECTED PROFILE) */}
-      {boxConfig.showTabGroupsPipelines !== false && (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <FiLayers style={{ color: 'var(--text-muted)' }} /> Tab Groups & Pipelines ({activeProfile?.display_name || 'Chrome'})
-          </label>
-          <button
-            type="button"
-            onClick={() => {
-              const profId = activeProfile?.id || selectedProfileId;
-              const profKey = activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
-              const profName = activeProfile?.display_name || boxConfig.browserProfileName || (profiles[0]?.display_name || 'Note Zin Wai');
-              if (profId) {
-                fetchTabGroups(profId, profKey, profName).then((g) => setTabGroups(g));
-              }
-            }}
-            style={{
-              height: '26px',
-              padding: '0 8px',
-              borderRadius: '8px',
-              border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-              color: 'var(--text-secondary)',
-              fontSize: '0.6875rem',
-              fontWeight: 500,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              transition: 'all 0.15s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
-              e.currentTarget.style.color = 'var(--text-primary)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
-              e.currentTarget.style.color = 'var(--text-secondary)';
-            }}
-          >
-            <FiRefreshCw size={11} />
-            <span>Refresh Groups</span>
-          </button>
-        </div>
-
-        {displayGroups.length === 0 ? (
-          <div
-            style={{
-              padding: '0.85rem',
-              borderRadius: '8px',
-              border: '1px dashed var(--border-color)',
-              textAlign: 'center',
-              fontSize: '0.6875rem',
-              color: 'var(--text-muted)',
-            }}
-          >
-            No tab groups discovered for &ldquo;{activeProfile?.display_name || 'Selected Profile'}&rdquo;.
-            <br />
-            Create or focus tab groups in Chrome (e.g. &ldquo;Enhance IMG&rdquo;, &ldquo;FB Hero&rdquo;).
-          </div>
-        ) : (
-          displayGroups.map((group, groupIdx) => {
-            const isEnhance = group.name.toLowerCase().includes('enhance');
-            const isHero = isHeroNode || group.name.toLowerCase().includes('hero') || group.name.toLowerCase().includes('fb');
-            const groupBg = isDark ? 'var(--bg-surface)' : '#F8FAFC';
-            const groupBorder = '1px solid var(--border-color)';
-            const allGroupTabs = group.tabs || [];
-            // FB Hero pipeline: Direct mode uses exactly 1 tab, 2-Stage uses 2. Show only the tabs actually used.
-            const isDirectHeroPipeline = boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1 === true;
-            const pipelineTabLimit = isHero ? (isDirectHeroPipeline ? 1 : 2) : (boxConfig.workerTabCount || allGroupTabs.length);
-            const tabs = allGroupTabs.slice(0, Math.max(1, pipelineTabLimit));
-
-            return (
-              <div
-                key={group.id || group.name || groupIdx}
-                style={{
-                  padding: '0.75rem 0.875rem',
-                  borderRadius: '8px',
-                  backgroundColor: groupBg,
-                  border: groupBorder,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.5rem',
-                }}
-              >
-                {/* Group Title Header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--text-muted)' }} />
-                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {group.name}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: '0.5625rem',
-                        padding: '1px 6px',
-                        borderRadius: '10px',
-                        backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-                        color: 'var(--text-secondary)',
-                        fontWeight: 600,
-                      }}
-                    >
-                      {tabs.length} {tabs.length === 1 ? 'Tab' : 'Tabs'}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (tabs.length > 0) {
-                        try {
-                          const isHeroGrp = isHeroNode || (group.name || '').toLowerCase().includes('hero') || (group.name || '').toLowerCase().includes('fb');
-                          const grpCount = isHeroGrp ? (boxConfig.stagingMode === 'direct_tab2' ? 1 : 2) : (boxConfig.workerTabCount || tabs.length || 4);
-                          await focusBrowserTabGroup({
-                            profileId: activeProfile?.id || selectedProfileId,
-                            profileKey: activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro'),
-                            groupName: group.name,
-                            tabId: tabs[0].id,
-                            groupTabUrls: tabs.map((t) => t.url).filter(Boolean).slice(0, grpCount),
-                            url: tabs[0].url,
-                            workerCount: grpCount,
-                            force: true,
-                          });
-                        } catch (e) {}
-                      }
-                    }}
-                    style={{
-                      height: '24px',
-                      padding: '0 8px',
-                      borderRadius: '8px',
-                      border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-                      color: 'var(--text-secondary)',
-                      fontSize: '0.6875rem',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      transition: 'all 0.15s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
-                      e.currentTarget.style.color = 'var(--text-primary)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
-                      e.currentTarget.style.color = 'var(--text-secondary)';
-                    }}
-                  >
-                    <FiExternalLink size={11} />
-                    <span>Focus Group</span>
-                  </button>
-                </div>
-
-                {/* Worker Tabs in this Group (Clean Compact Grid) */}
-                {tabs.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '2px' }}>
-                    <div style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                      Pipeline workers ({tabs.length} live {tabs.length === 1 ? 'tab' : 'tabs'}):
-                    </div>
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: tabs.length > 1 ? 'repeat(2, 1fr)' : '1fr',
-                        gap: '6px',
-                      }}
-                    >
-                      {tabs.map((tab, idx) => (
-                        <div
-                          key={tab.id || idx}
-                          title={`${tab.title || `Worker Tab #${idx + 1}`}\n${tab.url || ''}`}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '5px 8px',
-                            borderRadius: '6px',
-                            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : '#FFFFFF',
-                            border: '1px solid var(--border-color)',
-                            minWidth: 0,
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                            <div
-                              style={{
-                                width: '16px',
-                                height: '16px',
-                                borderRadius: '50%',
-                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
-                                color: 'var(--text-primary)',
-                                fontSize: '0.5625rem',
-                                fontWeight: 700,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                flexShrink: 0,
-                              }}
-                            >
-                              {idx + 1}
-                            </div>
-                            <span
-                              style={{
-                                fontSize: '0.6875rem',
-                                fontWeight: 600,
-                                color: 'var(--text-primary)',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              Worker #{idx + 1}
-                            </span>
-                          </div>
-                          <div
-                            style={{
-                              width: '6px',
-                              height: '6px',
-                              borderRadius: '50%',
-                              background: '#10B981',
-                              boxShadow: '0 0 4px #10B981',
-                              flexShrink: 0,
-                              marginLeft: '4px',
-                            }}
-                            title="Tab Active"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
-
-        {/* Global Automation Messages */}
-        {(automationMessage || twoStageMessage) && (
-          <div
-            style={{
-              padding: '0.45rem 0.6rem',
-              borderRadius: '6px',
-              fontSize: '0.625rem',
-              backgroundColor: isDark ? 'rgba(0, 0, 0, 0.2)' : '#F1F5F9',
-              border: '1px solid var(--border-color)',
-              color: 'var(--text-primary)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <FiCheckCircle size={12} style={{ color: '#10B981', flexShrink: 0 }} />
-            <span>{automationMessage || twoStageMessage}</span>
-          </div>
-        )}
-      </div>
-      )}
-
-      {/* SECTION: ENHANCED IMAGES RESULTS (Downloaded to Disk) */}
-      {!isHeroNode && receivedImages.length > 0 && enhancedImages.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.625rem',
-            padding: '0.75rem',
-            borderRadius: '10px',
-            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.06)' : 'rgba(16, 185, 129, 0.05)',
-            border: '1px solid rgba(16, 185, 129, 0.35)',
-          }}
-        >
-          {/* Header Row: Title & Status */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '8px',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-              <div
-                style={{
-                  width: '16px',
-                  height: '16px',
-                  borderRadius: '50%',
-                  backgroundColor: missingPositions.length > 0 && enhancedImages.length === 0 ? '#F59E0B' : '#10B981',
-                  color: '#FFFFFF',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  flexShrink: 0,
-                }}
-              >
-                {missingPositions.length > 0 && enhancedImages.length === 0 ? '!' : '✓'}
-              </div>
-              <span
-                style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  color: 'var(--text-primary)',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                Enhanced Images ({enhancedImages.length}
-                {activeImages.length > 0 && enhancedImages.length < activeImages.length ? ` of ${activeImages.length}` : ''} Photos)
-              </span>
-              {missingPositions.length > 0 && (
-                <span
-                  style={{
-                    fontSize: '0.625rem',
-                    fontWeight: 600,
-                    padding: '1px 5px',
-                    borderRadius: '4px',
-                    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-                    color: '#F59E0B',
-                    border: '1px solid rgba(245, 158, 11, 0.25)',
-                  }}
-                >
-                  {missingPositions.length} Missing
-                </span>
-              )}
-            </div>
-
-            {/* When NO missing photos exist, quick actions sit right in header */}
-            {missingPositions.length === 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <button
-                  type="button"
-                  disabled={isRegettingImages}
-                  onClick={handleRegetEnhancedImages}
-                  style={{
-                    height: '24px',
-                    padding: '0 8px',
-                    fontSize: '0.6875rem',
-                    fontWeight: 500,
-                    borderRadius: '5px',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                    color: regetFeedback ? '#10B981' : 'var(--text-secondary)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
-                    e.currentTarget.style.color = 'var(--text-primary)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
-                    e.currentTarget.style.color = regetFeedback ? '#10B981' : 'var(--text-secondary)';
-                  }}
-                  title="Re-get and sync all enhanced photos from your drive / downloads"
-                >
-                  <FiRefreshCw size={10} className={isRegettingImages ? 'animate-spin' : ''} />
-                  <span>{regetFeedback || 'Sync'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    fetch('http://127.0.0.1:9224/reveal-file').catch(() => {});
-                  }}
-                  style={{
-                    height: '24px',
-                    padding: '0 8px',
-                    fontSize: '0.6875rem',
-                    fontWeight: 500,
-                    borderRadius: '5px',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                    color: 'var(--text-secondary)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
-                    e.currentTarget.style.color = 'var(--text-primary)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
-                    e.currentTarget.style.color = 'var(--text-secondary)';
-                  }}
-                  title="Open Downloads folder in macOS Finder"
-                >
-                  <FiFolder size={11} style={{ color: '#10B981' }} />
-                  <span>Downloads</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Clean Action Toolbar (Visible when missing photos exist) */}
-          {missingPositions.length > 0 && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                paddingTop: '2px',
-              }}
-            >
-              {/* 1. Resume / Regenerate Missing Photos */}
-              {!isAutomating && !isRunningTwoStage && !isHeroNode && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
-                    handleStartGroupAutomation(missingPositions);
-                  }}
-                  style={{
-                    height: '26px',
-                    padding: '0 9px',
-                    fontSize: '0.6875rem',
-                    fontWeight: 600,
-                    borderRadius: '5px',
-                    border: '1px solid rgba(245, 158, 11, 0.3)',
-                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                    color: '#F59E0B',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.18)';
-                    e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.45)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
-                    e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.3)';
-                  }}
-                  title={`Queue & enhance ${missingPositions.length} missing photo(s): ${missingPositions.map((p) => '#' + p).join(', ')}`}
-                >
-                  <FiPlay size={10} />
-                  <span>Resume ({missingPositions.length})</span>
-                </button>
-              )}
-
-              {/* 2. Recover from Disk */}
-              {enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && (
-                <button
-                  type="button"
-                  disabled={isRecovering}
-                  onClick={async () => {
-                    setIsRecovering(true);
-                    try {
-                      await fetch('http://127.0.0.1:9224/recover-missing-images', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          property_id: propertyContext?.id || '',
-                          propertyId: propertyContext?.id || '',
-                          listing_code: (propertyContext?.listingCode || '').trim(),
-                          listingCode: (propertyContext?.listingCode || '').trim(),
-                          targetPositions: missingPositions,
-                          autoWorkMissing: false,
-                        }),
-                      });
-                      for (let i = 0; i < 6; i++) {
-                        await new Promise((r) => setTimeout(r, 1000));
-                        const refreshedList = await fetchEnhancedDownloadedImages(propertyContext?.id, propertyContext?.listingCode);
-                        if (refreshedList && refreshedList.length > 0) {
-                          const refreshedPositions = new Set(refreshedList.map((img) => img.position));
-                          const remainingMissing = missingPositions.filter((p) => !refreshedPositions.has(p));
-                          if (remainingMissing.length === 0) {
-                            const newTs = Date.now();
-                            setCacheBustTimestamp(newTs);
-                            const cacheBusted = refreshedList.map((img) => ({
-                              ...img,
-                              url: img.url.includes('?') ? `${img.url}&_cb=${newTs}` : `${img.url}?_cb=${newTs}`,
-                            }));
-                            setEnhancedImages(cacheBusted);
-                            if (onEnhancedPhotosUpdate) {
-                              const map: Record<number, string> = {};
-                              cacheBusted.forEach((img) => {
-                                const pos0 = (img.position || 1) - 1;
-                                map[pos0] = img.backend_url || img.url;
-                              });
-                              onEnhancedPhotosUpdate(map);
-                            }
-                            break;
-                          }
-                        }
-                      }
-                      await loadQueue();
-                    } catch (e) {
-                      console.warn('Recovery error:', e);
-                    } finally {
-                      setIsRecovering(false);
-                    }
-                  }}
-                  style={{
-                    height: '26px',
-                    padding: '0 9px',
-                    fontSize: '0.6875rem',
-                    fontWeight: 500,
-                    borderRadius: '5px',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                    color: 'var(--text-secondary)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
-                    e.currentTarget.style.color = 'var(--text-primary)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
-                    e.currentTarget.style.color = 'var(--text-secondary)';
-                  }}
-                  title={`Missing ${missingPositions.length} photo(s): ${missingPositions.map((p) => `#${p}`).join(', ')}. Click to recover missing photos from disk.`}
-                >
-                  <FiRefreshCw size={10} style={{ color: '#F87171' }} className={isRecovering ? 'animate-spin' : ''} />
-                  <span>Recover ({missingPositions.length})</span>
-                </button>
-              )}
-
-              {/* 3. Re-get / Sync */}
-              <button
-                type="button"
-                disabled={isRegettingImages}
-                onClick={handleRegetEnhancedImages}
-                style={{
-                  height: '26px',
-                  padding: '0 9px',
-                  fontSize: '0.6875rem',
-                  fontWeight: 500,
-                  borderRadius: '5px',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                  color: regetFeedback ? '#10B981' : 'var(--text-secondary)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
-                  e.currentTarget.style.color = 'var(--text-primary)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
-                  e.currentTarget.style.color = regetFeedback ? '#10B981' : 'var(--text-secondary)';
-                }}
-                title="Re-get and sync all enhanced photos from your drive / downloads"
-              >
-                <FiRefreshCw size={10} className={isRegettingImages ? 'animate-spin' : ''} />
-                <span>{regetFeedback || 'Sync'}</span>
-              </button>
-
-              {/* 4. Downloads folder */}
-              <button
-                type="button"
-                onClick={() => {
-                  fetch('http://127.0.0.1:9224/reveal-file').catch(() => {});
-                }}
-                style={{
-                  height: '26px',
-                  padding: '0 9px',
-                  fontSize: '0.6875rem',
-                  fontWeight: 500,
-                  borderRadius: '5px',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                  color: 'var(--text-secondary)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
-                  e.currentTarget.style.color = 'var(--text-primary)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
-                  e.currentTarget.style.color = 'var(--text-secondary)';
-                }}
-                title="Open Downloads folder in macOS Finder"
-              >
-                <FiFolder size={11} style={{ color: '#10B981' }} />
-                <span>Downloads</span>
-              </button>
-            </div>
-          )}
-
-          {/* Grid of Enhanced and Missing Images */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
-              gap: '0.625rem',
-              maxHeight: '520px',
-              overflowY: 'auto',
-              paddingRight: '2px',
-            }}
-          >
-            {(() => {
-              const enhancedMap = new Map<number, EnhancedDownloadedImage>();
-              enhancedImages.forEach((img) => enhancedMap.set(img.position || 1, img));
-
-              const cardItems: Array<{
-                position: number;
-                enhanced?: EnhancedDownloadedImage;
-                sourceImage?: { url: string; index?: number };
-                isMissing: boolean;
-              }> = [];
-
-              if (activeImages.length > 0 && !isHeroNode) {
-                activeImages.forEach((srcImg, idx) => {
-                  const pos = typeof srcImg.index === 'number' && srcImg.index > 0 ? srcImg.index : idx + 1;
-                  const enh = enhancedMap.get(pos);
-                  cardItems.push({
-                    position: pos,
-                    enhanced: enh,
-                    sourceImage: srcImg,
-                    isMissing: !enh,
-                  });
-                });
-              } else {
-                enhancedImages.forEach((enh, idx) => {
-                  cardItems.push({
-                    position: enh.position || idx + 1,
-                    enhanced: enh,
-                    isMissing: false,
-                  });
-                });
-              }
-
-              return cardItems.map((item) => {
-                if (item.isMissing) {
-                  return (
-                    <div
-                      key={`missing-pos-${item.position}`}
-                      style={{
-                        position: 'relative',
-                        borderRadius: '8px',
-                        overflow: 'hidden',
-                        border: '1px dashed #F59E0B',
-                        backgroundColor: isDark ? 'rgba(245, 158, 11, 0.04)' : '#FFFBEB',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        flexShrink: 0,
-                        minHeight: '215px',
-                      }}
-                    >
-                      <div
+                      <button
+                        type="button"
+                        onClick={handleCopyPrompt}
+                        title="Copy full prompt"
                         style={{
-                          position: 'relative',
-                          width: '100%',
-                          height: '180px',
-                          minHeight: '180px',
-                          aspectRatio: '4/5',
-                          flexShrink: 0,
-                          backgroundColor: isDark ? '#1E293B' : '#FEF3C7',
-                          overflow: 'hidden',
-                        }}
-                      >
-                        {item.sourceImage?.url && (
-                          <img
-                            src={item.sourceImage.url}
-                            alt={`Photo #${item.position}`}
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover',
-                              display: 'block',
-                              opacity: 0.65,
-                              filter: 'grayscale(20%)',
-                            }}
-                          />
-                        )}
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: '6px',
-                            left: '6px',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-                            color: '#FFFFFF',
-                            fontSize: '0.625rem',
-                            fontWeight: 700,
-                            backdropFilter: 'blur(4px)',
-                            zIndex: 2,
-                          }}
-                        >
-                          #{item.position}
-                        </div>
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: '6px',
-                            right: '6px',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            backgroundColor: '#F59E0B',
-                            color: '#FFFFFF',
-                            fontSize: '0.5625rem',
-                            fontWeight: 700,
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
-                            zIndex: 2,
-                          }}
-                        >
-                          ⚠️ Missing
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
+                          height: '32px',
+                          padding: '0 12px',
+                          borderRadius: '8px',
+                          border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                          color: isCopied ? '#10B981' : 'var(--text-secondary)',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '6px 8px',
-                          backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : '#FEF3C7',
-                          flexShrink: 0,
-                          minHeight: '34px',
-                          boxSizing: 'border-box',
+                          gap: '5px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
                         }}
                       >
-                        <span style={{ fontSize: '0.5625rem', fontWeight: 600, color: '#F59E0B' }}>
-                          Not downloaded
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
-                            handleStartGroupAutomation([item.position]);
-                          }}
-                          disabled={isAutomating || isRunningTwoStage}
-                          style={{
-                            background: '#F59E0B',
-                            border: 'none',
-                            borderRadius: '4px',
-                            color: '#000000',
-                            fontSize: '0.625rem',
-                            fontWeight: 700,
-                            padding: '3px 8px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '3px',
-                          }}
-                          title={`Queue & enhance missing Photo #${item.position}`}
-                        >
-                          <FiPlay size={9} />
-                          <span>Regenerate</span>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                }
-
-                const img = item.enhanced!;
-                const displayUrl = img.url
-                  ? img.url.includes('?')
-                    ? `${img.url}&_cb=${cacheBustTimestamp}`
-                    : `${img.url}?_cb=${cacheBustTimestamp}`
-                  : '';
-                return (
-                  <div
-                    key={`${img.filename || item.position}-${img.size || 0}-${cacheBustTimestamp}`}
-                    style={{
-                      position: 'relative',
-                      borderRadius: '8px',
-                      overflow: 'hidden',
-                      border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid var(--border-color)',
-                      backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      flexShrink: 0,
-                      minHeight: '215px',
-                      transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                    }}
-                  >
-                    <div
-                      onClick={() => {
-                        setPreviewModalImage({
-                          url: displayUrl || img.url,
-                          fileName: img.filename,
-                          title: `Enhanced Photo #${img.position || item.position}`,
-                          filePath: (img as any).full_path || (img.filename ? `/Users/zinwaishine/Desktop/Project_EA/backend/storage/uploads/facebook-import/enhanced/${img.filename}` : undefined),
-                        });
-                      }}
-                      style={{
-                        position: 'relative',
-                        width: '100%',
-                        height: '180px',
-                        minHeight: '180px',
-                        aspectRatio: '4/5',
-                        flexShrink: 0,
-                        backgroundColor: isDark ? '#1E293B' : '#E2E8F0',
-                        overflow: 'hidden',
-                        cursor: 'pointer',
-                      }}
-                      title="Click to view full image in modal"
-                    >
-                      <img
-                        src={displayUrl}
-                        key={displayUrl}
-                        alt={img.filename}
-                        loading="eager"
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover',
-                          display: 'block',
-                        }}
-                      />
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: '6px',
-                          left: '6px',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                          color: '#FFFFFF',
-                          fontSize: '0.625rem',
-                          fontWeight: 700,
-                          backdropFilter: 'blur(4px)',
-                          zIndex: 2,
-                        }}
-                      >
-                        #{img.position || item.position}
-                      </div>
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: '6px',
-                          right: '6px',
-                          padding: '2px 5px',
-                          borderRadius: '4px',
-                          backgroundColor: '#10B981',
-                          color: '#FFFFFF',
-                          fontSize: '0.5625rem',
-                          fontWeight: 700,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '2px',
-                          boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
-                          zIndex: 2,
-                        }}
-                      >
-                        ✓ Enhanced
-                      </div>
+                        {isCopied ? <FiCheck size={12} /> : <FiCopy size={12} />}
+                        <span>{isCopied ? 'Copied' : 'Copy'}</span>
+                      </button>
                     </div>
 
+                    {/* Auto-Run Toggle & Status Bar (Integrated inside Enhancement Prompt Box) */}
                     <div
                       style={{
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '6px 8px',
-                        fontSize: '0.625rem',
-                        color: 'var(--text-secondary)',
-                        backgroundColor: isDark ? 'rgba(0, 0, 0, 0.3)' : '#F1F5F9',
-                        flexShrink: 0,
-                        minHeight: '34px',
-                        boxSizing: 'border-box',
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        background: autoRunEnabled ? 'rgba(16, 185, 129, 0.08)' : isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                        border: autoRunEnabled ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid var(--border-color)',
+                        marginTop: '4px',
                       }}
                     >
-                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1, marginRight: '6px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span
+                          style={{
+                            width: '7px',
+                            height: '7px',
+                            borderRadius: '50%',
+                            backgroundColor: autoRunEnabled ? '#10B981' : '#94A3B8',
+                            boxShadow: autoRunEnabled ? '0 0 8px rgba(16, 185, 129, 0.6)' : 'none',
+                          }}
+                        />
+                        <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: autoRunEnabled ? '#10B981' : 'var(--text-secondary)' }}>
+                          {autoRunCountdown !== null
+                            ? `⚡ Auto-starting in ${autoRunCountdown}s...`
+                            : autoRunEnabled
+                              ? 'Auto-Run: Active (Auto-runs tabs & photos)'
+                              : 'Auto-Run: Off (Manual click)'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {autoRunCountdown !== null && (
+                          <button
+                            type="button"
+                            onClick={handleCancelAutoRun}
+                            style={{
+                              border: 'none',
+                              background: 'rgba(239, 68, 68, 0.12)',
+                              color: '#EF4444',
+                              fontSize: '0.625rem',
+                              fontWeight: 600,
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                        <ToggleSwitch
+                          checked={autoRunEnabled}
+                          onChange={(val) => handleToggleAutoRun(val)}
+                          size="sm"
+                          activeColor="#10B981"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Two-Stage Hero Feedback Banner (when running or status message present) */}
+            {isHeroNode && twoStageMessage && (
+              <div
+                style={{
+                  fontSize: '0.6875rem',
+                  fontWeight: 500,
+                  padding: '7px 11px',
+                  borderRadius: '8px',
+                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
+                  border: '1px solid rgba(59, 130, 246, 0.25)',
+                  color: isDark ? '#93C5FD' : '#2563EB',
+                  lineHeight: 1.35,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                }}
+              >
+                <span>{twoStageMessage}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        setTwoStageMessage('⬇️ Syncing generated Hero image from browser tab...');
+                        await fetch('http://127.0.0.1:9224/recover-hero-image', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ condo_name: condoName || aiExtractedCondoName || 'hero' }),
+                        });
+                      } catch (e) { }
+                    }}
+                    title="Download the completed Hero image from the active browser tab"
+                    style={{
+                      background: isDark ? '#238636' : '#16A34A',
+                      border: 'none',
+                      color: '#FFFFFF',
+                      cursor: 'pointer',
+                      fontSize: '0.625rem',
+                      fontWeight: 600,
+                      padding: '3px 7px',
+                      borderRadius: '4px',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Download Now
+                  </button>
+                  {isRunningTwoStage && (
+                    <button
+                      type="button"
+                      onClick={handleStopGroupAutomation}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#EF4444',
+                        cursor: 'pointer',
+                        fontSize: '0.625rem',
+                        fontWeight: 700,
+                        textDecoration: 'underline',
+                        padding: 0,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* If missing photos exist from previous run, provide 1-click clean "Resume Missing Photos" button */}
+            {missingPositions.length > 0 && enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && !isHeroNode && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
+                  handleStartGroupAutomation(missingPositions);
+                }}
+                style={{
+                  width: '100%',
+                  height: '36px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  backgroundColor: 'rgba(245, 158, 11, 0.09)',
+                  color: '#F59E0B',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  marginBottom: '6px',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.18)';
+                  e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.45)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.09)';
+                  e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+                }}
+                title={`Queue and enhance missing photos: ${missingPositions.map((p) => '#' + p).join(', ')}`}
+              >
+                <FiPlay size={12} />
+                <span>Resume Missing Photos ({missingPositions.length})</span>
+              </button>
+            )}
+          </div>
+
+          {/* SECTION C — CHROME TAB GROUPS MULTI-PIPELINE (RELATIVE TO SELECTED PROFILE) */}
+          {boxConfig.showTabGroupsPipelines !== false && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FiLayers style={{ color: 'var(--text-muted)' }} /> Tab Groups & Pipelines ({activeProfile?.display_name || 'Chrome'})
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const profId = activeProfile?.id || selectedProfileId;
+                    const profKey = activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
+                    const profName = activeProfile?.display_name || boxConfig.browserProfileName || (profiles[0]?.display_name || 'Note Zin Wai');
+                    if (profId) {
+                      fetchTabGroups(profId, profKey, profName).then((g) => setTabGroups(g));
+                    }
+                  }}
+                  style={{
+                    height: '26px',
+                    padding: '0 8px',
+                    borderRadius: '8px',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.6875rem',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+                    e.currentTarget.style.color = 'var(--text-primary)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
+                    e.currentTarget.style.color = 'var(--text-secondary)';
+                  }}
+                >
+                  <FiRefreshCw size={11} />
+                  <span>Refresh Groups</span>
+                </button>
+              </div>
+
+              {displayGroups.length === 0 ? (
+                <div
+                  style={{
+                    padding: '0.85rem',
+                    borderRadius: '8px',
+                    border: '1px dashed var(--border-color)',
+                    textAlign: 'center',
+                    fontSize: '0.6875rem',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  No tab groups discovered for &ldquo;{activeProfile?.display_name || 'Selected Profile'}&rdquo;.
+                  <br />
+                  Create or focus tab groups in Chrome (e.g. &ldquo;Enhance IMG&rdquo;, &ldquo;FB Hero&rdquo;).
+                </div>
+              ) : (
+                displayGroups.map((group, groupIdx) => {
+                  const isEnhance = group.name.toLowerCase().includes('enhance');
+                  const isHero = isHeroNode || group.name.toLowerCase().includes('hero') || group.name.toLowerCase().includes('fb');
+                  const groupBg = isDark ? 'var(--bg-surface)' : '#F8FAFC';
+                  const groupBorder = '1px solid var(--border-color)';
+                  const allGroupTabs = group.tabs || [];
+                  // FB Hero pipeline: Direct mode uses exactly 1 tab, 2-Stage uses 2. Show only the tabs actually used.
+                  const isDirectHeroPipeline = boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1 === true;
+                  const pipelineTabLimit = isHero ? (isDirectHeroPipeline ? 1 : 2) : (boxConfig.workerTabCount || allGroupTabs.length);
+                  const tabs = allGroupTabs.slice(0, Math.max(1, pipelineTabLimit));
+
+                  return (
+                    <div
+                      key={group.id || group.name || groupIdx}
+                      style={{
+                        padding: '0.75rem 0.875rem',
+                        borderRadius: '8px',
+                        backgroundColor: groupBg,
+                        border: groupBorder,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.5rem',
+                      }}
+                    >
+                      {/* Group Title Header */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--text-muted)' }} />
+                          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            {group.name}
+                          </span>
                           <span
                             style={{
-                              fontSize: '0.59375rem',
+                              fontSize: '0.5625rem',
+                              padding: '1px 6px',
+                              borderRadius: '10px',
+                              backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                              color: 'var(--text-secondary)',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {tabs.length} {tabs.length === 1 ? 'Tab' : 'Tabs'}
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (tabs.length > 0) {
+                              try {
+                                const isHeroGrp = isHeroNode || (group.name || '').toLowerCase().includes('hero') || (group.name || '').toLowerCase().includes('fb');
+                                const grpCount = isHeroGrp ? (boxConfig.stagingMode === 'direct_tab2' ? 1 : 2) : (boxConfig.workerTabCount || tabs.length || 4);
+                                await focusBrowserTabGroup({
+                                  profileId: activeProfile?.id || selectedProfileId,
+                                  profileKey: activeProfile?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro'),
+                                  groupName: group.name,
+                                  tabId: tabs[0].id,
+                                  groupTabUrls: tabs.map((t) => t.url).filter(Boolean).slice(0, grpCount),
+                                  url: tabs[0].url,
+                                  workerCount: grpCount,
+                                  force: true,
+                                });
+                              } catch (e) { }
+                            }
+                          }}
+                          style={{
+                            height: '24px',
+                            padding: '0 8px',
+                            borderRadius: '8px',
+                            border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.6875rem',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
+                            e.currentTarget.style.color = 'var(--text-primary)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
+                            e.currentTarget.style.color = 'var(--text-secondary)';
+                          }}
+                        >
+                          <FiExternalLink size={11} />
+                          <span>Focus Group</span>
+                        </button>
+                      </div>
+
+                      {/* Worker Tabs in this Group (Clean Compact Grid) */}
+                      {tabs.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '2px' }}>
+                          <div style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                            Pipeline workers ({tabs.length} live {tabs.length === 1 ? 'tab' : 'tabs'}):
+                          </div>
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: tabs.length > 1 ? 'repeat(2, 1fr)' : '1fr',
+                              gap: '6px',
+                            }}
+                          >
+                            {tabs.map((tab, idx) => (
+                              <div
+                                key={tab.id || idx}
+                                title={`${tab.title || `Worker Tab #${idx + 1}`}\n${tab.url || ''}`}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  padding: '5px 8px',
+                                  borderRadius: '6px',
+                                  backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : '#FFFFFF',
+                                  border: '1px solid var(--border-color)',
+                                  minWidth: 0,
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                                  <div
+                                    style={{
+                                      width: '16px',
+                                      height: '16px',
+                                      borderRadius: '50%',
+                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
+                                      color: 'var(--text-primary)',
+                                      fontSize: '0.5625rem',
+                                      fontWeight: 700,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {idx + 1}
+                                  </div>
+                                  <span
+                                    style={{
+                                      fontSize: '0.6875rem',
+                                      fontWeight: 600,
+                                      color: 'var(--text-primary)',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    Worker #{idx + 1}
+                                  </span>
+                                </div>
+                                <div
+                                  style={{
+                                    width: '6px',
+                                    height: '6px',
+                                    borderRadius: '50%',
+                                    background: '#10B981',
+                                    boxShadow: '0 0 4px #10B981',
+                                    flexShrink: 0,
+                                    marginLeft: '4px',
+                                  }}
+                                  title="Tab Active"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+
+              {/* Global Automation Messages */}
+              {(automationMessage || twoStageMessage) && (
+                <div
+                  style={{
+                    padding: '0.45rem 0.6rem',
+                    borderRadius: '6px',
+                    fontSize: '0.625rem',
+                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.2)' : '#F1F5F9',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <FiCheckCircle size={12} style={{ color: '#10B981', flexShrink: 0 }} />
+                  <span>{automationMessage || twoStageMessage}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* SECTION: ENHANCED IMAGES RESULTS (Downloaded to Disk) */}
+          {!isHeroNode && receivedImages.length > 0 && enhancedImages.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.625rem',
+                padding: '0.75rem',
+                borderRadius: '10px',
+                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.06)' : 'rgba(16, 185, 129, 0.05)',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+              }}
+            >
+              {/* Header Row: Title & Status */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '6px 8px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                  <div
+                    style={{
+                      width: '16px',
+                      height: '16px',
+                      borderRadius: '50%',
+                      backgroundColor: missingPositions.length > 0 && enhancedImages.length === 0 ? '#F59E0B' : '#10B981',
+                      color: '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {missingPositions.length > 0 && enhancedImages.length === 0 ? '!' : '✓'}
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: 'var(--text-primary)',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Enhanced Images ({enhancedImages.length}
+                    {activeImages.length > 0 && enhancedImages.length < activeImages.length ? ` of ${activeImages.length}` : ''} Photos)
+                  </span>
+                  {missingPositions.length > 0 && (
+                    <span
+                      style={{
+                        fontSize: '0.625rem',
+                        fontWeight: 600,
+                        padding: '1px 5px',
+                        borderRadius: '4px',
+                        backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                        color: '#F59E0B',
+                        border: '1px solid rgba(245, 158, 11, 0.25)',
+                      }}
+                    >
+                      {missingPositions.length} Missing
+                    </span>
+                  )}
+                </div>
+
+                {/* When NO missing photos exist, quick actions sit right in header */}
+                {missingPositions.length === 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', flexShrink: 0 }}>
+                    {enhancedImages.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOrderDraft([...enhancedImages]);
+                          setShowOrderModal(true);
+                        }}
+                        style={{
+                          height: '24px',
+                          padding: '0 8px',
+                          fontSize: '0.6875rem',
+                          fontWeight: 500,
+                          borderRadius: '5px',
+                          border: '1px solid rgba(59, 130, 246, 0.35)',
+                          backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                          color: '#60A5FA',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <span>⇅ Order</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={isRegettingImages}
+                      onClick={handleRegetEnhancedImages}
+                      style={{
+                        height: '24px',
+                        padding: '0 8px',
+                        fontSize: '0.6875rem',
+                        fontWeight: 500,
+                        borderRadius: '5px',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                        color: regetFeedback ? '#10B981' : 'var(--text-secondary)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                        e.currentTarget.style.color = 'var(--text-primary)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                        e.currentTarget.style.color = regetFeedback ? '#10B981' : 'var(--text-secondary)';
+                      }}
+                    >
+                      <FiRefreshCw size={10} className={isRegettingImages ? 'animate-spin' : ''} />
+                      <span>{regetFeedback || 'Sync'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        fetch('http://127.0.0.1:9224/reveal-file').catch(() => { });
+                      }}
+                      style={{
+                        height: '24px',
+                        padding: '0 8px',
+                        fontSize: '0.6875rem',
+                        fontWeight: 500,
+                        borderRadius: '5px',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                        color: 'var(--text-secondary)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                        e.currentTarget.style.color = 'var(--text-primary)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                        e.currentTarget.style.color = 'var(--text-secondary)';
+                      }}
+                    >
+                      <FiFolder size={11} style={{ color: '#10B981' }} />
+                      <span>Downloads</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Clean Action Toolbar (Visible when missing photos exist) */}
+              {missingPositions.length > 0 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    paddingTop: '2px',
+                  }}
+                >
+                  {/* 1. Resume / Regenerate Missing Photos */}
+                  {!isAutomating && !isRunningTwoStage && !isHeroNode && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
+                        handleStartGroupAutomation(missingPositions);
+                      }}
+                      style={{
+                        height: '26px',
+                        padding: '0 9px',
+                        fontSize: '0.6875rem',
+                        fontWeight: 600,
+                        borderRadius: '5px',
+                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        color: '#F59E0B',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.18)';
+                        e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.45)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
+                        e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+                      }}
+                      title={`Queue & enhance ${missingPositions.length} missing photo(s): ${missingPositions.map((p) => '#' + p).join(', ')}`}
+                    >
+                      <FiPlay size={10} />
+                      <span>Resume ({missingPositions.length})</span>
+                    </button>
+                  )}
+
+                  {/* 2. Recover from Disk */}
+                  {enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && (
+                    <button
+                      type="button"
+                      disabled={isRecovering}
+                      onClick={async () => {
+                        setIsRecovering(true);
+                        try {
+                          await fetch('http://127.0.0.1:9224/recover-missing-images', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              property_id: propertyContext?.id || '',
+                              propertyId: propertyContext?.id || '',
+                              listing_code: (propertyContext?.listingCode || '').trim(),
+                              listingCode: (propertyContext?.listingCode || '').trim(),
+                              targetPositions: missingPositions,
+                              autoWorkMissing: false,
+                            }),
+                          });
+                          for (let i = 0; i < 6; i++) {
+                            await new Promise((r) => setTimeout(r, 1000));
+                            const refreshedList = await fetchEnhancedDownloadedImages(propertyContext?.id, propertyContext?.listingCode);
+                            if (refreshedList && refreshedList.length > 0) {
+                              const refreshedPositions = new Set(refreshedList.map((img) => img.position));
+                              const remainingMissing = missingPositions.filter((p) => !refreshedPositions.has(p));
+                              if (remainingMissing.length === 0) {
+                                const newTs = Date.now();
+                                setCacheBustTimestamp(newTs);
+                                const cacheBusted = refreshedList.map((img) => ({
+                                  ...img,
+                                  url: img.url.includes('?') ? `${img.url}&_cb=${newTs}` : `${img.url}?_cb=${newTs}`,
+                                }));
+                                const { sorted, hasCustomOrder } = sortEnhancedByCustomOrder(
+                                  cacheBusted,
+                                  (boxConfig as any).enhancedImagesOrder
+                                );
+                                lastEnhancedSigRef.current = sorted
+                                  .map((img) => `${img.position}:${img.backend_url || img.url}:${(img as any).size_bytes || (img as any).size || ''}`)
+                                  .join('|');
+                                setEnhancedImages(sorted);
+                                if (onEnhancedPhotosUpdate) {
+                                  onEnhancedPhotosUpdate(buildEnhancedPhotoMap(sorted, hasCustomOrder));
+                                }
+                                break;
+                              }
+                            }
+                          }
+                          await loadQueue();
+                        } catch (e) {
+                          console.warn('Recovery error:', e);
+                        } finally {
+                          setIsRecovering(false);
+                        }
+                      }}
+                      style={{
+                        height: '26px',
+                        padding: '0 9px',
+                        fontSize: '0.6875rem',
+                        fontWeight: 500,
+                        borderRadius: '5px',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                        color: 'var(--text-secondary)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                        e.currentTarget.style.color = 'var(--text-primary)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                        e.currentTarget.style.color = 'var(--text-secondary)';
+                      }}
+                      title={`Missing ${missingPositions.length} photo(s): ${missingPositions.map((p) => `#${p}`).join(', ')}. Click to recover missing photos from disk.`}
+                    >
+                      <FiRefreshCw size={10} style={{ color: '#F87171' }} className={isRecovering ? 'animate-spin' : ''} />
+                      <span>Recover ({missingPositions.length})</span>
+                    </button>
+                  )}
+
+                  {/* 3. Re-get / Sync */}
+                  <button
+                    type="button"
+                    disabled={isRegettingImages}
+                    onClick={handleRegetEnhancedImages}
+                    style={{
+                      height: '26px',
+                      padding: '0 9px',
+                      fontSize: '0.6875rem',
+                      fontWeight: 500,
+                      borderRadius: '5px',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                      color: regetFeedback ? '#10B981' : 'var(--text-secondary)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                      e.currentTarget.style.color = 'var(--text-primary)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                      e.currentTarget.style.color = regetFeedback ? '#10B981' : 'var(--text-secondary)';
+                    }}
+                    title="Re-get and sync all enhanced photos from your drive / downloads"
+                  >
+                    <FiRefreshCw size={10} className={isRegettingImages ? 'animate-spin' : ''} />
+                    <span>{regetFeedback || 'Sync'}</span>
+                  </button>
+
+                  {/* 4. Downloads folder */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fetch('http://127.0.0.1:9224/reveal-file').catch(() => { });
+                    }}
+                    style={{
+                      height: '26px',
+                      padding: '0 9px',
+                      fontSize: '0.6875rem',
+                      fontWeight: 500,
+                      borderRadius: '5px',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                      color: 'var(--text-secondary)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                      e.currentTarget.style.color = 'var(--text-primary)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                      e.currentTarget.style.color = 'var(--text-secondary)';
+                    }}
+                    title="Open Downloads folder in macOS Finder"
+                  >
+                    <FiFolder size={11} style={{ color: '#10B981' }} />
+                    <span>Downloads</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Grid of Enhanced and Missing Images */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                  gap: '6px',
+                  maxHeight: '420px',
+                  overflowY: 'auto',
+                  paddingRight: '2px',
+                }}
+              >
+                {(() => {
+                  const enhancedMap = new Map<number, EnhancedDownloadedImage>();
+                  enhancedImages.forEach((img) => enhancedMap.set(img.position || 1, img));
+
+                  const cardItems: Array<{
+                    position: number;
+                    enhanced?: EnhancedDownloadedImage;
+                    sourceImage?: { url: string; index?: number };
+                    isMissing: boolean;
+                  }> = [];
+
+                  const hasCustomOrder = Array.isArray((boxConfig as any).enhancedImagesOrder) && (boxConfig as any).enhancedImagesOrder.length > 0;
+                  if (hasCustomOrder && !isHeroNode) {
+                    enhancedImages.forEach((enh, idx) => {
+                      cardItems.push({
+                        position: enh.position || idx + 1,
+                        enhanced: enh,
+                        isMissing: false,
+                      });
+                    });
+                    activeImages.forEach((srcImg, idx) => {
+                      const pos = typeof srcImg.index === 'number' && srcImg.index > 0 ? srcImg.index : idx + 1;
+                      if (!enhancedMap.has(pos)) {
+                        cardItems.push({ position: pos, sourceImage: srcImg, isMissing: true });
+                      }
+                    });
+                  } else if (activeImages.length > 0 && !isHeroNode) {
+                    activeImages.forEach((srcImg, idx) => {
+                      const pos = typeof srcImg.index === 'number' && srcImg.index > 0 ? srcImg.index : idx + 1;
+                      const enh = enhancedMap.get(pos);
+                      cardItems.push({
+                        position: pos,
+                        enhanced: enh,
+                        sourceImage: srcImg,
+                        isMissing: !enh,
+                      });
+                    });
+                  } else {
+                    enhancedImages.forEach((enh, idx) => {
+                      cardItems.push({
+                        position: enh.position || idx + 1,
+                        enhanced: enh,
+                        isMissing: false,
+                      });
+                    });
+                  }
+
+                  return cardItems.map((item) => {
+                    if (item.isMissing) {
+                      return (
+                        <div
+                          key={`missing-pos-${item.position}`}
+                          style={{
+                            position: 'relative',
+                            borderRadius: '7px',
+                            overflow: 'hidden',
+                            border: '1px dashed #F59E0B',
+                            backgroundColor: isDark ? '#1E293B' : '#FEF3C7',
+                            aspectRatio: '1 / 1',
+                            width: '100%',
+                          }}
+                        >
+                          {item.sourceImage?.url && (
+                            <img
+                              src={item.sourceImage.url}
+                              alt={`Photo #${item.position}`}
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover',
+                                display: 'block',
+                                opacity: 0.6,
+                                filter: 'grayscale(25%)',
+                              }}
+                            />
+                          )}
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: '4px',
+                              left: '4px',
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                              color: '#FFFFFF',
+                              fontSize: '0.5625rem',
+                              fontWeight: 700,
+                              backdropFilter: 'blur(4px)',
+                              zIndex: 2,
+                            }}
+                          >
+                            #{item.position}
+                          </div>
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: '4px',
+                              right: '4px',
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              backgroundColor: '#F59E0B',
+                              color: '#FFFFFF',
+                              fontSize: '0.5625rem',
+                              fontWeight: 700,
+                              zIndex: 2,
+                            }}
+                            title="Missing"
+                          >
+                            !
+                          </div>
+                          <div
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              display: 'flex',
+                              alignItems: 'flex-end',
+                              justifyContent: 'center',
+                              padding: '6px',
+                              background: 'linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 60%)',
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
+                                handleStartGroupAutomation([item.position]);
+                              }}
+                              disabled={isAutomating || isRunningTwoStage}
+                              style={{
+                                background: '#F59E0B',
+                                border: 'none',
+                                borderRadius: '5px',
+                                color: '#000000',
+                                fontSize: '0.5625rem',
+                                fontWeight: 700,
+                                padding: '3px 7px',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                              }}
+                              title={`Queue & enhance missing Photo #${item.position}`}
+                            >
+                              <FiPlay size={8} />
+                              <span>Retry</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    const img = item.enhanced!;
+                    const posNum = img.position || item.position;
+                    const cardKey = `${img.filename || posNum}-${img.size || 0}-${cacheBustTimestamp}`;
+                    const isHovered = hoveredEnhancedCardKey === cardKey;
+                    const displayUrl = img.url
+                      ? img.url.includes('?')
+                        ? `${img.url}&_cb=${cacheBustTimestamp}`
+                        : `${img.url}?_cb=${cacheBustTimestamp}`
+                      : '';
+                    const overlayBtnStyle: React.CSSProperties = {
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                      color: '#F8FAFC',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: 0,
+                      backdropFilter: 'blur(6px)',
+                      transition: 'transform 0.12s ease, background-color 0.12s ease',
+                    };
+
+                    return (
+                      <div
+                        key={cardKey}
+                        onMouseEnter={() => setHoveredEnhancedCardKey(cardKey)}
+                        onMouseLeave={() => setHoveredEnhancedCardKey((prev) => (prev === cardKey ? null : prev))}
+                        onClick={() => {
+                          setPreviewModalImage({
+                            url: displayUrl || img.url,
+                            fileName: img.filename,
+                            title: `Enhanced Photo #${posNum}`,
+                            filePath: (img as any).full_path || (img.filename ? `/Users/zinwaishine/Desktop/Project_EA/backend/storage/uploads/facebook-import/enhanced/${img.filename}` : undefined),
+                          });
+                        }}
+                        style={{
+                          position: 'relative',
+                          borderRadius: '7px',
+                          overflow: 'hidden',
+                          border: isHovered
+                            ? '1px solid rgba(16, 185, 129, 0.6)'
+                            : isDark
+                              ? '1px solid rgba(255, 255, 255, 0.12)'
+                              : '1px solid var(--border-color)',
+                          backgroundColor: isDark ? '#1E293B' : '#E2E8F0',
+                          aspectRatio: '1 / 1',
+                          width: '100%',
+                          cursor: 'pointer',
+                          transition: 'border-color 0.15s ease',
+                        }}
+                      >
+                        <img
+                          src={displayUrl}
+                          key={displayUrl}
+                          alt={img.filename}
+                          loading="eager"
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            display: 'block',
+                          }}
+                        />
+
+                        {/* Top-left position badge */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '4px',
+                            left: '4px',
+                            padding: '1px 5px',
+                            borderRadius: '4px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.72)',
+                            color: '#FFFFFF',
+                            fontSize: '0.5625rem',
+                            fontWeight: 700,
+                            backdropFilter: 'blur(4px)',
+                            zIndex: 2,
+                          }}
+                        >
+                          #{posNum}
+                        </div>
+
+                        {/* Top-right compact Enhanced badge */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '4px',
+                            right: '4px',
+                            padding: '1px 5px',
+                            borderRadius: '4px',
+                            backgroundColor: '#10B981',
+                            color: '#FFFFFF',
+                            fontSize: '0.5625rem',
+                            fontWeight: 700,
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                            zIndex: 2,
+                          }}
+                          title="Enhanced"
+                        >
+                          ✓
+                        </div>
+
+                        {/* Hover-only action button bar overlaid above image */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            display: 'flex',
+                            alignItems: 'flex-end',
+                            justifyContent: 'center',
+                            gap: '4px',
+                            padding: '6px 4px',
+                            background: 'linear-gradient(to top, rgba(15, 23, 42, 0.88) 0%, rgba(15, 23, 42, 0.28) 55%, transparent 100%)',
+                            opacity: isHovered ? 1 : 0,
+                            pointerEvents: isHovered ? 'auto' : 'none',
+                            transition: 'opacity 0.15s ease',
+                            zIndex: 3,
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRegetSingleImage(posNum);
+                            }}
+                            disabled={regettingSinglePos === posNum}
+                            style={overlayBtnStyle}
+                            title={`Re-get photo #${posNum} from drive`}
+                          >
+                            <FiRefreshCw
+                              size={11}
+                              className={regettingSinglePos === posNum ? 'animate-spin' : ''}
+                            />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(img.filename)}`).catch(() => { });
+                            }}
+                            style={overlayBtnStyle}
+                            title="Reveal in Finder"
+                          >
+                            <FiFolder size={11} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPreviewModalImage({
+                                url: displayUrl || img.url,
+                                fileName: img.filename,
+                                title: `Enhanced Photo #${posNum}`,
+                                filePath: (img as any).full_path || (img.filename ? `/Users/zinwaishine/Desktop/Project_EA/backend/storage/uploads/facebook-import/enhanced/${img.filename}` : undefined),
+                              });
+                            }}
+                            style={{ ...overlayBtnStyle, color: '#34D399' }}
+                            title="View Full Resolution"
+                          >
+                            <FiMaximize2 size={11} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteEnhancedImage(img);
+                            }}
+                            disabled={deletingPos === posNum}
+                            style={{ ...overlayBtnStyle, color: '#F87171' }}
+                            title={`Delete photo #${posNum}`}
+                          >
+                            <FiTrash2 size={11} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* SECTION G — SMART IMAGE QUEUE */}
+          {!isHeroNode && (() => {
+            // Strictly show jobs from current property run, or preview images from current "Get Images"
+            const currentPropId = propertyContext?.id;
+            const matchingQueueJobs = currentPropId
+              ? queueJobs.filter((j) => j.property_id === currentPropId)
+              : [];
+
+            const displayQueueItems: any[] = matchingQueueJobs.length > 0
+              ? matchingQueueJobs
+              : (propertyContext?.images || []).map((img, i) => ({
+                id: `preview-${i + 1}`,
+                job_id: `get-images-photo-${i + 1}`,
+                property_id: currentPropId || '',
+                original_position: img.index || i + 1,
+                status: 'READY_FOR_USER',
+                source_file_url: img.url,
+                output_file_url: '',
+              }));
+
+            if (displayQueueItems.length === 0) return null;
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                    Smart Image Queue ({displayQueueItems.length} Images)
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', marginLeft: 'auto' }}>
+                    {missingPositions.length > 0 && enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && !isHeroNode && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
+                          handleStartGroupAutomation(missingPositions);
+                        }}
+                        style={{
+                          height: '24px',
+                          padding: '0 8px',
+                          fontSize: '0.6875rem',
+                          fontWeight: 600,
+                          borderRadius: '5px',
+                          color: '#F59E0B',
+                          border: '1px solid rgba(245, 158, 11, 0.3)',
+                          backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.18)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
+                        }}
+                        title={`Queue & work ${missingPositions.length} missing photos: ${missingPositions.map((p) => '#' + p).join(', ')}`}
+                      >
+                        <FiPlay size={9} />
+                        <span>Run Missing ({missingPositions.length})</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={loadQueue}
+                      style={{
+                        height: '24px',
+                        padding: '0 7px',
+                        fontSize: '0.6875rem',
+                        borderRadius: '5px',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                        color: 'var(--text-secondary)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      title="Refresh Queue"
+                    >
+                      <FiRefreshCw size={10} />
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: displayQueueItems.length > 1 ? 'repeat(2, 1fr)' : '1fr',
+                    gap: '6px',
+                  }}
+                >
+                  {displayQueueItems.map((job) => {
+                    const isEnhanced = enhancedImages.some((img) => img.position === job.original_position);
+                    const isCompleted = job.status === 'COMPLETED' || isEnhanced;
+                    const isMissing = !isCompleted && enhancedImages.length > 0;
+                    const isReady = job.status === 'READY_FOR_USER' && !isCompleted && !isMissing;
+                    const isLocal = job.status === 'PROCESSING_LOCAL';
+                    const isFailed = job.status === 'FAILED';
+
+                    const badgeColor = isCompleted
+                      ? '#10B981'
+                      : isMissing
+                        ? '#F59E0B'
+                        : isReady
+                          ? '#06B6D4'
+                          : isLocal
+                            ? '#8B5CF6'
+                            : isFailed
+                              ? '#EF4444'
+                              : '#6B7280';
+
+                    return (
+                      <div
+                        key={job.id}
+                        title={`Image #${job.original_position} · Status: ${isCompleted ? 'COMPLETED' : isMissing ? 'MISSING' : job.status}`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '5px 8px',
+                          borderRadius: '6px',
+                          backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : '#FFFFFF',
+                          border: isMissing ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid var(--border-color)',
+                          minWidth: 0,
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                          <div
+                            style={{
+                              width: '18px',
+                              height: '18px',
+                              borderRadius: '4px',
+                              backgroundColor: isCompleted ? 'rgba(16, 185, 129, 0.15)' : isMissing ? 'rgba(245, 158, 11, 0.15)' : isDark ? '#0F172A' : '#E2E8F0',
+                              border: isCompleted ? '1px solid rgba(16, 185, 129, 0.4)' : isMissing ? '1px solid rgba(245, 158, 11, 0.4)' : 'none',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '0.625rem',
+                              fontWeight: 700,
+                              color: isCompleted ? '#10B981' : isMissing ? '#F59E0B' : 'var(--text-primary)',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {job.original_position}
+                          </div>
+                          <span
+                            style={{
+                              fontSize: '0.6875rem',
                               fontWeight: 600,
                               color: 'var(--text-primary)',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap',
                             }}
-                            title={img.filename}
                           >
-                            {img.filename}
-                          </span>
-                          <span style={{ fontSize: '0.53125rem', fontWeight: 500, color: 'var(--text-muted)', flexShrink: 0 }}>
-                            {Math.round(((img as any).size_bytes || img.size || 0) / 1024)} KB
+                            Image #{job.original_position}
                           </span>
                         </div>
-                        <span
-                          style={{
-                            fontSize: '0.53125rem',
-                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                            color: isDark ? '#93C5FD' : '#2563EB',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            cursor: 'pointer',
-                            lineHeight: 1.2,
-                            marginTop: '1px',
-                          }}
-                          title={`Click to reveal in Finder: ${(img as any).full_path || img.path || `~/Downloads/${img.filename}`}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(img.filename)}`).catch(() => {});
-                          }}
-                        >
-                          {(img as any).full_path || img.path || `~/Downloads/${img.filename}`}
-                        </span>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                          {isMissing && !isAutomating && !isRunningTwoStage && !isHeroNode && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
+                                handleStartGroupAutomation([job.original_position]);
+                              }}
+                              title={`Queue and enhance Image #${job.original_position} again`}
+                              style={{
+                                padding: '1px 5px',
+                                fontSize: '0.5625rem',
+                                fontWeight: 600,
+                                backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                                color: '#F59E0B',
+                                border: '1px solid rgba(245, 158, 11, 0.4)',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '2px',
+                              }}
+                            >
+                              <FiPlay size={8} />
+                              <span>Work</span>
+                            </button>
+                          )}
+                          <span
+                            style={{
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              fontSize: '0.5625rem',
+                              fontWeight: 600,
+                              backgroundColor: `${badgeColor}18`,
+                              color: badgeColor,
+                              border: `1px solid ${badgeColor}33`,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {isCompleted ? 'Done' : isMissing ? 'Missing' : isReady ? 'Ready' : isLocal ? 'Local' : job.status}
+                          </span>
+
+                          {job.output_file_url && (
+                            <a
+                              href={job.output_file_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: '#10B981', display: 'flex', alignItems: 'center' }}
+                              title="View Enhanced Master"
+                            >
+                              <FiExternalLink size={10} />
+                            </a>
+                          )}
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <button
-                          type="button"
-                          onClick={() => handleRegetSingleImage(img.position || item.position)}
-                          disabled={regettingSinglePos === (img.position || item.position)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'inherit',
-                            cursor: 'pointer',
-                            padding: '2px',
-                            display: 'flex',
-                            alignItems: 'center',
-                          }}
-                          title={`Re-get photo #${img.position || item.position} from drive`}
-                        >
-                          <FiRefreshCw
-                            size={10}
-                            className={regettingSinglePos === (img.position || item.position) ? 'animate-spin' : ''}
-                          />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(img.filename)}`).catch(() => {});
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'inherit',
-                            cursor: 'pointer',
-                            padding: '2px',
-                            display: 'flex',
-                            alignItems: 'center',
-                          }}
-                          title="Reveal in Finder"
-                        >
-                          <FiFolder size={11} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewModalImage({
-                              url: displayUrl || img.url,
-                              fileName: img.filename,
-                              title: `Enhanced Photo #${img.position || item.position}`,
-                              filePath: (img as any).full_path || (img.filename ? `/Users/zinwaishine/Desktop/Project_EA/backend/storage/uploads/facebook-import/enhanced/${img.filename}` : undefined),
-                            });
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#10B981',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            padding: '2px',
-                          }}
-                          title="View Full Resolution in Modal"
-                        >
-                          <FiMaximize2 size={11} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteEnhancedImage(img)}
-                          disabled={deletingPos === (img.position || item.position)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#EF4444',
-                            cursor: 'pointer',
-                            padding: '2px',
-                            display: 'flex',
-                            alignItems: 'center',
-                          }}
-                          title={`Delete photo #${img.position || item.position}`}
-                        >
-                          <FiTrash2 size={11} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-          </div>
-        </div>
-      )}
-
-      {/* SECTION G — SMART IMAGE QUEUE */}
-      {!isHeroNode && (() => {
-        // Strictly show jobs from current property run, or preview images from current "Get Images"
-        const currentPropId = propertyContext?.id;
-        const matchingQueueJobs = currentPropId
-          ? queueJobs.filter((j) => j.property_id === currentPropId)
-          : [];
-
-        const displayQueueItems: any[] = matchingQueueJobs.length > 0
-          ? matchingQueueJobs
-          : (propertyContext?.images || []).map((img, i) => ({
-              id: `preview-${i + 1}`,
-              job_id: `get-images-photo-${i + 1}`,
-              property_id: currentPropId || '',
-              original_position: img.index || i + 1,
-              status: 'READY_FOR_USER',
-              source_file_url: img.url,
-              output_file_url: '',
-            }));
-
-        if (displayQueueItems.length === 0) return null;
-
-        return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
-              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                Smart Image Queue ({displayQueueItems.length} Images)
-              </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', marginLeft: 'auto' }}>
-                {missingPositions.length > 0 && enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && !isHeroNode && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
-                      handleStartGroupAutomation(missingPositions);
-                    }}
-                    style={{
-                      height: '24px',
-                      padding: '0 8px',
-                      fontSize: '0.6875rem',
-                      fontWeight: 600,
-                      borderRadius: '5px',
-                      color: '#F59E0B',
-                      border: '1px solid rgba(245, 158, 11, 0.3)',
-                      backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.18)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
-                    }}
-                    title={`Queue & work ${missingPositions.length} missing photos: ${missingPositions.map((p) => '#' + p).join(', ')}`}
-                  >
-                    <FiPlay size={9} />
-                    <span>Run Missing ({missingPositions.length})</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={loadQueue}
-                  style={{
-                    height: '24px',
-                    padding: '0 7px',
-                    fontSize: '0.6875rem',
-                    borderRadius: '5px',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                    color: 'var(--text-secondary)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                  title="Refresh Queue"
-                >
-                  <FiRefreshCw size={10} />
-                </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: displayQueueItems.length > 1 ? 'repeat(2, 1fr)' : '1fr',
-                gap: '6px',
-              }}
-            >
-              {displayQueueItems.map((job) => {
-                const isEnhanced = enhancedImages.some((img) => img.position === job.original_position);
-                const isCompleted = job.status === 'COMPLETED' || isEnhanced;
-                const isMissing = !isCompleted && enhancedImages.length > 0;
-                const isReady = job.status === 'READY_FOR_USER' && !isCompleted && !isMissing;
-                const isLocal = job.status === 'PROCESSING_LOCAL';
-                const isFailed = job.status === 'FAILED';
-
-                const badgeColor = isCompleted
-                  ? '#10B981'
-                  : isMissing
-                  ? '#F59E0B'
-                  : isReady
-                  ? '#06B6D4'
-                  : isLocal
-                  ? '#8B5CF6'
-                  : isFailed
-                  ? '#EF4444'
-                  : '#6B7280';
-
-                return (
-                  <div
-                    key={job.id}
-                    title={`Image #${job.original_position} · Status: ${isCompleted ? 'COMPLETED' : isMissing ? 'MISSING' : job.status}`}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '5px 8px',
-                      borderRadius: '6px',
-                      backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : '#FFFFFF',
-                      border: isMissing ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid var(--border-color)',
-                      minWidth: 0,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                      <div
-                        style={{
-                          width: '18px',
-                          height: '18px',
-                          borderRadius: '4px',
-                          backgroundColor: isCompleted ? 'rgba(16, 185, 129, 0.15)' : isMissing ? 'rgba(245, 158, 11, 0.15)' : isDark ? '#0F172A' : '#E2E8F0',
-                          border: isCompleted ? '1px solid rgba(16, 185, 129, 0.4)' : isMissing ? '1px solid rgba(245, 158, 11, 0.4)' : 'none',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '0.625rem',
-                          fontWeight: 700,
-                          color: isCompleted ? '#10B981' : isMissing ? '#F59E0B' : 'var(--text-primary)',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {job.original_position}
-                      </div>
-                      <span
-                        style={{
-                          fontSize: '0.6875rem',
-                          fontWeight: 600,
-                          color: 'var(--text-primary)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        Image #{job.original_position}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                      {isMissing && !isAutomating && !isRunningTwoStage && !isHeroNode && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedGroupName(currentGroup.name || boxConfig.browserGroupName || 'Enhance IMG');
-                            handleStartGroupAutomation([job.original_position]);
-                          }}
-                          title={`Queue and enhance Image #${job.original_position} again`}
-                          style={{
-                            padding: '1px 5px',
-                            fontSize: '0.5625rem',
-                            fontWeight: 600,
-                            backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                            color: '#F59E0B',
-                            border: '1px solid rgba(245, 158, 11, 0.4)',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '2px',
-                          }}
-                        >
-                          <FiPlay size={8} />
-                          <span>Work</span>
-                        </button>
-                      )}
-                      <span
-                        style={{
-                          padding: '1px 5px',
-                          borderRadius: '4px',
-                          fontSize: '0.5625rem',
-                          fontWeight: 600,
-                          backgroundColor: `${badgeColor}18`,
-                          color: badgeColor,
-                          border: `1px solid ${badgeColor}33`,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {isCompleted ? 'Done' : isMissing ? 'Missing' : isReady ? 'Ready' : isLocal ? 'Local' : job.status}
-                      </span>
-
-                      {job.output_file_url && (
-                        <a
-                          href={job.output_file_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ color: '#10B981', display: 'flex', alignItems: 'center' }}
-                          title="View Enhanced Master"
-                        >
-                          <FiExternalLink size={10} />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-        </div>
-      );
-    })()}
+            );
+          })()}
         </>
       )}
 
@@ -7395,7 +7433,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(previewModalImage.fileName || '')}`).catch(() => {});
+                      fetch(`http://127.0.0.1:9224/reveal-file?file=${encodeURIComponent(previewModalImage.fileName || '')}`).catch(() => { });
                     }}
                     style={{
                       height: '28px',
@@ -7549,6 +7587,311 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 </button>
               </div>
             )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── COMPACT IMAGE ORDER MODAL (Drag & Drop without renaming files) ── */}
+      {showOrderModal && typeof document !== 'undefined' && createPortal(
+        <div
+          onClick={() => setShowOrderModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 999999,
+            backgroundColor: 'rgba(0, 0, 0, 0.72)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '520px',
+              maxHeight: '85vh',
+              backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+              borderRadius: '12px',
+              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                  Adjust Enhanced Images Order ({orderDraft.length})
+                </div>
+                <div style={{ fontSize: '0.68rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                  Drag photos to reorder. Filenames stay unchanged; updates all connected nodes.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowOrderModal(false)}
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: 'transparent',
+                  color: isDark ? '#8B949E' : '#64748B',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <FiX size={16} />
+              </button>
+            </div>
+
+            {/* Compact 4-col Draggable Grid */}
+            <div
+              style={{
+                padding: '14px',
+                overflowY: 'auto',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                gap: '8px',
+              }}
+            >
+              {orderDraft.map((img, idx) => {
+                const imgSrc = img.url
+                  ? (img.url.includes('?') ? `${img.url}&_cb=${cacheBustTimestamp}` : `${img.url}?_cb=${cacheBustTimestamp}`)
+                  : '';
+                const moveDraft = (from: number, to: number) => {
+                  if (to < 0 || to >= orderDraft.length || from === to) return;
+                  const next = [...orderDraft];
+                  const [moved] = next.splice(from, 1);
+                  next.splice(to, 0, moved);
+                  setOrderDraft(next);
+                };
+                return (
+                  <div
+                    key={img.filename || img.position || idx}
+                    draggable
+                    onDragStart={() => setDragOrderIdx(idx)}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (dragOrderIdx !== null && dragOrderIdx !== idx) {
+                        moveDraft(dragOrderIdx, idx);
+                      }
+                      setDragOrderIdx(null);
+                    }}
+                    onDragEnd={() => setDragOrderIdx(null)}
+                    style={{
+                      position: 'relative',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      border: dragOrderIdx === idx
+                        ? '2px solid #3B82F6'
+                        : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                      backgroundColor: isDark ? '#161B22' : '#F8FAFC',
+                      cursor: 'grab',
+                      userSelect: 'none',
+                      opacity: dragOrderIdx === idx ? 0.6 : 1,
+                    }}
+                  >
+                    <div style={{ width: '100%', height: '86px', position: 'relative', backgroundColor: '#0D1117' }}>
+                      <img
+                        src={imgSrc}
+                        alt={img.filename}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }}
+                      />
+                      {/* New slot badge */}
+                      <span
+                        style={{
+                          position: 'absolute',
+                          top: '4px',
+                          left: '4px',
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          backgroundColor: '#2563EB',
+                          color: '#FFFFFF',
+                          fontSize: '0.6rem',
+                          fontWeight: 700,
+                        }}
+                      >
+                        Pos {idx + 1}
+                      </span>
+                      {/* Original file number badge */}
+                      <span
+                        style={{
+                          position: 'absolute',
+                          top: '4px',
+                          right: '4px',
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          backgroundColor: 'rgba(0,0,0,0.72)',
+                          color: '#E2E8F0',
+                          fontSize: '0.58rem',
+                          fontWeight: 600,
+                        }}
+                        title={`Original file: ${img.filename}`}
+                      >
+                        #{img.position || idx + 1}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '3px 5px',
+                        gap: '2px',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        disabled={idx === 0}
+                        onClick={() => moveDraft(idx, idx - 1)}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          color: idx === 0 ? 'var(--text-muted)' : (isDark ? '#E2E8F0' : '#334155'),
+                          opacity: idx === 0 ? 0.3 : 0.9,
+                          cursor: idx === 0 ? 'default' : 'pointer',
+                          fontSize: '0.68rem',
+                          padding: '0 3px',
+                        }}
+                      >
+                        ←
+                      </button>
+                      <span
+                        style={{
+                          fontSize: '0.56rem',
+                          color: isDark ? '#8B949E' : '#64748B',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                        title={img.filename}
+                      >
+                        {img.filename}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={idx === orderDraft.length - 1}
+                        onClick={() => moveDraft(idx, idx + 1)}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          color: idx === orderDraft.length - 1 ? 'var(--text-muted)' : (isDark ? '#E2E8F0' : '#334155'),
+                          opacity: idx === orderDraft.length - 1 ? 0.3 : 0.9,
+                          cursor: idx === orderDraft.length - 1 ? 'default' : 'pointer',
+                          fontSize: '0.68rem',
+                          padding: '0 3px',
+                        }}
+                      >
+                        →
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 16px',
+                borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                gap: '8px',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  const resetList = [...orderDraft].sort((a, b) => (a.position || 0) - (b.position || 0));
+                  setOrderDraft(resetList);
+                }}
+                style={{
+                  height: '32px',
+                  padding: '0 10px',
+                  borderRadius: '6px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  backgroundColor: 'transparent',
+                  color: isDark ? '#8B949E' : '#64748B',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Reset Original
+              </button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowOrderModal(false)}
+                  style={{
+                    height: '32px',
+                    padding: '0 12px',
+                    borderRadius: '6px',
+                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                    backgroundColor: 'transparent',
+                    color: isDark ? '#E2E8F0' : '#334155',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextOrder = orderDraft.map((img) => img.filename || String(img.position || ''));
+                    updateMultiConfig({ enhancedImagesOrder: nextOrder });
+                    lastEnhancedSigRef.current = orderDraft.map((img) => `${img.position}:${img.backend_url || img.url}:${(img as any).size_bytes || (img as any).size || ''}`).join('|');
+                    setEnhancedImages(orderDraft);
+                    if (onEnhancedPhotosUpdate) {
+                      onEnhancedPhotosUpdate(buildEnhancedPhotoMap(orderDraft, true));
+                    }
+                    setShowOrderModal(false);
+                  }}
+                  style={{
+                    height: '32px',
+                    padding: '0 14px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    backgroundColor: '#2563EB',
+                    color: '#FFFFFF',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <FiCheck size={13} />
+                  <span>Done &amp; Apply Order</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>,
         document.body

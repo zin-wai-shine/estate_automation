@@ -2558,11 +2558,18 @@ export const CreateWorkflowView: React.FC = () => {
           const inIds = inConns.map((c: any) => c.fromNodeId);
           const extPlatform = (box as any).extensionPlatform || 'auto';
           const descSrcId = (box as any).extensionDescriptionSourceId || 'auto';
+          const descSrcList: string[] = Array.isArray((box as any).extensionDescriptionSources)
+            ? (box as any).extensionDescriptionSources.filter((id: string) => inIds.includes(id))
+            : (descSrcId !== 'auto' && inIds.includes(descSrcId) ? [descSrcId] : []);
           const titleSrcId = (box as any).extensionTitleSourceId || 'auto';
 
           let extText = '';
-          if (descSrcId !== 'auto' && generatedOutputsMap[descSrcId]) {
-            extText = generatedOutputsMap[descSrcId];
+          if (descSrcList.length > 0) {
+            extText = descSrcList
+              .map((id) => generatedOutputsMap[id] || '')
+              .map((t) => t.trim())
+              .filter(Boolean)
+              .join('\n\n');
           } else {
             for (const fid of inIds) {
               if (generatedOutputsMap[fid]) {
@@ -4339,12 +4346,19 @@ export const CreateWorkflowView: React.FC = () => {
           const inIds = inConns.map((c: any) => c.fromNodeId);
           const extPlatform = (nextBox as any).extensionPlatform || 'auto';
           const descSrcId = (nextBox as any).extensionDescriptionSourceId || 'auto';
+          const descSrcList: string[] = Array.isArray((nextBox as any).extensionDescriptionSources)
+            ? (nextBox as any).extensionDescriptionSources.filter((id: string) => inIds.includes(id))
+            : (descSrcId !== 'auto' && inIds.includes(descSrcId) ? [descSrcId] : []);
           const titleSrcId = (nextBox as any).extensionTitleSourceId || 'auto';
           const outMap = ctx.generatedOutputsMap || {};
 
           let extText = '';
-          if (descSrcId !== 'auto' && outMap[descSrcId]) {
-            extText = outMap[descSrcId];
+          if (descSrcList.length > 0) {
+            extText = descSrcList
+              .map((id) => outMap[id] || '')
+              .map((t) => t.trim())
+              .filter(Boolean)
+              .join('\n\n');
           } else {
             for (const fid of inIds) {
               if (outMap[fid]) {

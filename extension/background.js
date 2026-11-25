@@ -3295,16 +3295,19 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
                 return { mediaEls, progressEls };
               })()`);
 
-              const waitForMediaThumbnails = async (beforeCount, timeoutMs = 5000) => {
+              const waitForMediaThumbnails = async (beforeCount, timeoutMs = 20000, maxProgressTimeoutMs = 45000) => {
                 const start = Date.now();
                 let sawProgress = false;
-                while (Date.now() - start < timeoutMs) {
+                while (true) {
+                  const elapsed = Date.now() - start;
                   const snap = await countMediaThumbnails();
                   if (snap.progressEls > 0) sawProgress = true;
                   if (snap.mediaEls > beforeCount) {
                     return { afterCount: snap.mediaEls, sawProgress };
                   }
-                  await delay(250);
+                  const activeLimit = sawProgress ? maxProgressTimeoutMs : timeoutMs;
+                  if (elapsed >= activeLimit) break;
+                  await delay(300);
                 }
                 const finalSnap = await countMediaThumbnails();
                 return { afterCount: finalSnap.mediaEls, sawProgress: sawProgress || finalSnap.progressEls > 0 };
@@ -3527,15 +3530,15 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
                 let afterMediaCount = beforeMediaCount;
                 let sawProgress = false;
                 if (filesAssigned) {
-                  const resSnap = await waitForMediaThumbnails(beforeMediaCount, 5000);
+                  const baseWaitMs = Math.min(25000, Math.max(12000, localPaths.length * 2000));
+                  const maxProgressMs = Math.min(60000, Math.max(30000, localPaths.length * 4000));
+                  const resSnap = await waitForMediaThumbnails(beforeMediaCount, baseWaitMs, maxProgressMs);
                   afterMediaCount = resSnap.afterCount;
                   sawProgress = resSnap.sawProgress;
-                  if (afterMediaCount > beforeMediaCount) {
+                  if (afterMediaCount > beforeMediaCount || sawProgress) {
                     attachedCount = localPaths.length;
                   } else {
-                    debugNote += sawProgress
-                      ? `upload-processing-timeout(${mediaStrategy}) `
-                      : `media-not-rendered(${mediaStrategy}) `;
+                    debugNote += `media-not-rendered(${mediaStrategy}) `;
                   }
                 }
 

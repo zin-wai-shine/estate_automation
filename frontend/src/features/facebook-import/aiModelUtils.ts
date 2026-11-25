@@ -139,6 +139,20 @@ export const isExtensionAutofillBox = (
 };
 
 /**
+ * Determines whether a box is a Folder Images loader node.
+ */
+export const isFolderImagesBox = (
+  box?: { id?: string; provider?: string; processType?: string; title?: string }
+): boolean => {
+  if (!box) return false;
+  return (
+    box.provider === 'folder_images' ||
+    box.processType === 'folder_images' ||
+    Boolean(box.id?.includes('folder-images'))
+  );
+};
+
+/**
  * Determines whether a box is a Google Sheet integration node.
  */
 export const isGoogleSheetBox = (
@@ -199,7 +213,7 @@ export const isCropStudioBox = (
 ): boolean => {
   if (!box) return false;
   if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
-  if (isN8NAIBox(box) || isExternalBrowserAIBox(box) || isGoogleSheetBox(box) || isExtensionAutofillBox(box)) return false;
+  if (isN8NAIBox(box) || isExternalBrowserAIBox(box) || isGoogleSheetBox(box) || isExtensionAutofillBox(box) || isFolderImagesBox(box)) return false;
   return (
     box.processType === 'crop_studio' ||
     box.processType === 'photo_crop' ||
@@ -216,7 +230,7 @@ export const isWatermarkAIBox = (
 ): boolean => {
   if (!box) return false;
   if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
-  if (isN8NAIBox(box) || isExternalBrowserAIBox(box) || isGoogleSheetBox(box) || isExtensionAutofillBox(box)) return false;
+  if (isN8NAIBox(box) || isExternalBrowserAIBox(box) || isGoogleSheetBox(box) || isExtensionAutofillBox(box) || isFolderImagesBox(box)) return false;
   if (box.processType === 'text_format' || box.processType === 'text_ai') return false;
   if (isCropStudioBox(box)) return false;
   return (
@@ -237,7 +251,7 @@ export const isTextFormatAIBox = (
 ): boolean => {
   if (!box) return false;
   if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
-  if (isN8NAIBox(box) || isExternalBrowserAIBox(box) || isGoogleSheetBox(box) || isExtensionAutofillBox(box)) return false;
+  if (isN8NAIBox(box) || isExternalBrowserAIBox(box) || isGoogleSheetBox(box) || isExtensionAutofillBox(box) || isFolderImagesBox(box)) return false;
   if (isCropStudioBox(box) || isWatermarkAIBox(box)) return false;
   if (Boolean(box.cropFormatId) || Boolean(box.watermarkPresetId)) return false;
   if (box.processType === 'image_enhance' || box.processType === 'watermark' || box.provider === 'runware_ai' || box.provider === 'watermark') return false;
@@ -266,7 +280,7 @@ export const isTextAIBox = (
   if (!box) return false;
   if (isCropStudioBox(box)) return false;
   if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
-  if (isN8NAIBox(box) || isExternalBrowserAIBox(box) || isGoogleSheetBox(box) || isExtensionAutofillBox(box)) return false;
+  if (isN8NAIBox(box) || isExternalBrowserAIBox(box) || isGoogleSheetBox(box) || isExtensionAutofillBox(box) || isFolderImagesBox(box)) return false;
   if (isWatermarkAIBox(box)) return false;
   if (isTextFormatAIBox(box)) return false;
   if (isImageAIBox(box, connections)) return false;
@@ -284,7 +298,7 @@ export const isImageAIBox = (
   if (!box) return false;
   if (isCropStudioBox(box)) return true;
   if (isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box)) return false;
-  if (isN8NAIBox(box) || isGoogleSheetBox(box) || isExtensionAutofillBox(box)) return false;
+  if (isN8NAIBox(box) || isGoogleSheetBox(box) || isExtensionAutofillBox(box) || isFolderImagesBox(box)) return false;
   if (isExternalBrowserAIBox(box)) return true;
   if (isWatermarkAIBox(box)) return true;
   // If connected from 'get-content', it is guaranteed to be a Content / Copywriting node

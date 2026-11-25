@@ -38,6 +38,8 @@ import {
   FiChevronRight,
   FiTerminal,
   FiShield,
+  FiLock,
+  FiUnlock,
   FiScissors,
   FiGrid,
   FiChevronDown,
@@ -73,7 +75,7 @@ import { HiSparkles } from 'react-icons/hi2';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { AITrainingChatbot, ModelSelectorMenu, LaoZhangIcon, RunwareIcon } from './AITrainingChatbot';
 import { useTheme } from '../../context/ThemeContext';
-import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isCropStudioBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExtensionAutofillBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox, AI_ENGINE_MODEL_GROUPS, CONTENT_AI_MODEL_OPTIONS } from './aiModelUtils';
+import { getAIModelDisplayName, isImageAIBox, isImageModel, isWatermarkAIBox, isCropStudioBox, isEnhanceAIBox, isAIBoxConnected, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExtensionAutofillBox, isFolderImagesBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox, AI_ENGINE_MODEL_GROUPS, CONTENT_AI_MODEL_OPTIONS } from './aiModelUtils';
 import { AIImageStudio } from './AIImageStudio';
 import { ExternalBrowserSidebar } from '../browser-processing/ExternalBrowserSidebar';
 import { getPersistedReferenceImage, isReferenceImageExplicitlyDeleted } from '../browser-processing/referenceImageStorage';
@@ -3924,6 +3926,13 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
   }, [executionState?.hasError, executionState?.failedNodeIds]);
 
+  const enhancedOrderKey = useMemo(() => {
+    const orderBox = (config.aiBoxes || []).find(
+      (b) => Array.isArray((b as any).enhancedImagesOrder) && (b as any).enhancedImagesOrder.length > 0
+    );
+    return JSON.stringify(orderBox ? (orderBox as any).enhancedImagesOrder : []);
+  }, [config.aiBoxes]);
+
   useEffect(() => {
     let isCancelled = false;
     const pollCompanionEnhanced = async () => {
@@ -3934,14 +3943,30 @@ export const FacebookWorkflowCanvas = forwardRef<
           const valid = (images && images.length > 0)
             ? list.filter((img) => (img.position || 1) <= images.length)
             : list;
+          const customOrderBox = (config.aiBoxes || []).find(
+            (b) => Array.isArray((b as any).enhancedImagesOrder) && (b as any).enhancedImagesOrder.length > 0
+          );
+          const customOrder: string[] = customOrderBox ? ((customOrderBox as any).enhancedImagesOrder as string[]) : [];
+          const sortedValid = customOrder.length > 0
+            ? [...valid].sort((a, b) => {
+              const ka = a.filename || String(a.position || '');
+              const kb = b.filename || String(b.position || '');
+              const ia = customOrder.indexOf(ka);
+              const ib = customOrder.indexOf(kb);
+              if (ia === -1 && ib === -1) return (a.position || 0) - (b.position || 0);
+              if (ia === -1) return 1;
+              if (ib === -1) return -1;
+              return ia - ib;
+            })
+            : valid;
           const map: Record<number, string> = {};
-          valid.forEach((img) => {
+          sortedValid.forEach((img, idx) => {
             const pos = img.position || 1;
-            const pos0 = pos - 1; // 0-based index key
+            const key = customOrder.length > 0 ? idx : (pos - 1); // 0-based index key
             const cleanBackend = img.backend_url
               ? img.backend_url.replace(/^https?:\/\/localhost:8085/, '')
               : (img.filename ? `/storage/uploads/facebook-import/enhanced/${encodeURIComponent(img.filename)}` : '');
-            map[pos0] = img.url || (img.filename ? `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(img.filename)}` : cleanBackend);
+            map[key] = img.url || (img.filename ? `http://127.0.0.1:9224/downloaded-image?file=${encodeURIComponent(img.filename)}` : cleanBackend);
           });
           setCompanionEnhancedMap((prev) => {
             let hasChange = false;
@@ -3971,15 +3996,16 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
 
     pollCompanionEnhanced();
-    const interval = setInterval(pollCompanionEnhanced, 3000);
+    const isActivelyRunning = Boolean(executionState?.isRunning || locallyRunningNodeId);
+    const interval = isActivelyRunning ? setInterval(pollCompanionEnhanced, 3000) : null;
     return () => {
       isCancelled = true;
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
     };
-  }, [executionState?.propertyId, images?.length, executionState?.listingCode, previewSampleCode, locallyRunningNodeId, executionState?.isRunning]);
+  }, [executionState?.propertyId, images?.length, executionState?.listingCode, previewSampleCode, locallyRunningNodeId, executionState?.isRunning, enhancedOrderKey]);
 
   const allEnhancedPhotos = useMemo(() => {
-    return { ...companionEnhancedMap, ...enhancedPhotos };
+    return { ...enhancedPhotos, ...companionEnhancedMap };
   }, [enhancedPhotos, companionEnhancedMap]);
 
   // Live hero image generated/downloaded by FB Hero node
@@ -4512,7 +4538,170 @@ export const FacebookWorkflowCanvas = forwardRef<
     } catch (e) { }
   }, [canvasStorageKey, formatId, isFormatActive]);
 
+  const [folderImagesMap, setFolderImagesMap] = useState<Record<string, {
+    matchedFolder?: string;
+    folderPath?: string;
+    totalFound?: number;
+    error?: string;
+    images: Array<{ name: string; path: string; size: number; url: string }>;
+  }>>(() => {
+    try {
+      const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_folder_images_map') : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return {};
+  });
+  const [loadingFolderBoxIds, setLoadingFolderBoxIds] = useState<Record<string, boolean>>({});
+
+  const resolveFolderBoxName = (box: any): string => {
+    const mode = box?.folderNameSourceMode || 'connected';
+    if (mode === 'manual') {
+      return String(box?.folderManualName || '').trim();
+    }
+    const joinedConns = (config.connections || []).filter((c) => c.toNodeId === box?.id);
+    const joinedIds = new Set(joinedConns.map((c) => c.fromNodeId));
+    const srcId = box?.folderNameSourceId && box.folderNameSourceId !== 'auto' && joinedIds.has(box.folderNameSourceId)
+      ? box.folderNameSourceId
+      : (joinedConns[0]?.fromNodeId || '');
+    if (!srcId) return '';
+    const rawText = aiGeneratedOutputs?.[srcId] || (srcId === 'get-content' ? (rawContent || '') : '');
+    return String(rawText || '').split('\n').map((l: string) => l.trim()).find(Boolean) || '';
+  };
+
+  const fetchFolderImagesForBox = async (box: any) => {
+    if (!box?.id) return;
+    const basePath = String(box.folderBasePath || '/Users/zinwaishine/Desktop/Condo Building').trim();
+    const folderName = resolveFolderBoxName(box);
+    const subPath = String(box.folderSubPath || '').trim();
+    const maxCount = Number(box.folderMaxImages ?? 10);
+    setLoadingFolderBoxIds((prev) => ({ ...prev, [box.id]: true }));
+    try {
+      const resp = await fetch('http://127.0.0.1:9224/list-folder-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ basePath, folderName, subPath, maxCount }),
+      });
+      const data = await resp.json();
+      setFolderImagesMap((prev) => {
+        const next = {
+          ...prev,
+          [box.id]: {
+            matchedFolder: data.matchedFolder || folderName,
+            folderPath: data.folderPath || '',
+            totalFound: data.totalFound || 0,
+            error: data.status !== 'ok' ? (data.error || 'Folder not found') : undefined,
+            images: Array.isArray(data.images) ? data.images : [],
+          },
+        };
+        try {
+          localStorage.setItem('bolthaven_folder_images_map', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    } catch (err: any) {
+      setFolderImagesMap((prev) => ({
+        ...prev,
+        [box.id]: {
+          matchedFolder: folderName,
+          error: err?.message || 'Companion server offline',
+          images: [],
+        },
+      }));
+    } finally {
+      setLoadingFolderBoxIds((prev) => ({ ...prev, [box.id]: false }));
+    }
+  };
+
+  const lastFolderFetchSigRef = useRef<Record<string, string>>({});
+  const folderFetchKey = useMemo(() => {
+    const folderBoxes = (config.aiBoxes || []).filter((b) => isFolderImagesBox(b));
+    return folderBoxes
+      .map((b: any) => {
+        const basePath = String(b.folderBasePath || '/Users/zinwaishine/Desktop/Condo Building').trim();
+        const folderName = resolveFolderBoxName(b);
+        const subPath = String(b.folderSubPath || '').trim();
+        const maxCount = Number(b.folderMaxImages ?? 10);
+        return `${b.id}::${basePath}::${folderName}::${subPath}::${maxCount}`;
+      })
+      .join('|');
+  }, [config.aiBoxes, config.connections, aiGeneratedOutputs, rawContent]);
+
+  useEffect(() => {
+    const folderBoxes = (config.aiBoxes || []).filter((b) => isFolderImagesBox(b));
+    if (folderBoxes.length === 0) return;
+    const timer = setTimeout(() => {
+      folderBoxes.forEach((b: any) => {
+        const basePath = String(b.folderBasePath || '/Users/zinwaishine/Desktop/Condo Building').trim();
+        const folderName = resolveFolderBoxName(b);
+        const subPath = String(b.folderSubPath || '').trim();
+        const maxCount = Number(b.folderMaxImages ?? 10);
+        const sig = `${basePath}::${folderName}::${subPath}::${maxCount}`;
+        if (!folderName) {
+          if (lastFolderFetchSigRef.current[b.id] !== sig) {
+            lastFolderFetchSigRef.current[b.id] = sig;
+            setFolderImagesMap((prev) => {
+              if (!prev[b.id]) return prev;
+              const next = { ...prev };
+              delete next[b.id];
+              try {
+                localStorage.setItem('bolthaven_folder_images_map', JSON.stringify(next));
+              } catch {}
+              return next;
+            });
+          }
+          return;
+        }
+        if (lastFolderFetchSigRef.current[b.id] === sig) return;
+        lastFolderFetchSigRef.current[b.id] = sig;
+        fetchFolderImagesForBox(b);
+      });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [folderFetchKey]);
+
   const [isPanning, setIsPanning] = useState(false);
+  const [isCanvasLocked, setIsCanvasLocked] = useState<boolean>(() => {
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem('bolthaven_canvas_locked') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [isBoxesLocked, setIsBoxesLocked] = useState<boolean>(() => {
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem('bolthaven_boxes_locked') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [isDoubleClickToOpen, setIsDoubleClickToOpen] = useState<boolean>(() => {
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem('bolthaven_canvas_double_click_open') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [canvasContextMenu, setCanvasContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!canvasContextMenu) return;
+    const handleOutside = (e: MouseEvent) => {
+      if ((e.target as HTMLElement)?.closest('.canvas-context-menu')) return;
+      setCanvasContextMenu(null);
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCanvasContextMenu(null);
+    };
+    window.addEventListener('mousedown', handleOutside, true);
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      window.removeEventListener('mousedown', handleOutside, true);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [Boolean(canvasContextMenu)]);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const panStartRef = useRef({ x: 0, y: 0 });
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
@@ -4815,6 +5004,45 @@ export const FacebookWorkflowCanvas = forwardRef<
   }
   const [dragWire, setDragWire] = useState<DragWireState | null>(null);
   const [hoveredWireId, setHoveredWireId] = useState<string | null>(null);
+  const [highlightedLineNodeIds, setHighlightedLineNodeIds] = useState<Set<string>>(new Set());
+  const [nodeHighlightColors, setNodeHighlightColors] = useState<Record<string, string>>({});
+
+  const toggleHighlightNodeLines = (nodeId: string) => {
+    setHighlightedLineNodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+        setNodeHighlightColors((prevColors) => {
+          const updated = { ...prevColors };
+          delete updated[nodeId];
+          return updated;
+        });
+      } else {
+        next.add(nodeId);
+        const palette = [
+          '#3B82F6', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6',
+          '#06B6D4', '#F97316', '#22C55E', '#EAB308', '#6366F1',
+          '#14B8A6', '#FB7185', '#A855F7', '#38BDF8', '#84CC16',
+          '#F43F5E',
+        ];
+        setNodeHighlightColors((prevColors) => {
+          const updated = { ...prevColors };
+          if (!updated[nodeId]) {
+            const used = new Set(Object.values(updated));
+            const available = palette.filter((p) => !used.has(p));
+            if (available.length > 0) {
+              updated[nodeId] = available[Math.floor(Math.random() * available.length)];
+            } else {
+              const hue = Math.round((used.size * 137.508) % 360);
+              updated[nodeId] = `hsl(${hue}, 85%, 60%)`;
+            }
+          }
+          return updated;
+        });
+      }
+      return next;
+    });
+  };
   const [hoveredXId, setHoveredXId] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredOutputNodeId, setHoveredOutputNodeId] = useState<string | null>(null);
@@ -5567,8 +5795,9 @@ export const FacebookWorkflowCanvas = forwardRef<
           // If enhance has not produced photos, sourcePhotos remains empty! Never fallback to raw un-enhanced photos!
         } else if (cropBox.imageSource === 'get_images' || (cropBox.imageSource as string) === 'get-images') {
           photoList.forEach((img, idx) => {
+            const enhUrl = allEnhancedPhotos?.[idx] || allEnhancedPhotos?.[idx + 1];
             const rawUrl = normalizeMediaUrl(img.stored_url || img.source_url || (img as any).url);
-            sourcePhotos.push({ url: rawUrl || '', photoIndex: idx, isEnhanced: false });
+            sourcePhotos.push({ url: enhUrl || rawUrl || '', photoIndex: idx, isEnhanced: Boolean(enhUrl) });
           });
         } else {
           // Default: if box is connected from enhance, ONLY use enhanced photos!
@@ -5666,6 +5895,41 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
   }, [config.aiBoxes, config.connections, effectiveImages, allEnhancedPhotos, heroImage, executionState?.listingCode, previewSampleCode]);
 
+  const getExtSourceIds = (
+    box: any,
+    arrayKey: 'extensionImageSourceIds' | 'extensionDescriptionSourceIds' | 'extensionTitleSourceIds',
+    singleKey: 'extensionImageSourceId' | 'extensionDescriptionSourceId' | 'extensionTitleSourceId',
+    joinedIds: Set<string>
+  ): string[] => {
+    const arr = Array.isArray(box?.[arrayKey])
+      ? (box[arrayKey] as string[]).filter((id) => joinedIds.has(id))
+      : [];
+    if (arr.length > 0) return arr;
+    const single = box?.[singleKey];
+    if (single && single !== 'auto' && joinedIds.has(single)) return [single];
+    return [];
+  };
+
+  const resolveExtTextFromIds = (
+    selectedIds: string[],
+    joinedConns: Array<{ fromNodeId: string }>,
+    outputs: Record<string, string> | undefined,
+    fallbackRawContent: string | undefined
+  ): string => {
+    if (selectedIds.length > 0) {
+      return selectedIds
+        .map((id) => outputs?.[id] || (id === 'get-content' ? (fallbackRawContent || '') : ''))
+        .map((t) => (t || '').trim())
+        .filter(Boolean)
+        .join('\n\n');
+    }
+    for (const c of joinedConns) {
+      if (outputs?.[c.fromNodeId]) return outputs[c.fromNodeId];
+      if (c.fromNodeId === 'get-content' && fallbackRawContent) return fallbackRawContent;
+    }
+    return '';
+  };
+
   // Auto-Sync Extension Autofill boxes that have extensionAutoSync enabled
   useEffect(() => {
     const autoSyncBoxes = (config.aiBoxes || []).filter(
@@ -5678,40 +5942,26 @@ export const FacebookWorkflowCanvas = forwardRef<
         const joinedConns = (config.connections || []).filter((c) => c.toNodeId === box.id);
         const joinedIds = new Set(joinedConns.map((c) => c.fromNodeId));
         const extPlatform = (box as any).extensionPlatform || 'auto';
-        const rawDescSrcId = (box as any).extensionDescriptionSourceId || 'auto';
-        const descSrcId = rawDescSrcId !== 'auto' && joinedIds.has(rawDescSrcId) ? rawDescSrcId : 'auto';
-        const rawTitleSrcId = (box as any).extensionTitleSourceId || 'auto';
-        const titleSrcId = rawTitleSrcId !== 'auto' && joinedIds.has(rawTitleSrcId) ? rawTitleSrcId : 'auto';
+        const descSrcIds = getExtSourceIds(box, 'extensionDescriptionSourceIds', 'extensionDescriptionSourceId', joinedIds);
+        const titleSrcIds = getExtSourceIds(box, 'extensionTitleSourceIds', 'extensionTitleSourceId', joinedIds);
 
-        let resolvedDesc = '';
-        if (joinedConns.length > 0) {
-          if (descSrcId !== 'auto') {
-            resolvedDesc = aiGeneratedOutputs?.[descSrcId] || (descSrcId === 'get-content' ? (rawContent || '') : '');
-          } else {
-            for (const c of joinedConns) {
-              if (aiGeneratedOutputs?.[c.fromNodeId]) {
-                resolvedDesc = aiGeneratedOutputs[c.fromNodeId];
-                break;
-              }
-              if (c.fromNodeId === 'get-content' && rawContent) {
-                resolvedDesc = rawContent;
-                break;
-              }
-            }
-          }
-        }
+        const resolvedDesc = joinedConns.length > 0
+          ? resolveExtTextFromIds(descSrcIds, joinedConns, aiGeneratedOutputs, rawContent)
+          : '';
 
         let resolvedTitle = '';
         if (extPlatform !== 'meta' && joinedConns.length > 0) {
-          if (titleSrcId !== 'auto' && aiGeneratedOutputs?.[titleSrcId]) {
-            resolvedTitle = aiGeneratedOutputs[titleSrcId].split('\n')[0]?.trim() || '';
+          const titleText = titleSrcIds.length > 0
+            ? resolveExtTextFromIds(titleSrcIds, joinedConns, aiGeneratedOutputs, rawContent)
+            : '';
+          if (titleText) {
+            resolvedTitle = titleText.split('\n')[0]?.trim() || '';
           } else if (resolvedDesc) {
             resolvedTitle = resolvedDesc.split('\n').map((l) => l.trim()).find(Boolean) || _projectName || '';
           }
         }
 
-        const rawImgSrcId = (box as any).extensionImageSourceId || 'auto';
-        const imgSrcId = rawImgSrcId !== 'auto' && joinedIds.has(rawImgSrcId) ? rawImgSrcId : 'auto';
+        const imgSrcIds = getExtSourceIds(box, 'extensionImageSourceIds', 'extensionImageSourceId', joinedIds);
         const resolvedImgUrls: string[] = [];
 
         const isImgCapable = (nodeId: string): boolean => {
@@ -5724,6 +5974,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             isCropStudioBox(nb) ||
             isEnhanceAIBox(nb) ||
             isImageAIBox(nb) ||
+            isFolderImagesBox(nb) ||
             nb.processType === 'chrome_tab_group' ||
             nb.processType === 'external_browser'
           );
@@ -5731,7 +5982,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
         const connImgIds = joinedConns.map((c) => c.fromNodeId).filter(isImgCapable);
         if (connImgIds.length > 0) {
-          const targetIds = imgSrcId !== 'auto' ? [imgSrcId] : connImgIds;
+          const targetIds = imgSrcIds.length > 0 ? imgSrcIds : connImgIds;
           for (const tid of targetIds) {
             const directAssets = combineMediaAssets.filter((a) => a.formatId === tid && a.url);
             if (directAssets.length > 0) {
@@ -5747,9 +5998,51 @@ export const FacebookWorkflowCanvas = forwardRef<
                 continue;
               }
             }
+            const resolveChromeTabGroupUrls = (nb: any): string[] => {
+              if (!nb || !isChromeTabGroupAIBox(nb)) return [];
+              const titleLower = (nb.title || nb.browserGroupName || '').toLowerCase();
+              const isHeroTab =
+                nb.tabGroupMode === 'generate' ||
+                nb.processKind === 'generate_image' ||
+                titleLower.includes('hero') ||
+                titleLower.includes('generate');
+              if (isHeroTab) {
+                try {
+                  const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(`bolthaven_hero_image_${nb.id}`) : null;
+                  if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (parsed?.url) return [String(parsed.url)];
+                  }
+                } catch {}
+                if (heroImage?.url) return [String(heroImage.url)];
+                try {
+                  const savedHero = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
+                  if (savedHero) {
+                    const parsed = JSON.parse(savedHero);
+                    if (parsed?.url) return [String(parsed.url)];
+                  }
+                } catch {}
+                return [];
+              }
+              return Object.values(allEnhancedPhotos || {}).filter(Boolean).map(String);
+            };
+
             const nb = config.aiBoxes.find((x) => x.id === tid);
+            if (isFolderImagesBox(nb)) {
+              (folderImagesMap[tid]?.images || []).forEach((fImg) => {
+                if (fImg?.url) resolvedImgUrls.push(fImg.url);
+              });
+              continue;
+            }
+            if (nb && isChromeTabGroupAIBox(nb)) {
+              const tabUrls = resolveChromeTabGroupUrls(nb);
+              if (tabUrls.length > 0) {
+                tabUrls.forEach((u) => resolvedImgUrls.push(u));
+                continue;
+              }
+            }
             const isEnhance = nb && (nb.title?.toLowerCase().includes('enhance') || nb.id.includes('enhance') || nb.processType === 'image_enhance');
-            if (isEnhance && Object.keys(allEnhancedPhotos || {}).length > 0) {
+            if ((isEnhance || isWatermarkAIBox(nb) || isCropStudioBox(nb)) && Object.keys(allEnhancedPhotos || {}).length > 0) {
               Object.values(allEnhancedPhotos || {}).forEach((u) => {
                 if (u) resolvedImgUrls.push(String(u));
               });
@@ -7001,6 +7294,14 @@ export const FacebookWorkflowCanvas = forwardRef<
       return true;
     }
 
+    // Folder Images Box can ONLY receive from child text Format Preset boxes (e.g. Get Condo Name), and connect out to multiple downstream nodes
+    if (toBox && isFolderImagesBox(toBox)) {
+      return Boolean(fromBox && isTextFormatAIBox(fromBox));
+    }
+    if (fromBox && isFolderImagesBox(fromBox)) {
+      return true;
+    }
+
     // AI Format boxes only connect with AI Model container above it; never to Combine Box, output, or destinations
     if (fromBox && isTextFormatAIBox(fromBox)) {
       return Boolean(toBox && isTextAIBox(toBox, config.connections));
@@ -7017,7 +7318,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (toBox && isCropStudioBox(toBox)) {
       if (fromBox && isWatermarkAIBox(fromBox)) return true;
       if (fromId === 'get-images') return true;
-      if (fromBox && (isEnhanceAIBox(fromBox, config.connections) || isExternalBrowserAIBox(fromBox))) return true;
+      if (fromBox && (isEnhanceAIBox(fromBox, config.connections) || isExternalBrowserAIBox(fromBox) || isFolderImagesBox(fromBox))) return true;
     }
 
     const hasCropStudio = config.aiBoxes.some((b) => isCropStudioBox(b));
@@ -7174,7 +7475,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             let updatedBoxes = config.aiBoxes;
             if (sourceId === 'get-content') {
               updatedBoxes = config.aiBoxes.map((b) => {
-                if (b.id === destId) {
+                if (b.id === destId && !isFolderImagesBox(b) && !isExtensionAutofillBox(b)) {
                   const isImg = isImageModel(b.model, b.provider) || b.processType === 'image_enhance';
                   return {
                     ...b,
@@ -7203,10 +7504,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                 return b;
               });
             }
+            const destIsFolder = isFolderImagesBox(config.aiBoxes.find((b) => b.id === destId));
+            const nextConnections = destIsFolder
+              ? [...currentConnections.filter((c) => c.toNodeId !== destId), newConn]
+              : [...currentConnections, newConn];
             updateConfig({
               ...config,
               aiBoxes: updatedBoxes,
-              connections: [...currentConnections, newConn],
+              connections: nextConnections,
             });
           }
         }
@@ -7291,7 +7596,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       let updatedBoxes = config.aiBoxes;
       if (sourceId === 'get-content') {
         updatedBoxes = config.aiBoxes.map((b) => {
-          if (b.id === destId) {
+          if (b.id === destId && !isFolderImagesBox(b) && !isExtensionAutofillBox(b)) {
             const isImg = isImageModel(b.model, b.provider) || b.processType === 'image_enhance';
             return {
               ...b,
@@ -7320,7 +7625,10 @@ export const FacebookWorkflowCanvas = forwardRef<
           return b;
         });
       }
-      const nextConns = [...currentConnections, newConn];
+      const destIsFolder = isFolderImagesBox(config.aiBoxes.find((b) => b.id === destId));
+      const nextConns = destIsFolder
+        ? [...currentConnections.filter((c) => c.toNodeId !== destId), newConn]
+        : [...currentConnections, newConn];
       const nextConfig = {
         ...config,
         aiBoxes: updatedBoxes,
@@ -8642,8 +8950,25 @@ export const FacebookWorkflowCanvas = forwardRef<
       return;
     }
     // For all node-to-node wires (AI models, format presets, watermark/cut presets, combine boxes, destinations):
-    // Clicking (X) purely disconnects the wire. It NEVER deletes the source or target box!
-    handleRemoveConnection(conn.id, conn.fromNodeId, conn.toNodeId, e);
+    // Clicking (X) asks for confirmation before disconnecting the wire. It NEVER deletes the source or target box!
+    const fromLabel = getNodeDisplayName(conn.fromNodeId);
+    const toLabel = getNodeDisplayName(conn.toNodeId);
+    setDeleteConfirmTarget({
+      type: 'connection',
+      title: 'Disconnect Line?',
+      subtitle: `${fromLabel} → ${toLabel}`,
+      description: `Are you sure you want to remove the connection line from "${fromLabel}" to "${toLabel}"?`,
+      calloutTitle: 'Nodes Preserved',
+      calloutDesc: 'Both boxes and their settings will stay on the canvas.',
+      confirmText: 'Confirm Disconnect',
+      notificationTitle: 'Connection Removed',
+      notificationMessage: `Disconnected "${fromLabel}" from "${toLabel}".`,
+      notificationType: 'danger',
+      onConfirm: () => {
+        handleRemoveConnection(conn.id, conn.fromNodeId, conn.toNodeId);
+        setDeleteConfirmTarget(null);
+      },
+    });
   };
 
   const handleRemoveConnection = (
@@ -8995,12 +9320,52 @@ export const FacebookWorkflowCanvas = forwardRef<
     return newId;
   };
 
+  // Add Dynamic Folder Images Loader Node (standalone, unconnected by default)
+  const handleAddFolderImagesNode = (
+    options?: { coords?: { x: number; y: number }; anchorNodeId?: string }
+  ): string => {
+    const folderBoxes = config.aiBoxes.filter((b) => isFolderImagesBox(b));
+    const newCount = folderBoxes.length + 1;
+    const newId = `ai-box-folder-images-${Date.now()}`;
+    const coords = options?.coords || getSmartNextNodeCoords(options?.anchorNodeId, config);
+
+    const newBox: DynamicAIBoxConfig = {
+      id: newId,
+      title: newCount > 1 ? `Folder Images #${newCount}` : 'Folder Images',
+      subtitle: 'Local Folder · Max 10',
+      processType: 'folder_images',
+      provider: 'folder_images' as any,
+      model: 'folder-images',
+      templateId: '',
+      templateText: '',
+      customPrompt: '',
+      enabled: true,
+      folderBasePath: '/Users/zinwaishine/Desktop/Condo Building',
+      folderNameSourceMode: 'connected',
+      folderNameSourceId: 'auto',
+      folderManualName: '',
+      folderMaxImages: 10,
+      x: coords.x,
+      y: coords.y,
+    } as any;
+
+    updateConfig({
+      ...config,
+      aiBoxes: [...config.aiBoxes, newBox],
+    });
+    setSelectedBoxId(newId);
+    return newId;
+  };
+
   // Add Dynamic Browser Extension Autofill & Dispatch Node
-  const handleAddExtensionAutofillNodeConnectedFrom = (fromNodeId?: string): string => {
+  const handleAddExtensionAutofillNodeConnectedFrom = (
+    fromNodeId?: string,
+    options?: { coords?: { x: number; y: number }; anchorNodeId?: string }
+  ): string => {
     const extBoxes = config.aiBoxes.filter((b) => isExtensionAutofillBox(b));
     const newCount = extBoxes.length + 1;
     const newId = `ai-box-extension-autofill-${Date.now()}`;
-    const coords = getSmartNextNodeCoords(fromNodeId, config);
+    const coords = options?.coords || getSmartNextNodeCoords(fromNodeId || options?.anchorNodeId, config);
 
     const newBox: DynamicAIBoxConfig = {
       id: newId,
@@ -9273,6 +9638,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (isTextFormatAIBox(b)) return <FiFileText style={{ fontSize: `${size}px`, color: '#6366F1' }} />;
     if (isN8NAIBox(b)) return <FiServer style={{ fontSize: `${size}px`, color: '#FF6D5A' }} />;
     if (isExtensionAutofillBox(b)) return <FiSend style={{ fontSize: `${size}px`, color: '#3B82F6' }} />;
+    if (isFolderImagesBox(b)) return <FiFolder style={{ fontSize: `${size}px`, color: '#F59E0B' }} />;
     if (isGoogleSheetBox(b)) return <SiGooglesheets style={{ fontSize: `${size}px`, color: '#0F9D58' }} />;
     return <FiMessageSquare style={{ fontSize: `${size}px`, color: '#8B5CF6' }} />;
   };
@@ -9864,6 +10230,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
     canvasMouseDownCoord.current = { x: e.clientX, y: e.clientY };
     setQuickAddPopover(null);
+    setCanvasContextMenu(null);
 
     // Shift + Drag on canvas: Start Marquee Selection Box
     if (e.shiftKey) {
@@ -9883,6 +10250,9 @@ export const FacebookWorkflowCanvas = forwardRef<
     setSelectedBoxId(null);
     if (dragWire) {
       setDragWire(null);
+      return;
+    }
+    if (isCanvasLocked) {
       return;
     }
     setIsPanning(true);
@@ -10227,6 +10597,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
+    if (isCanvasLocked) return;
     const zoomFactor = e.deltaY < 0 ? 1.05 : 0.95;
     const newZoom = Math.min(Math.max(config.zoom * zoomFactor, 0.45), 1.6);
     setConfig((prev) => ({ ...prev, zoom: Number(newZoom.toFixed(2)) }));
@@ -10234,6 +10605,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const startDragNode = (nodeId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isBoxesLocked) return;
     if (persistTimerRef.current) {
       clearTimeout(persistTimerRef.current);
       persistTimerRef.current = null;
@@ -10291,8 +10663,8 @@ export const FacebookWorkflowCanvas = forwardRef<
     };
   }, [draggedNodeId, isPanning, Boolean(dragWire), isSelecting]);
 
-  // Single click: Select the node AND open the sidebar drawer (single-click open)
-  const handleNodeClick = (node: ActiveModalNode, e: React.MouseEvent) => {
+  // Single click: Select the node AND open the sidebar drawer (unless Double-Click Open is ON)
+  const handleNodeClick = (node: ActiveModalNode, e: React.MouseEvent, forceOpen = false) => {
     e.stopPropagation();
     if (hasMoved.current) {
       hasMoved.current = false;
@@ -10333,6 +10705,10 @@ export const FacebookWorkflowCanvas = forwardRef<
         shiftToggledNodeRef.current = null;
       }
 
+      if (isDoubleClickToOpen && !forceOpen) {
+        return;
+      }
+
       handleToggleGeneralSettings(false);
       setConnectDrawerNode(null);
       setQuickAddPopover(null);
@@ -10345,13 +10721,13 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
   };
 
-  // Double click: Keep sidebar drawer open for this node (safe fallback)
+  // Double click: Always open sidebar drawer for this node
   const handleNodeDoubleClick = (node: ActiveModalNode, e: React.MouseEvent) => {
     e.stopPropagation();
     if (e.shiftKey) {
       return;
     }
-    handleNodeClick(node, e);
+    handleNodeClick(node, e, true);
   };
 
   // Bezier curve generator with strictly horizontal socket tangency and smooth curvature
@@ -10492,6 +10868,19 @@ export const FacebookWorkflowCanvas = forwardRef<
         onMouseUp={handleCanvasMouseUp}
         onClick={handleCanvasClick}
         onWheel={handleWheel}
+        onContextMenu={(e) => {
+          if (
+            (e.target as HTMLElement).closest('.canvas-node') ||
+            (e.target as HTMLElement).closest('.canvas-control') ||
+            (e.target as HTMLElement).closest('.quick-add-popover') ||
+            (e.target as HTMLElement).closest('.workflow-sidebar') ||
+            (e.target as HTMLElement).closest('aside')
+          ) {
+            return;
+          }
+          e.preventDefault();
+          setCanvasContextMenu({ x: e.clientX, y: e.clientY });
+        }}
         style={{
           position: 'relative',
           width: '100%',
@@ -10514,6 +10903,285 @@ export const FacebookWorkflowCanvas = forwardRef<
 
 
 
+
+        {/* Blank-canvas Right-Click Context Menu */}
+        {canvasContextMenu && (
+          <div
+            className="canvas-control canvas-context-menu"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              left: Math.min(canvasContextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 210),
+              top: Math.min(canvasContextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 110),
+              minWidth: '190px',
+              padding: '4px',
+              borderRadius: '8px',
+              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+              boxShadow: isDark
+                ? '0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)'
+                : '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+              zIndex: 9999,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '2px',
+            }}
+          >
+            <div
+              style={{
+                padding: '2px 10px',
+                fontSize: '0.6875rem',
+                fontWeight: 600,
+                color: isDark ? '#8B949E' : '#64748B',
+              }}
+            >
+              Lock
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const nextLocked = !isCanvasLocked;
+                setIsCanvasLocked(nextLocked);
+                setIsPanning(false);
+                try {
+                  localStorage.setItem('bolthaven_canvas_locked', String(nextLocked));
+                } catch {}
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                width: '100%',
+                padding: '7px 10px',
+                borderRadius: '7px',
+                border: 'none',
+                backgroundColor: 'transparent',
+                color: isDark ? '#E2E8F0' : '#0F172A',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+                {isCanvasLocked ? <FiLock size={13} /> : <FiUnlock size={13} />}
+                <span>Lock Canvas</span>
+              </span>
+              <span
+                style={{
+                  fontSize: '0.625rem',
+                  fontWeight: 700,
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  backgroundColor: isDark ? '#2D333B' : '#F1F5F9',
+                  color: isDark ? '#CBD5E1' : '#475569',
+                }}
+              >
+                {isCanvasLocked ? 'ON' : 'OFF'}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const nextBoxesLocked = !isBoxesLocked;
+                setIsBoxesLocked(nextBoxesLocked);
+                try {
+                  localStorage.setItem('bolthaven_boxes_locked', String(nextBoxesLocked));
+                } catch {}
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                width: '100%',
+                padding: '7px 10px',
+                borderRadius: '7px',
+                border: 'none',
+                backgroundColor: 'transparent',
+                color: isDark ? '#E2E8F0' : '#0F172A',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+                {isBoxesLocked ? <FiLock size={13} /> : <FiUnlock size={13} />}
+                <span>Lock Move Box</span>
+              </span>
+              <span
+                style={{
+                  fontSize: '0.625rem',
+                  fontWeight: 700,
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  backgroundColor: isDark ? '#2D333B' : '#F1F5F9',
+                  color: isDark ? '#CBD5E1' : '#475569',
+                }}
+              >
+                {isBoxesLocked ? 'ON' : 'OFF'}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const nextDbl = !isDoubleClickToOpen;
+                setIsDoubleClickToOpen(nextDbl);
+                try {
+                  localStorage.setItem('bolthaven_canvas_double_click_open', String(nextDbl));
+                } catch {}
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                width: '100%',
+                padding: '7px 10px',
+                borderRadius: '7px',
+                border: 'none',
+                backgroundColor: 'transparent',
+                color: isDark ? '#E2E8F0' : '#0F172A',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+                <FiSliders size={13} />
+                <span>Double-Click Open</span>
+              </span>
+              <span
+                style={{
+                  fontSize: '0.625rem',
+                  fontWeight: 700,
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  backgroundColor: isDark ? '#2D333B' : '#F1F5F9',
+                  color: isDark ? '#CBD5E1' : '#475569',
+                }}
+              >
+                {isDoubleClickToOpen ? 'ON' : 'OFF'}
+              </span>
+            </button>
+            <button
+              type="button"
+              disabled={isCanvasLocked}
+              onClick={() => {
+                if (isCanvasLocked) return;
+                setConfig((prev) => ({ ...prev, zoom: 1, panOffset: { x: 0, y: 0 } }));
+                setCanvasContextMenu(null);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                width: '100%',
+                padding: '7px 10px',
+                borderRadius: '7px',
+                border: 'none',
+                backgroundColor: 'transparent',
+                color: isCanvasLocked
+                  ? 'var(--text-muted)'
+                  : (isDark ? '#CBD5E1' : '#334155'),
+                fontSize: '0.75rem',
+                fontWeight: 500,
+                cursor: isCanvasLocked ? 'not-allowed' : 'pointer',
+                opacity: isCanvasLocked ? 0.5 : 1,
+                textAlign: 'left',
+              }}
+            >
+              <FiCrosshair size={13} />
+              <span>Reset View (100%)</span>
+            </button>
+            <div
+              style={{
+                borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                margin: '3px 4px',
+              }}
+            />
+            <div
+              style={{
+                padding: '2px 10px',
+                fontSize: '0.6875rem',
+                fontWeight: 600,
+                color: isDark ? '#8B949E' : '#64748B',
+              }}
+            >
+              Add Box
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                let targetCoords: { x: number; y: number } | undefined;
+                if (canvasRef.current && canvasContextMenu) {
+                  const rect = canvasRef.current.getBoundingClientRect();
+                  targetCoords = {
+                    x: Math.round((canvasContextMenu.x - rect.left - config.panOffset.x) / config.zoom - 36),
+                    y: Math.round((canvasContextMenu.y - rect.top - config.panOffset.y) / config.zoom - 36),
+                  };
+                }
+                handleAddExtensionAutofillNodeConnectedFrom(undefined, { coords: targetCoords });
+                setCanvasContextMenu(null);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                width: '100%',
+                padding: '7px 10px',
+                borderRadius: '7px',
+                border: 'none',
+                backgroundColor: 'transparent',
+                color: isDark ? '#E2E8F0' : '#0F172A',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <FiSend size={13} style={{ color: '#3B82F6' }} />
+              <span>Extension Autofill</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                let targetCoords: { x: number; y: number } | undefined;
+                if (canvasRef.current && canvasContextMenu) {
+                  const rect = canvasRef.current.getBoundingClientRect();
+                  targetCoords = {
+                    x: Math.round((canvasContextMenu.x - rect.left - config.panOffset.x) / config.zoom - 36),
+                    y: Math.round((canvasContextMenu.y - rect.top - config.panOffset.y) / config.zoom - 36),
+                  };
+                }
+                handleAddFolderImagesNode({ coords: targetCoords });
+                setCanvasContextMenu(null);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                width: '100%',
+                padding: '7px 10px',
+                borderRadius: '7px',
+                border: 'none',
+                backgroundColor: 'transparent',
+                color: isDark ? '#E2E8F0' : '#0F172A',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <FiFolder size={13} style={{ color: '#F59E0B' }} />
+              <span>Folder Images</span>
+            </button>
+          </div>
+        )}
 
         {/* Floating Zoom & Canvas Controls Dock (Expands smoothly on hover like Figma / Miro / Freeform) */}
         <div
@@ -11115,10 +11783,11 @@ export const FacebookWorkflowCanvas = forwardRef<
               // 1. Format presets are vertically attached above AI Model only;
               // Never render outgoing wires from format presets to combine boxes, output, or destinations!
               const isToExtensionAutofill = Boolean(toBox && isExtensionAutofillBox(toBox));
+              const isToFolderImages = Boolean(toBox && isFolderImagesBox(toBox));
               const hasCentralTextAI = config.aiBoxes.some((b) => isTextAIBox(b, config.connections) && !isTextFormatAIBox(b));
               if (fromBox && isTextFormatAIBox(fromBox) && hasCentralTextAI) {
                 const isVerticalToAi = Boolean(toBox && isTextAIBox(toBox, config.connections));
-                if (!isVerticalToAi && !isToExtensionAutofill) return null;
+                if (!isVerticalToAi && !isToExtensionAutofill && !isToFolderImages) return null;
               }
 
               const hasCentralCropStudio = config.aiBoxes.some((b) => isCropStudioBox(b));
@@ -11214,15 +11883,40 @@ export const FacebookWorkflowCanvas = forwardRef<
 
               const isWireHovered = !isBaseVerticalWire && hoveredWireId === conn.id;
               const isXHovered = !isBaseVerticalWire && hoveredXId === conn.id;
+              const highlightOwnerId = highlightedLineNodeIds.has(conn.toNodeId)
+                ? conn.toNodeId
+                : highlightedLineNodeIds.has(conn.fromNodeId)
+                  ? conn.fromNodeId
+                  : null;
+              const highlightColor = highlightOwnerId ? nodeHighlightColors[highlightOwnerId] : undefined;
 
               const wireStrokeColor = isXHovered
                 ? '#F85149'
-                : isExecActive
-                  ? (isDark ? '#60A5FA' : '#2563EB')
-                  : (isDark ? '#4B5563' : '#94A3B8');
+                : highlightColor
+                  ? highlightColor
+                  : isExecActive
+                    ? (isDark ? '#60A5FA' : '#2563EB')
+                    : (isDark ? '#4B5563' : '#94A3B8');
 
-              const midX = (fromPos.x + toPos.x) / 2;
-              const midY = (fromPos.y + toPos.y) / 2;
+              const wireLen = Math.max(80, Math.hypot(toPos.x - fromPos.x, toPos.y - fromPos.y));
+              const tNearTarget = Math.max(0.72, Math.min(0.92, 1 - 38 / wireLen));
+              const dxWire = toPos.x - fromPos.x;
+              const ctrlOffset = dxWire >= 0 ? Math.max(dxWire * 0.45, 48) : Math.max(Math.abs(dxWire) * 0.5, 90);
+              const c1x = fromPos.x + ctrlOffset;
+              const c1y = fromPos.y;
+              const c2x = toPos.x - ctrlOffset;
+              const c2y = toPos.y;
+              const invT = 1 - tNearTarget;
+              const midX =
+                invT * invT * invT * fromPos.x +
+                3 * invT * invT * tNearTarget * c1x +
+                3 * invT * tNearTarget * tNearTarget * c2x +
+                tNearTarget * tNearTarget * tNearTarget * toPos.x;
+              const midY =
+                invT * invT * invT * fromPos.y +
+                3 * invT * invT * tNearTarget * c1y +
+                3 * invT * tNearTarget * tNearTarget * c2y +
+                tNearTarget * tNearTarget * tNearTarget * toPos.y;
 
               return (
                 <g
@@ -11259,7 +11953,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     d={path}
                     fill="none"
                     stroke={wireStrokeColor}
-                    strokeWidth={isXHovered ? '2.5' : isExecActive ? '2.5' : isConnectedAndEnabled ? '2.2' : isWireHovered ? '2.2' : '1.8'}
+                    strokeWidth={isXHovered ? '2.5' : highlightColor ? '3' : isExecActive ? '2.5' : isConnectedAndEnabled ? '2.2' : isWireHovered ? '2.2' : '1.8'}
                     strokeDasharray={isExecActive ? '4, 4' : !isConnectedAndEnabled ? '4, 4' : 'none'}
                     strokeLinecap="round"
                     style={{
@@ -12063,7 +12757,11 @@ export const FacebookWorkflowCanvas = forwardRef<
             const isEnhance = (isEnhanceAIBox(box) || isImageAIBox(box, config.connections) || isExternalBrowserAIBox(box)) && !isWatermark;
             const isBoxInputConnected = (config.connections || []).some((c) => c.toNodeId === box.id);
             const isBoxOutputConnected = (config.connections || []).some((c) => c.fromNodeId === box.id);
-            const boxHasReceiver = isEffectiveEnabled && isEnhance;
+            const boxHasReceiver = isEffectiveEnabled && (
+              isEnhance ||
+              config.aiBoxes.some((other) => other.id !== box.id && isValidConnection(box.id, other.id)) ||
+              (config.combineBoxes || []).some((cb) => isValidConnection(box.id, cb.id))
+            );
             const boxCanConnectBack =
               !isBoxInputConnected &&
               (isValidConnection('get-content', box.id) ||
@@ -12151,7 +12849,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
               >
                 <MergedNodeShape
-                  sockets={isChromeProfile || isChromeTabGroup ? 'none' : isExtensionAutofill ? 'left' : (isTextFormat || isAttachedCropFormat) ? 'right' : 'both'}
+                  sockets={isChromeProfile ? 'none' : isChromeTabGroup ? 'right' : isExtensionAutofill ? 'left' : (isTextFormat || isAttachedCropFormat) ? 'right' : 'both'}
                   hasTopSocket={isChromeProfile || isChromeTabGroup || (isAttachedCropFormat && isThisFormatBelow)}
                   hasBottomSocket={isTextFormat || (isAttachedCropFormat && !isThisFormatBelow)}
                   width={nodeWidth}
@@ -12529,6 +13227,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     <FiServer style={{ fontSize: '28px', color: isEffectiveEnabled ? '#FF6D5A' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isExtensionAutofillBox(box) ? (
                     <FiSend style={{ fontSize: '28px', color: isEffectiveEnabled ? '#3B82F6' : '#8B949E', transition: 'color 0.2s ease' }} />
+                  ) : isFolderImagesBox(box) ? (
+                    <FiFolder style={{ fontSize: '28px', color: isEffectiveEnabled ? '#F59E0B' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : isGoogleSheetBox(box) ? (
                     <SiGooglesheets style={{ fontSize: '28px', color: isEffectiveEnabled ? '#0F9D58' : '#8B949E', transition: 'color 0.2s ease' }} />
                   ) : (
@@ -12629,7 +13329,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                       const isSheetCompleted = isGoogleSheetBox(box) && (boxStatus === 'success' || Boolean(executionState?.completedNodeIds?.includes(box.id)) || Boolean(aiGeneratedOutputs?.[box.id]) || Boolean((box as any).outputCopy));
                       const displayNodeSubtitle = isGoogleSheetBox(box)
                         ? (isSheetCompleted ? 'Row Added' : (box.googleSheetHeaders && box.googleSheetHeaders.length > 0 ? `${box.googleSheetHeaders.length} Columns` : (box.subtitle || 'Spreadsheet Sync')))
-                        : isWatermark && matchingCropFormat
+                        : isFolderImagesBox(box)
+                          ? ((folderImagesMap[box.id]?.images?.length || 0) > 0
+                            ? `${folderImagesMap[box.id].images.length} Photos · ${folderImagesMap[box.id].matchedFolder || 'Folder'}`
+                            : `Local Folder · Max ${(box as any).folderMaxImages ?? 10}`)
+                          : isWatermark && matchingCropFormat
                           ? `${matchingCropFormat.targetWidth}×${matchingCropFormat.targetHeight} (${matchingCropFormat.aspect || '1:1'})`
                           : (box.subtitle || 'Crop & Watermark');
 
@@ -14221,6 +14925,329 @@ export const FacebookWorkflowCanvas = forwardRef<
               >
                 {isSideboxActive && (
                   <>
+                  {/* Folder Images Settings Panel */}
+                  {showFBHeroSettingsSidebox && currentModalAIBox && isFolderImagesBox(currentModalAIBox) && (() => {
+                    const fBox = currentModalAIBox as any;
+                    const joinedConns = (config.connections || []).filter((c) => c.toNodeId === currentModalAIBox.id);
+                    const joinedIds = new Set(joinedConns.map((c) => c.fromNodeId));
+                    const sourceOpts = [
+                      { value: 'auto', label: 'Auto (First connected)' },
+                      ...joinedConns.map((c) => {
+                        const src = config.aiBoxes.find((b) => b.id === c.fromNodeId);
+                        return {
+                          value: c.fromNodeId,
+                          label: src?.title || (c.fromNodeId === 'get-content' ? 'Get Content' : c.fromNodeId),
+                        };
+                      }),
+                    ];
+                    const nameMode = fBox.folderNameSourceMode || 'connected';
+                    const safeSrcId = fBox.folderNameSourceId && joinedIds.has(fBox.folderNameSourceId)
+                      ? fBox.folderNameSourceId
+                      : 'auto';
+                    const resolvedName = resolveFolderBoxName(fBox);
+
+                    return (
+                      <div
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+                          position: 'relative',
+                          overflow: 'hidden',
+                          boxSizing: 'border-box',
+                        }}
+                      >
+                        {/* Header */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.75rem 1rem',
+                            borderBottom: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #E2E8F0',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '7px',
+                              background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#FFFFFF',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiFolder size={13} />
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>Folder Images Settings</div>
+                            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Configure folder path, name source &amp; limit</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowFBHeroSettingsSidebox(false)}
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '8px',
+                              border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                              color: 'var(--text-secondary)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FiX size={14} style={{ pointerEvents: 'none' }} />
+                          </button>
+                        </div>
+
+                        {/* Settings Body */}
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                          {/* Base Folder Path + Browse */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                              Base Folder Path
+                            </label>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <input
+                                type="text"
+                                value={fBox.folderBasePath ?? '/Users/zinwaishine/Desktop/Condo Building'}
+                                onChange={(e) => handleUpdateAIBox(currentModalAIBox.id, { folderBasePath: e.target.value } as any)}
+                                placeholder="/Users/zinwaishine/Desktop/Condo Building"
+                                style={{
+                                  flex: 1,
+                                  minWidth: 0,
+                                  height: '34px',
+                                  padding: '0 0.625rem',
+                                  borderRadius: '6px',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                  color: 'var(--text-primary)',
+                                  fontSize: '0.72rem',
+                                  boxSizing: 'border-box',
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    const r = await fetch('http://127.0.0.1:9224/pick-folder');
+                                    const data = await r.json();
+                                    if (data?.status === 'ok' && data.path) {
+                                      handleUpdateAIBox(currentModalAIBox.id, { folderBasePath: data.path } as any);
+                                    }
+                                  } catch {}
+                                }}
+                                style={{
+                                  height: '34px',
+                                  padding: '0 10px',
+                                  borderRadius: '6px',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  backgroundColor: isDark ? '#161B22' : '#F8FAFC',
+                                  color: 'var(--text-primary)',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                <FiFolder size={12} />
+                                <span>Browse</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
+
+                          {/* Folder Name Source */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                            <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                              Folder Name Source
+                            </label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateAIBox(currentModalAIBox.id, { folderNameSourceMode: 'connected' } as any)}
+                                style={{
+                                  height: '32px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  border: nameMode === 'connected'
+                                    ? '1px solid rgba(59, 130, 246, 0.6)'
+                                    : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                  backgroundColor: nameMode === 'connected'
+                                    ? 'rgba(59, 130, 246, 0.16)'
+                                    : (isDark ? '#0D1117' : '#FFFFFF'),
+                                  color: nameMode === 'connected' ? (isDark ? '#93C5FD' : '#2563EB') : 'var(--text-secondary)',
+                                }}
+                              >
+                                Connected Box
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateAIBox(currentModalAIBox.id, { folderNameSourceMode: 'manual' } as any)}
+                                style={{
+                                  height: '32px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  border: nameMode === 'manual'
+                                    ? '1px solid rgba(59, 130, 246, 0.6)'
+                                    : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                  backgroundColor: nameMode === 'manual'
+                                    ? 'rgba(59, 130, 246, 0.16)'
+                                    : (isDark ? '#0D1117' : '#FFFFFF'),
+                                  color: nameMode === 'manual' ? (isDark ? '#93C5FD' : '#2563EB') : 'var(--text-secondary)',
+                                }}
+                              >
+                                Manual Name
+                              </button>
+                            </div>
+
+                            {nameMode === 'connected' ? (
+                              <div
+                                style={{
+                                  padding: '7px 9px',
+                                  borderRadius: '6px',
+                                  backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#F8FAFC',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                  fontSize: '0.72rem',
+                                  color: resolvedName ? 'var(--text-primary)' : 'var(--text-muted)',
+                                  marginTop: '2px',
+                                }}
+                              >
+                                {resolvedName ? `Detected Name: "${resolvedName}"` : 'No text output from connected box yet'}
+                              </div>
+                            ) : (
+                              <input
+                                type="text"
+                                value={fBox.folderManualName || ''}
+                                onChange={(e) => handleUpdateAIBox(currentModalAIBox.id, { folderManualName: e.target.value } as any)}
+                                placeholder="e.g. Elio Del Ray Sukhumvit 64"
+                                style={{
+                                  width: '100%',
+                                  height: '34px',
+                                  padding: '0 0.625rem',
+                                  borderRadius: '6px',
+                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                  color: 'var(--text-primary)',
+                                  fontSize: '0.72rem',
+                                  boxSizing: 'border-box',
+                                  marginTop: '2px',
+                                }}
+                              />
+                            )}
+                          </div>
+
+                          <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
+
+                          {/* Inside Subfolder / Extra Path (Optional) */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                              Inside Folder Path <span style={{ fontWeight: 400 }}>(Optional)</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={fBox.folderSubPath || ''}
+                              onChange={(e) => handleUpdateAIBox(currentModalAIBox.id, { folderSubPath: e.target.value } as any)}
+                              placeholder="e.g. Facility (leave blank for main folder)"
+                              style={{
+                                width: '100%',
+                                height: '34px',
+                                padding: '0 0.625rem',
+                                borderRadius: '6px',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.72rem',
+                                boxSizing: 'border-box',
+                              }}
+                            />
+                            <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                              If set, loads images from this subfolder inside the matched folder; otherwise loads directly from the matched folder.
+                            </span>
+                          </div>
+
+                          <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
+
+                          {/* Max Images Limit */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                              Max Images Limit (0 = Unlimited)
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={fBox.folderMaxImages ?? 10}
+                              onChange={(e) => {
+                                const val = Math.max(0, Number(e.target.value) || 0);
+                                handleUpdateAIBox(currentModalAIBox.id, { folderMaxImages: val } as any);
+                              }}
+                              style={{
+                                width: '100%',
+                                height: '34px',
+                                padding: '0 0.625rem',
+                                borderRadius: '6px',
+                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.75rem',
+                                boxSizing: 'border-box',
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Done Footer */}
+                        <div
+                          style={{
+                            padding: '0.75rem 1rem',
+                            borderTop: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #E2E8F0',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowFBHeroSettingsSidebox(false);
+                              fetchFolderImagesForBox(fBox);
+                            }}
+                            style={{
+                              width: '100%',
+                              height: '36px',
+                              borderRadius: '8px',
+                              border: 'none',
+                              backgroundColor: '#2563EB',
+                              color: '#FFFFFF',
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            ✓ Done &amp; Apply Settings
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* 1a. Extension Autofill Settings Panel */}
                   {showFBHeroSettingsSidebox && currentModalAIBox && isExtensionAutofillBox(currentModalAIBox) && (
                     <div
@@ -14351,27 +15378,237 @@ export const FacebookWorkflowCanvas = forwardRef<
                           const extPlatform = (currentModalAIBox as any).extensionPlatform || 'auto';
                           const joinedConns = (config.connections || []).filter((c) => c.toNodeId === currentModalAIBox.id);
                           const joinedIds = new Set(joinedConns.map((c) => c.fromNodeId));
-                          const joinedOpts = [
-                            { value: 'auto', label: 'Auto (First connected)' },
-                            ...joinedConns.map((c) => {
-                              const srcBox =
-                                config.aiBoxes.find((b) => b.id === c.fromNodeId) ||
-                                (config.combineBoxes || []).find((b) => b.id === c.fromNodeId);
-                              return {
-                                value: c.fromNodeId,
-                                label: srcBox?.title || (c.fromNodeId === 'get-content' ? 'Get Content' : c.fromNodeId === 'get-images' ? 'Get Images' : c.fromNodeId),
-                              };
-                            }),
-                          ];
-                          const safeTitleVal = (currentModalAIBox as any).extensionTitleSourceId && joinedIds.has((currentModalAIBox as any).extensionTitleSourceId)
-                            ? (currentModalAIBox as any).extensionTitleSourceId
-                            : 'auto';
-                          const safeDescVal = (currentModalAIBox as any).extensionDescriptionSourceId && joinedIds.has((currentModalAIBox as any).extensionDescriptionSourceId)
-                            ? (currentModalAIBox as any).extensionDescriptionSourceId
-                            : 'auto';
-                          const safeImgVal = (currentModalAIBox as any).extensionImageSourceId && joinedIds.has((currentModalAIBox as any).extensionImageSourceId)
-                            ? (currentModalAIBox as any).extensionImageSourceId
-                            : 'auto';
+                          const nodeOpts = joinedConns.map((c) => {
+                            const srcBox =
+                              config.aiBoxes.find((b) => b.id === c.fromNodeId) ||
+                              (config.combineBoxes || []).find((b) => b.id === c.fromNodeId);
+                            return {
+                              value: c.fromNodeId,
+                              label: srcBox?.title || (c.fromNodeId === 'get-content' ? 'Get Content' : c.fromNodeId === 'get-images' ? 'Get Images' : c.fromNodeId),
+                            };
+                          });
+                          const labelById = new Map(nodeOpts.map((o) => [o.value, o.label]));
+
+                          const selectedTitleIds = getExtSourceIds(currentModalAIBox, 'extensionTitleSourceIds', 'extensionTitleSourceId', joinedIds);
+                          const selectedDescIds = getExtSourceIds(currentModalAIBox, 'extensionDescriptionSourceIds', 'extensionDescriptionSourceId', joinedIds);
+                          const selectedImgIds = getExtSourceIds(currentModalAIBox, 'extensionImageSourceIds', 'extensionImageSourceId', joinedIds);
+
+                          const updateSourceOrder = (
+                            arrayKey: 'extensionTitleSourceIds' | 'extensionDescriptionSourceIds' | 'extensionImageSourceIds',
+                            singleKey: 'extensionTitleSourceId' | 'extensionDescriptionSourceId' | 'extensionImageSourceId',
+                            nextIds: string[]
+                          ) => {
+                            updateConfig({
+                              ...config,
+                              aiBoxes: config.aiBoxes.map((b) =>
+                                b.id === currentModalAIBox.id
+                                  ? ({ ...b, [arrayKey]: nextIds, [singleKey]: nextIds[0] || 'auto' } as any)
+                                  : b
+                              ),
+                            });
+                          };
+
+                          const renderMultiSourcePicker = (
+                            label: string,
+                            arrayKey: 'extensionTitleSourceIds' | 'extensionDescriptionSourceIds' | 'extensionImageSourceIds',
+                            singleKey: 'extensionTitleSourceId' | 'extensionDescriptionSourceId' | 'extensionImageSourceId',
+                            selectedIds: string[]
+                          ) => (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                  {label}
+                                </label>
+                                <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                                  {selectedIds.length === 0 ? 'Auto' : `${selectedIds.length} selected`}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => updateSourceOrder(arrayKey, singleKey, [])}
+                                  style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.6875rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    border: selectedIds.length === 0
+                                      ? '1px solid #3B82F6'
+                                      : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                    backgroundColor: selectedIds.length === 0
+                                      ? 'rgba(59, 130, 246, 0.16)'
+                                      : (isDark ? '#0D1117' : '#F8FAFC'),
+                                    color: selectedIds.length === 0 ? '#60A5FA' : 'var(--text-secondary)',
+                                  }}
+                                >
+                                  Auto
+                                </button>
+                                {nodeOpts.map((opt) => {
+                                  const idx = selectedIds.indexOf(opt.value);
+                                  const isSel = idx !== -1;
+                                  return (
+                                    <button
+                                      key={opt.value}
+                                      type="button"
+                                      onClick={() => {
+                                        const next = isSel
+                                          ? selectedIds.filter((id) => id !== opt.value)
+                                          : [...selectedIds, opt.value];
+                                        updateSourceOrder(arrayKey, singleKey, next);
+                                      }}
+                                      style={{
+                                        padding: '4px 9px',
+                                        borderRadius: '6px',
+                                        fontSize: '0.6875rem',
+                                        fontWeight: 500,
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '5px',
+                                        border: isSel
+                                          ? '1px solid rgba(59, 130, 246, 0.55)'
+                                          : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                        backgroundColor: isSel
+                                          ? 'rgba(59, 130, 246, 0.16)'
+                                          : (isDark ? '#0D1117' : '#FFFFFF'),
+                                        color: isSel ? (isDark ? '#93C5FD' : '#2563EB') : 'var(--text-primary)',
+                                        transition: 'all 0.15s ease',
+                                      }}
+                                    >
+                                      {isSel && (
+                                        <span style={{ fontSize: '0.625rem', fontWeight: 700, color: isDark ? '#60A5FA' : '#2563EB' }}>
+                                          #{idx + 1}
+                                        </span>
+                                      )}
+                                      <span>{opt.label}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              {selectedIds.length > 1 && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '3px' }}>
+                                  <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                                    Drag handle or arrows to adjust order:
+                                  </span>
+                                  {selectedIds.map((sid, idx) => (
+                                    <div
+                                      key={sid}
+                                      draggable
+                                      onDragStart={(e) => {
+                                        e.dataTransfer.setData('text/plain', `${arrayKey}:${idx}`);
+                                      }}
+                                      onDragOver={(e) => e.preventDefault()}
+                                      onDrop={(e) => {
+                                        e.preventDefault();
+                                        const raw = e.dataTransfer.getData('text/plain');
+                                        const [srcKey, srcIdxStr] = raw.split(':');
+                                        const srcIdx = Number(srcIdxStr);
+                                        if (srcKey !== arrayKey || isNaN(srcIdx) || srcIdx === idx) return;
+                                        const reordered = [...selectedIds];
+                                        const [moved] = reordered.splice(srcIdx, 1);
+                                        reordered.splice(idx, 0, moved);
+                                        updateSourceOrder(arrayKey, singleKey, reordered);
+                                      }}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: '8px',
+                                        padding: '6px 8px',
+                                        borderRadius: '7px',
+                                        border: isDark ? '1px solid rgba(59, 130, 246, 0.25)' : '1px solid #BFDBFE',
+                                        backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : '#EFF6FF',
+                                        cursor: 'grab',
+                                        fontSize: '0.6875rem',
+                                        color: 'var(--text-primary)',
+                                        transition: 'border-color 0.15s ease, background-color 0.15s ease',
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0 }}>
+                                        <span
+                                          style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            color: isDark ? '#64748B' : '#94A3B8',
+                                            fontSize: '0.75rem',
+                                            letterSpacing: '-1px',
+                                            lineHeight: 1,
+                                            flexShrink: 0,
+                                            userSelect: 'none',
+                                          }}
+                                          aria-hidden="true"
+                                        >
+                                          ⋮⋮
+                                        </span>
+                                        <span
+                                          style={{
+                                            fontSize: '0.625rem',
+                                            fontWeight: 700,
+                                            padding: '1px 5px',
+                                            borderRadius: '4px',
+                                            backgroundColor: 'rgba(59, 130, 246, 0.18)',
+                                            color: isDark ? '#60A5FA' : '#2563EB',
+                                            flexShrink: 0,
+                                          }}
+                                        >
+                                          #{idx + 1}
+                                        </span>
+                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>
+                                          {labelById.get(sid) || sid}
+                                        </span>
+                                      </div>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
+                                        <button
+                                          type="button"
+                                          disabled={idx === 0}
+                                          onClick={() => {
+                                            if (idx === 0) return;
+                                            const reordered = [...selectedIds];
+                                            [reordered[idx - 1], reordered[idx]] = [reordered[idx], reordered[idx - 1]];
+                                            updateSourceOrder(arrayKey, singleKey, reordered);
+                                          }}
+                                          style={{
+                                            padding: '1px 5px',
+                                            borderRadius: '4px',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            background: 'transparent',
+                                            color: idx === 0 ? 'var(--text-muted)' : 'var(--text-primary)',
+                                            cursor: idx === 0 ? 'default' : 'pointer',
+                                            fontSize: '0.625rem',
+                                          }}
+                                        >
+                                          ↑
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={idx === selectedIds.length - 1}
+                                          onClick={() => {
+                                            if (idx === selectedIds.length - 1) return;
+                                            const reordered = [...selectedIds];
+                                            [reordered[idx], reordered[idx + 1]] = [reordered[idx + 1], reordered[idx]];
+                                            updateSourceOrder(arrayKey, singleKey, reordered);
+                                          }}
+                                          style={{
+                                            padding: '1px 5px',
+                                            borderRadius: '4px',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            background: 'transparent',
+                                            color: idx === selectedIds.length - 1 ? 'var(--text-muted)' : 'var(--text-primary)',
+                                            cursor: idx === selectedIds.length - 1 ? 'default' : 'pointer',
+                                            fontSize: '0.625rem',
+                                          }}
+                                        >
+                                          ↓
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
 
                           return (
                             <>
@@ -14379,70 +15616,19 @@ export const FacebookWorkflowCanvas = forwardRef<
                               {extPlatform !== 'meta' && (
                                 <>
                                   <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                                    <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                                      Title Source (TikTok)
-                                    </label>
-                                    <Select
-                                      options={joinedOpts}
-                                      value={safeTitleVal}
-                                      onChange={(val) => {
-                                        updateConfig({
-                                          ...config,
-                                          aiBoxes: config.aiBoxes.map((b) =>
-                                            b.id === currentModalAIBox.id ? ({ ...b, extensionTitleSourceId: val } as any) : b
-                                          ),
-                                        });
-                                      }}
-                                      height="34px"
-                                    />
-                                  </div>
+                                  {renderMultiSourcePicker('Title Source (TikTok)', 'extensionTitleSourceIds', 'extensionTitleSourceId', selectedTitleIds)}
                                 </>
                               )}
 
                               <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
 
                               {/* Description Source */}
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                                  Description Source
-                                </label>
-                                <Select
-                                  options={joinedOpts}
-                                  value={safeDescVal}
-                                  onChange={(val) => {
-                                    updateConfig({
-                                      ...config,
-                                      aiBoxes: config.aiBoxes.map((b) =>
-                                        b.id === currentModalAIBox.id ? ({ ...b, extensionDescriptionSourceId: val } as any) : b
-                                      ),
-                                    });
-                                  }}
-                                  height="34px"
-                                />
-                              </div>
+                              {renderMultiSourcePicker('Description Source', 'extensionDescriptionSourceIds', 'extensionDescriptionSourceId', selectedDescIds)}
 
                               <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
 
                               {/* Images Attached Source */}
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                                  Images Attached Source
-                                </label>
-                                <Select
-                                  options={joinedOpts}
-                                  value={safeImgVal}
-                                  onChange={(val) => {
-                                    updateConfig({
-                                      ...config,
-                                      aiBoxes: config.aiBoxes.map((b) =>
-                                        b.id === currentModalAIBox.id ? ({ ...b, extensionImageSourceId: val } as any) : b
-                                      ),
-                                    });
-                                  }}
-                                  height="34px"
-                                />
-                              </div>
+                              {renderMultiSourcePicker('Images Attached Source', 'extensionImageSourceIds', 'extensionImageSourceId', selectedImgIds)}
                             </>
                           );
                         })()}
@@ -14547,7 +15733,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   )}
 
                   {/* 1b. FB Hero / Enhance IMG Settings */}
-                  {showFBHeroSettingsSidebox && currentModalAIBox && !isExtensionAutofillBox(currentModalAIBox) && (
+                  {showFBHeroSettingsSidebox && currentModalAIBox && !isExtensionAutofillBox(currentModalAIBox) && !isFolderImagesBox(currentModalAIBox) && (
                     <FBHeroSettingsSidebox
                       embedded
                       key={currentModalAIBox.id}
@@ -15030,6 +16216,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                     {isOutput && <FiCheckCircle size={18} color="#10B981" />}
                     {isAIBox && currentModalAIBox && (() => {
                       if (isGoogleSheetBox(currentModalAIBox)) return <SiGooglesheets size={18} color="#0F9D58" />;
+                      if (isFolderImagesBox(currentModalAIBox)) return <FiFolder size={18} color="#F59E0B" />;
                       const isWatermark = isWatermarkAIBox(currentModalAIBox);
                       const isEnhance = (isEnhanceAIBox(currentModalAIBox) || isImageAIBox(currentModalAIBox, config.connections)) && !isWatermark;
                       const isFormat = isTextFormatAIBox(currentModalAIBox);
@@ -15147,8 +16334,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                     </button>
                   )}
 
-                  {/* Extension Autofill Gear Button */}
-                  {isAIBox && currentModalAIBox && isExtensionAutofillBox(currentModalAIBox) && (
+                  {/* Extension Autofill / Folder Images Gear Button */}
+                  {isAIBox && currentModalAIBox && (isExtensionAutofillBox(currentModalAIBox) || isFolderImagesBox(currentModalAIBox)) && (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -15157,8 +16344,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                         setShowGoogleSheetSettingsSidebox(false);
                         setShowFBHeroSettingsSidebox((prev) => !prev);
                       }}
-                      title="Extension Autofill Settings (Box ID, Platform, Profile, Batch Size)"
-                      aria-label="Extension Autofill Settings"
+                      title={isFolderImagesBox(currentModalAIBox) ? 'Folder Images Settings' : 'Extension Autofill Settings (Box ID, Platform, Profile, Batch Size)'}
+                      aria-label={isFolderImagesBox(currentModalAIBox) ? 'Folder Images Settings' : 'Extension Autofill Settings'}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -18362,40 +19549,26 @@ export const FacebookWorkflowCanvas = forwardRef<
                           const joinedConns = (config.connections || []).filter((c) => c.toNodeId === currentModalAIBox.id);
                           const joinedIds = new Set(joinedConns.map((c) => c.fromNodeId));
                           const extPlatform = (currentModalAIBox as any).extensionPlatform || 'auto';
-                          const rawDescSrcId = (currentModalAIBox as any).extensionDescriptionSourceId || 'auto';
-                          const descSrcId = rawDescSrcId !== 'auto' && joinedIds.has(rawDescSrcId) ? rawDescSrcId : 'auto';
-                          const rawTitleSrcId = (currentModalAIBox as any).extensionTitleSourceId || 'auto';
-                          const titleSrcId = rawTitleSrcId !== 'auto' && joinedIds.has(rawTitleSrcId) ? rawTitleSrcId : 'auto';
+                          const descSrcIds = getExtSourceIds(currentModalAIBox, 'extensionDescriptionSourceIds', 'extensionDescriptionSourceId', joinedIds);
+                          const titleSrcIds = getExtSourceIds(currentModalAIBox, 'extensionTitleSourceIds', 'extensionTitleSourceId', joinedIds);
 
-                          let resolvedDesc = '';
-                          if (joinedConns.length > 0) {
-                            if (descSrcId !== 'auto') {
-                              resolvedDesc = aiGeneratedOutputs?.[descSrcId] || (descSrcId === 'get-content' ? (rawContent || '') : '');
-                            } else {
-                              for (const c of joinedConns) {
-                                if (aiGeneratedOutputs?.[c.fromNodeId]) {
-                                  resolvedDesc = aiGeneratedOutputs[c.fromNodeId];
-                                  break;
-                                }
-                                if (c.fromNodeId === 'get-content' && rawContent) {
-                                  resolvedDesc = rawContent;
-                                  break;
-                                }
-                              }
-                            }
-                          }
+                          const resolvedDesc = joinedConns.length > 0
+                            ? resolveExtTextFromIds(descSrcIds, joinedConns, aiGeneratedOutputs, rawContent)
+                            : '';
 
                           let resolvedTitle = '';
                           if (extPlatform !== 'meta' && joinedConns.length > 0) {
-                            if (titleSrcId !== 'auto' && aiGeneratedOutputs?.[titleSrcId]) {
-                              resolvedTitle = aiGeneratedOutputs[titleSrcId].split('\n')[0]?.trim() || '';
+                            const titleText = titleSrcIds.length > 0
+                              ? resolveExtTextFromIds(titleSrcIds, joinedConns, aiGeneratedOutputs, rawContent)
+                              : '';
+                            if (titleText) {
+                              resolvedTitle = titleText.split('\n')[0]?.trim() || '';
                             } else if (resolvedDesc) {
                               resolvedTitle = resolvedDesc.split('\n').map((l) => l.trim()).find(Boolean) || _projectName || '';
                             }
                           }
 
-                          const rawImgSrcId = (currentModalAIBox as any).extensionImageSourceId || 'auto';
-                          const imgSrcId = rawImgSrcId !== 'auto' && joinedIds.has(rawImgSrcId) ? rawImgSrcId : 'auto';
+                          const imgSrcIds = getExtSourceIds(currentModalAIBox, 'extensionImageSourceIds', 'extensionImageSourceId', joinedIds);
                           let resolvedImgEntries: Array<{ url: string; sourceLabel: string }> = [];
 
                           const getNodeLabel = (nodeId: string): string => {
@@ -18416,6 +19589,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               isCropStudioBox(b) ||
                               isEnhanceAIBox(b) ||
                               isImageAIBox(b) ||
+                              isFolderImagesBox(b) ||
                               b.processType === 'chrome_tab_group' ||
                               b.processType === 'external_browser'
                             );
@@ -18424,7 +19598,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                           const connectedImgNodeIds = joinedConns.map((c) => c.fromNodeId).filter(isImageCapableNode);
 
                           if (connectedImgNodeIds.length > 0) {
-                            const targetIds = imgSrcId !== 'auto' ? [imgSrcId] : connectedImgNodeIds;
+                            const targetIds = imgSrcIds.length > 0 ? imgSrcIds : connectedImgNodeIds;
 
                             for (const tid of targetIds) {
                               const srcLabel = getNodeLabel(tid);
@@ -18443,8 +19617,48 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 }
                               }
                               const b = config.aiBoxes.find((x) => x.id === tid);
+                              if (isFolderImagesBox(b)) {
+                                (folderImagesMap[tid]?.images || []).forEach((fImg) => {
+                                  if (fImg?.url) resolvedImgEntries.push({ url: fImg.url, sourceLabel: srcLabel });
+                                });
+                                continue;
+                              }
+                              if (b && isChromeTabGroupAIBox(b)) {
+                                const titleLower = ((b as any).title || (b as any).browserGroupName || '').toLowerCase();
+                                const isHeroTab =
+                                  (b as any).tabGroupMode === 'generate' ||
+                                  (b as any).processKind === 'generate_image' ||
+                                  titleLower.includes('hero') ||
+                                  titleLower.includes('generate');
+                                let tabUrls: string[] = [];
+                                if (isHeroTab) {
+                                  try {
+                                    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(`bolthaven_hero_image_${b.id}`) : null;
+                                    if (raw) {
+                                      const parsed = JSON.parse(raw);
+                                      if (parsed?.url) tabUrls = [String(parsed.url)];
+                                    }
+                                  } catch {}
+                                  if (tabUrls.length === 0 && heroImage?.url) tabUrls = [String(heroImage.url)];
+                                  if (tabUrls.length === 0) {
+                                    try {
+                                      const savedHero = typeof localStorage !== 'undefined' ? localStorage.getItem('bolthaven_last_hero_image') : null;
+                                      if (savedHero) {
+                                        const parsed = JSON.parse(savedHero);
+                                        if (parsed?.url) tabUrls = [String(parsed.url)];
+                                      }
+                                    } catch {}
+                                  }
+                                } else {
+                                  tabUrls = Object.values(allEnhancedPhotos || {}).filter(Boolean).map(String);
+                                }
+                                if (tabUrls.length > 0) {
+                                  tabUrls.forEach((u) => resolvedImgEntries.push({ url: u, sourceLabel: srcLabel }));
+                                  continue;
+                                }
+                              }
                               const isEnhance = b && (b.title?.toLowerCase().includes('enhance') || b.id.includes('enhance') || b.processType === 'image_enhance');
-                              if (isEnhance && Object.keys(allEnhancedPhotos || {}).length > 0) {
+                              if ((isEnhance || isWatermarkAIBox(b) || isCropStudioBox(b)) && Object.keys(allEnhancedPhotos || {}).length > 0) {
                                 Object.values(allEnhancedPhotos || {}).forEach((u) => {
                                   if (u) resolvedImgEntries.push({ url: String(u), sourceLabel: srcLabel });
                                 });
@@ -18558,6 +19772,16 @@ export const FacebookWorkflowCanvas = forwardRef<
                                       {previewImgs.map((img: any, i: number) => (
                                         <div
                                           key={img.id}
+                                          onClick={() =>
+                                            handleOpenLightbox(
+                                              i,
+                                              'custom',
+                                              previewImgs.map((item: any, idx: number) => ({
+                                                finalUrl: item.url,
+                                                label: item.sourceLabel ? `${item.sourceLabel} (#${idx + 1})` : `Attached #${idx + 1}`,
+                                              }))
+                                            )
+                                          }
                                           title={img.sourceLabel ? `${img.sourceLabel} (#${i + 1})` : `#${i + 1}`}
                                           style={{
                                             position: 'relative',
@@ -18566,6 +19790,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                             overflow: 'hidden',
                                             border: '1px solid var(--border-color)',
                                             backgroundColor: '#0D1117',
+                                            cursor: 'pointer',
                                           }}
                                         >
                                           <img
@@ -18848,6 +20073,183 @@ export const FacebookWorkflowCanvas = forwardRef<
                           />
                         </div>
                       </div>
+                    ) : isFolderImagesBox(currentModalAIBox) ? (
+                      (() => {
+                        const fBox = currentModalAIBox as any;
+                        const resolvedName = resolveFolderBoxName(fBox);
+                        const folderData = folderImagesMap[currentModalAIBox.id];
+                        const isLoadingFolder = Boolean(loadingFolderBoxIds[currentModalAIBox.id]);
+
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                            {/* Folder Images Summary Card */}
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: '0.625rem',
+                                padding: '0.65rem 0.75rem',
+                                borderRadius: '8px',
+                                backgroundColor: isDark ? 'rgba(245, 158, 11, 0.08)' : '#FFFBEB',
+                                border: isDark ? '1px solid rgba(245, 158, 11, 0.28)' : '1px solid #FDE68A',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    borderRadius: '8px',
+                                    backgroundColor: '#F59E0B',
+                                    color: '#FFFFFF',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <FiFolder size={16} />
+                                </div>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    Folder Images Loader
+                                  </div>
+                                  <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {resolvedName ? `Looking for: ${resolvedName}` : (fBox.folderBasePath || '/Users/zinwaishine/Desktop/Condo Building')}
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setShowFBHeroSettingsSidebox(true)}
+                                style={{
+                                  height: '28px',
+                                  padding: '0 8px',
+                                  borderRadius: '6px',
+                                  border: isDark ? '1px solid rgba(255,255,255,0.14)' : '1px solid #E2E8F0',
+                                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
+                                  color: 'var(--text-primary)',
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                Settings
+                              </button>
+                            </div>
+
+                            {isLoadingFolder && (
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                  padding: '8px',
+                                  borderRadius: '6px',
+                                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.1)' : '#EFF6FF',
+                                  color: isDark ? '#93C5FD' : '#2563EB',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                <FiRefreshCw size={12} className="animate-spin" />
+                                <span>Loading images from folder...</span>
+                              </div>
+                            )}
+
+                            {folderData?.error && (
+                              <div
+                                style={{
+                                  padding: '8px 10px',
+                                  borderRadius: '6px',
+                                  backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                                  color: '#F87171',
+                                  fontSize: '0.6875rem',
+                                }}
+                              >
+                                {folderData.error}
+                              </div>
+                            )}
+
+                            {/* Loaded Images Preview Grid */}
+                            {folderData && folderData.images && folderData.images.length > 0 && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                                  <span>
+                                    Folder: <strong style={{ color: 'var(--text-primary)' }}>{folderData.matchedFolder}</strong>
+                                  </span>
+                                  <span>
+                                    {folderData.images.length} / {folderData.totalFound} photos
+                                  </span>
+                                </div>
+                                <div
+                                  style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                                    gridAutoRows: '104px',
+                                    alignContent: 'start',
+                                    gap: '8px',
+                                    padding: '2px',
+                                    maxHeight: '440px',
+                                    overflowY: 'auto',
+                                  }}
+                                >
+                                  {folderData.images.map((fImg, idx) => (
+                                    <div
+                                      key={fImg.path || idx}
+                                      onClick={() =>
+                                        handleOpenLightbox(
+                                          idx,
+                                          'custom',
+                                          folderData.images.map((item, i) => ({
+                                            finalUrl: item.url,
+                                            label: `#${i + 1} · ${item.name}`,
+                                          }))
+                                        )
+                                      }
+                                      style={{
+                                        position: 'relative',
+                                        width: '100%',
+                                        height: '104px',
+                                        borderRadius: '7px',
+                                        overflow: 'hidden',
+                                        border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid #E2E8F0',
+                                        backgroundColor: isDark ? '#1E293B' : '#F1F5F9',
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      <img
+                                        src={fImg.url}
+                                        alt={fImg.name}
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                      />
+                                      <div
+                                        style={{
+                                          position: 'absolute',
+                                          top: '4px',
+                                          left: '4px',
+                                          padding: '1px 5px',
+                                          borderRadius: '4px',
+                                          backgroundColor: 'rgba(0,0,0,0.72)',
+                                          color: '#FFFFFF',
+                                          fontSize: '0.5625rem',
+                                          fontWeight: 700,
+                                        }}
+                                      >
+                                        #{idx + 1}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()
                     ) : isGoogleSheetBox(currentModalAIBox) ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                         {/* Google Sheets Engine Banner */}
@@ -20650,7 +22052,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                 }}
               >
                 {/* Fallback Run button for other non-ExternalBrowser runnable nodes */}
-                {(!isAIBox || (currentModalAIBox && !isExternalBrowserAIBox(currentModalAIBox) && currentModalAIBox.processType !== 'chrome_profile' && !isChromeTabGroupAIBox(currentModalAIBox) && !isGoogleSheetBox(currentModalAIBox) && !isExtensionAutofillBox(currentModalAIBox))) && (isContent || isImages || (isAIBox && currentModalAIBox)) && (
+                {(!isAIBox || (currentModalAIBox && !isExternalBrowserAIBox(currentModalAIBox) && currentModalAIBox.processType !== 'chrome_profile' && !isChromeTabGroupAIBox(currentModalAIBox) && !isGoogleSheetBox(currentModalAIBox) && !isExtensionAutofillBox(currentModalAIBox) && !isFolderImagesBox(currentModalAIBox))) && (isContent || isImages || (isAIBox && currentModalAIBox)) && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
                     {isAIBox && currentModalAIBox && (
                       <button
@@ -23938,7 +25340,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   <button
                     type="button"
                     onClick={() => {
-                      const newExtId = handleAddExtensionAutofillNodeConnectedFrom(fromNodeId);
+                      const newExtId = handleAddExtensionAutofillNodeConnectedFrom(undefined, { anchorNodeId: fromNodeId });
                       setConnectDrawerNode(null);
                       setActiveModalNode(newExtId);
                     }}
@@ -23984,6 +25386,53 @@ export const FacebookWorkflowCanvas = forwardRef<
                       </div>
                       <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
                         Join selected inputs & push to Meta / TikTok Browser Extension
+                      </div>
+                    </div>
+                    <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
+                  </button>
+
+                  {/* Folder Images Loader Node (Standalone / Manual Connect) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newFolderId = handleAddFolderImagesNode({ anchorNodeId: fromNodeId });
+                      setConnectDrawerNode(null);
+                      setActiveModalNode(newFolderId);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      padding: '0.55rem 0.65rem',
+                      borderRadius: '7px',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <FiFolder size={14} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                        + Folder Images
+                      </div>
+                      <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
+                        Get images from local folder by name (Manual connect)
                       </div>
                     </div>
                     <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
@@ -26939,6 +28388,60 @@ export const FacebookWorkflowCanvas = forwardRef<
               <span>Connect Next</span>
             </button>
           )}
+
+          {/* View Connected / Received Lines with Unique Colors */}
+          {(() => {
+            const isLinesOn = highlightedLineNodeIds.has(contextMenu.nodeId);
+            return (
+              <button
+                type="button"
+                className="context-menu-item"
+                onClick={() => {
+                  toggleHighlightNodeLines(contextMenu.nodeId);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                  width: '100%',
+                  padding: '7px 9px',
+                  borderRadius: '5px',
+                  border: 'none',
+                  background: 'transparent',
+                  color: isDark ? '#F0F6FC' : '#1E293B',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'background-color 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                  <FiGitMerge size={14} style={{ flexShrink: 0, opacity: 0.85 }} />
+                  <span>View Lines</span>
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.625rem',
+                    fontWeight: 700,
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    backgroundColor: isDark ? '#2D333B' : '#F1F5F9',
+                    color: isDark ? '#CBD5E1' : '#475569',
+                  }}
+                >
+                  {isLinesOn ? 'ON' : 'OFF'}
+                </span>
+              </button>
+            );
+          })()}
 
           {/* Divider between Upper Actions and Delete/Reverse Section */}
           {(contextMenu.canRevertRow || contextMenu.canDelete) && (contextMenu.canRun || contextMenu.canConnectNext) && (
