@@ -17,6 +17,7 @@ import {
   FiChevronDown,
   FiX,
   FiMoreHorizontal,
+  FiMoreVertical,
   FiRotateCcw,
   FiScissors,
   FiMaximize2,
@@ -838,6 +839,14 @@ export const WatermarkView: React.FC = () => {
   // Dedicated Format Editor Modal state (Handles both Create New and Edit)
   const [formatEditorOpen, setFormatEditorOpen] = useState<boolean>(false);
   const [editingFormatTarget, setEditingFormatTarget] = useState<CropStudioFormat | null>(null);
+  const [cardMenuFormatId, setCardMenuFormatId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!cardMenuFormatId) return;
+    const closeMenu = () => setCardMenuFormatId(null);
+    window.addEventListener('click', closeMenu);
+    return () => window.removeEventListener('click', closeMenu);
+  }, [cardMenuFormatId]);
   const [editorFormName, setEditorFormName] = useState<string>('');
   const [editorFormDesc, setEditorFormDesc] = useState<string>('');
   const [editorFormMode, setEditorFormMode] = useState<'standard' | 'grid'>('standard');
@@ -2438,12 +2447,12 @@ export const WatermarkView: React.FC = () => {
               padding: '0 14px',
               fontSize: '0.8125rem',
               fontWeight: 600,
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: 'var(--accent-primary)',
+              borderRadius: '7px',
+              border: isDark ? '1px solid #30363D' : '1px solid #0F172A',
+              backgroundColor: isDark ? '#2D333B' : '#0F172A',
               color: '#FFFFFF',
               cursor: 'pointer',
-              boxShadow: '0 2px 6px rgba(37, 99, 235, 0.35)',
+              boxShadow: 'none',
               transition: 'all 0.15s ease',
             }}
           >
@@ -2893,14 +2902,14 @@ export const WatermarkView: React.FC = () => {
       style={{
         display: 'flex',
         flexDirection: 'column',
-        height: activeStudioTab === 'canvas' ? '100vh' : 'calc(100vh - 56px - 1.5rem)',
-        maxHeight: activeStudioTab === 'canvas' ? '100vh' : 'calc(100vh - 56px - 1.5rem)',
+        height: activeStudioTab === 'canvas' ? '100vh' : 'auto',
+        maxHeight: activeStudioTab === 'canvas' ? '100vh' : 'none',
         width: '100%',
         margin: 0,
-        overflow: 'hidden',
+        overflow: activeStudioTab === 'canvas' ? 'hidden' : 'visible',
         position: 'relative',
         boxSizing: 'border-box',
-        paddingTop: activeStudioTab === 'canvas' ? '56px' : 0,
+        paddingTop: 0,
       }}
     >
       {/* Top Navbar Title & Actions Portals */}
@@ -2962,9 +2971,7 @@ export const WatermarkView: React.FC = () => {
           style={{
             display: 'flex',
             flexDirection: 'column',
-            flex: 1,
-            minHeight: 0,
-            overflowY: 'auto',
+            flex: activeStudioTab === 'home' ? '0 0 auto' : 1,
             padding: '1.25rem 1.75rem',
             gap: '1.25rem',
           }}
@@ -3040,7 +3047,7 @@ export const WatermarkView: React.FC = () => {
                   padding: '6px 12px',
                   borderRadius: '6px',
                   border: 'none',
-                  backgroundColor: formatCategoryFilter === 'all' ? 'var(--accent-primary)' : 'transparent',
+                  backgroundColor: formatCategoryFilter === 'all' ? (isDark ? '#2D333B' : '#0F172A') : 'transparent',
                   color: formatCategoryFilter === 'all' ? '#FFFFFF' : 'var(--text-secondary)',
                   fontSize: '0.75rem',
                   fontWeight: 600,
@@ -3060,7 +3067,7 @@ export const WatermarkView: React.FC = () => {
                   padding: '6px 12px',
                   borderRadius: '6px',
                   border: 'none',
-                  backgroundColor: formatCategoryFilter === 'standard' ? 'var(--accent-primary)' : 'transparent',
+                  backgroundColor: formatCategoryFilter === 'standard' ? (isDark ? '#2D333B' : '#0F172A') : 'transparent',
                   color: formatCategoryFilter === 'standard' ? '#FFFFFF' : 'var(--text-secondary)',
                   fontSize: '0.75rem',
                   fontWeight: 600,
@@ -3081,7 +3088,7 @@ export const WatermarkView: React.FC = () => {
                   padding: '6px 12px',
                   borderRadius: '6px',
                   border: 'none',
-                  backgroundColor: formatCategoryFilter === 'grid' ? 'var(--accent-primary)' : 'transparent',
+                  backgroundColor: formatCategoryFilter === 'grid' ? (isDark ? '#2D333B' : '#0F172A') : 'transparent',
                   color: formatCategoryFilter === 'grid' ? '#FFFFFF' : 'var(--text-secondary)',
                   fontSize: '0.75rem',
                   fontWeight: 600,
@@ -3144,8 +3151,8 @@ export const WatermarkView: React.FC = () => {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-                gap: '14px',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+                gap: '1rem',
               }}
             >
               {filteredFormats.map((fmt) => {
@@ -3154,42 +3161,41 @@ export const WatermarkView: React.FC = () => {
                     key={fmt.id}
                     onClick={() => handleUseFormatAndOpenStudio(fmt)}
                     style={{
-                      borderRadius: '12px',
-                      backgroundColor: 'var(--bg-secondary)',
-                      border: '1px solid var(--border-color)',
-                      padding: '1.25rem',
+                      borderRadius: '10px',
+                      backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      padding: '1rem 1.125rem',
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between',
-                      gap: '1rem',
+                      gap: '0.75rem',
                       cursor: 'pointer',
-                      boxShadow: 'var(--shadow-sm)',
-                      transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+                      boxShadow: 'none',
+                      transition: 'border-color 0.15s ease',
                       position: 'relative',
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = 'var(--border-color-hover)';
+                      e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'var(--border-color)';
+                      e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
                     }}
                   >
-                    {/* Top: Icon + Format Name + Category Badge */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, flex: 1 }}>
+                    {/* Top: Icon + Format Name + Three-dot Menu */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.625rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0, flex: 1 }}>
                         <div
                           style={{
-                            width: '36px',
-                            height: '36px',
-                            borderRadius: '8px',
-                            backgroundColor: fmt.mode === 'grid'
-                              ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(37, 99, 235, 0.08)')
-                              : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)'),
-                            color: fmt.mode === 'grid' ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '7px',
+                            backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                            color: 'var(--text-secondary)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            fontSize: '1.05rem',
+                            fontSize: '0.95rem',
                             flexShrink: 0,
                           }}
                         >
@@ -3197,6 +3203,7 @@ export const WatermarkView: React.FC = () => {
                         </div>
                         <div style={{ minWidth: 0, flex: 1 }}>
                           <h3
+                            title={fmt.name}
                             style={{
                               margin: 0,
                               fontSize: '0.9375rem',
@@ -3209,7 +3216,7 @@ export const WatermarkView: React.FC = () => {
                           >
                             {fmt.name}
                           </h3>
-                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {fmt.mode === 'grid'
                               ? `${SOCIAL_GRID_LAYOUTS.find((l) => l.id === fmt.gridLayoutId)?.name || 'Grid Split'} (Multi-Tile)`
                               : `${fmt.targetWidth} × ${fmt.targetHeight} px (${fmt.aspect || 'Custom'})`}
@@ -3217,142 +3224,162 @@ export const WatermarkView: React.FC = () => {
                         </div>
                       </div>
 
-                      <span
-                        style={{
-                          fontSize: '0.6875rem',
-                          fontWeight: 600,
-                          padding: '3px 8px',
-                          borderRadius: '6px',
-                          backgroundColor: fmt.mode === 'grid'
-                            ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(37, 99, 235, 0.1)')
-                            : (isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)'),
-                          color: fmt.mode === 'grid' ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                          whiteSpace: 'nowrap',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {fmt.mode === 'grid' ? 'Grid Split' : 'Crop & Watermark'}
-                      </span>
-                    </div>
+                      <div style={{ position: 'relative', flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCardMenuFormatId((prev) => (prev === fmt.id ? null : fmt.id));
+                          }}
+                          title="Format actions"
+                          style={{
+                            height: '26px',
+                            width: '26px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderRadius: '6px',
+                            backgroundColor: cardMenuFormatId === fmt.id
+                              ? (isDark ? '#2D333B' : '#F1F5F9')
+                              : 'transparent',
+                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                            color: 'var(--text-secondary)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <FiMoreVertical size={13} />
+                        </button>
 
-                    {/* Actions Footer */}
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '0.5rem',
-                        paddingTop: '0.75rem',
-                        borderTop: '1px solid var(--border-color)',
-                      }}
-                    >
-                      {/* Open in Studio Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleUseFormatAndOpenStudio(fmt);
-                        }}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          height: '34px',
-                          padding: '0 14px',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          borderRadius: '6px',
-                          border: 'none',
-                          backgroundColor: 'var(--accent-primary)',
-                          color: '#FFFFFF',
-                          cursor: 'pointer',
-                          flex: 1,
-                          transition: 'all 0.15s ease',
-                        }}
-                        title="Load this format into Studio Canvas"
-                      >
-                        <FiExternalLink size={13} />
-                        <span>Open in Studio</span>
-                      </button>
+                        {cardMenuFormatId === fmt.id && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              position: 'absolute',
+                              top: '32px',
+                              right: 0,
+                              minWidth: '150px',
+                              padding: '4px',
+                              borderRadius: '8px',
+                              backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+                              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                              boxShadow: isDark
+                                ? '0 10px 25px -5px rgba(0, 0, 0, 0.5)'
+                                : '0 10px 25px -5px rgba(15, 23, 42, 0.14)',
+                              zIndex: 50,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '2px',
+                            }}
+                          >
+                            <div
+                              style={{
+                                padding: '3px 9px 2px',
+                                fontSize: '0.6875rem',
+                                fontWeight: 600,
+                                color: isDark ? '#8B949E' : '#64748B',
+                              }}
+                            >
+                              Format
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCardMenuFormatId(null);
+                                handleOpenEditFormatModal(fmt);
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                width: '100%',
+                                padding: '6px 9px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                backgroundColor: 'transparent',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.75rem',
+                                fontWeight: 500,
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                              }}
+                            >
+                              <FiEdit2 size={12} />
+                              <span>Edit</span>
+                            </button>
 
-                      {/* Edit Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenEditFormatModal(fmt);
-                        }}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          height: '34px',
-                          padding: '0 10px',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          borderRadius: '6px',
-                          border: '1px solid var(--border-color)',
-                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
-                          color: 'var(--text-primary)',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                        title="Edit format settings"
-                      >
-                        <FiEdit2 size={12} />
-                        <span>Edit</span>
-                      </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                setCardMenuFormatId(null);
+                                handleDuplicateStudioFormat(fmt, e);
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                width: '100%',
+                                padding: '6px 9px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                backgroundColor: 'transparent',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.75rem',
+                                fontWeight: 500,
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                              }}
+                            >
+                              <FiCopy size={12} />
+                              <span>Duplicate</span>
+                            </button>
 
-                      {/* Duplicate Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDuplicateStudioFormat(fmt, e);
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          width: '34px',
-                          height: '34px',
-                          borderRadius: '6px',
-                          border: '1px solid var(--border-color)',
-                          backgroundColor: 'transparent',
-                          color: 'var(--text-secondary)',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                        title="Duplicate format"
-                      >
-                        <FiCopy size={13} />
-                      </button>
+                            <div
+                              style={{
+                                height: '1px',
+                                margin: '3px 4px',
+                                backgroundColor: isDark ? '#30363D' : '#E2E8F0',
+                              }}
+                            />
 
-                      {/* Delete Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteStudioFormatWithConfirm(fmt.id, fmt.name, e);
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          width: '34px',
-                          height: '34px',
-                          borderRadius: '6px',
-                          border: '1px solid var(--border-color)',
-                          backgroundColor: 'transparent',
-                          color: '#EF4444',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                        title="Delete format"
-                      >
-                        <FiTrash2 size={13} />
-                      </button>
+                            <div
+                              style={{
+                                padding: '2px 9px',
+                                fontSize: '0.6875rem',
+                                fontWeight: 600,
+                                color: isDark ? '#8B949E' : '#64748B',
+                              }}
+                            >
+                              Danger
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                setCardMenuFormatId(null);
+                                handleDeleteStudioFormatWithConfirm(fmt.id, fmt.name, e);
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                width: '100%',
+                                padding: '6px 9px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                backgroundColor: 'transparent',
+                                color: '#F87171',
+                                fontSize: '0.75rem',
+                                fontWeight: 500,
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                              }}
+                            >
+                              <FiTrash2 size={12} />
+                              <span>Delete</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -3374,6 +3401,60 @@ export const WatermarkView: React.FC = () => {
             position: 'relative',
           }}
         >
+          {/* Floating Top-Left Back Button + Format Name Pill */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '14px',
+              left: '14px',
+              zIndex: 60,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setActiveStudioTab('home')}
+              title="Back to Formats"
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                backgroundColor: isDark ? 'rgba(28, 33, 40, 0.88)' : 'rgba(255, 255, 255, 0.92)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                color: 'var(--text-primary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <FiArrowLeft size={16} />
+            </button>
+            {activeStudioFormat?.name && (
+              <div
+                style={{
+                  height: '36px',
+                  padding: '0 12px',
+                  borderRadius: '18px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  backgroundColor: isDark ? 'rgba(28, 33, 40, 0.88)' : 'rgba(255, 255, 255, 0.92)',
+                  backdropFilter: 'blur(12px)',
+                  WebkitBackdropFilter: 'blur(12px)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                {activeStudioFormat.name}
+              </div>
+            )}
+          </div>
         {/* ======================================================== */}
         {/* FIRST COLUMN (LEFT): FULL-BLEED WORKSPACE CANVAS          */}
         {/* ======================================================== */}
@@ -3409,14 +3490,23 @@ export const WatermarkView: React.FC = () => {
               <div
                 style={{
                   position: 'absolute',
-                  top: '12px',
-                  left: '16px',
+                  top: '14px',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
                   zIndex: 20,
                   pointerEvents: 'none',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
-                  minWidth: 0,
+                  height: '36px',
+                  padding: '0 14px',
+                  borderRadius: '18px',
+                  backgroundColor: isDark ? 'rgba(28, 33, 40, 0.88)' : 'rgba(255, 255, 255, 0.92)',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  backdropFilter: 'blur(12px)',
+                  WebkitBackdropFilter: 'blur(12px)',
+                  maxWidth: 'calc(100% - 320px)',
+                  overflow: 'hidden',
                   fontSize: '0.75rem',
                 }}
               >
@@ -3461,7 +3551,7 @@ export const WatermarkView: React.FC = () => {
                     <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
                       {targetWidth} × {targetHeight} px
                     </span>
-                    <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
+                    <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
                       ({activePreset?.aspect && activePreset.aspect !== 'None' ? activePreset.aspect : getAspectRatioLabel(targetWidth, targetHeight)})
                     </span>
                     {watermarkConfig.enabled && (
@@ -3599,9 +3689,9 @@ export const WatermarkView: React.FC = () => {
                       height: '40px',
                       fontSize: '0.8125rem',
                       fontWeight: 600,
-                      borderRadius: '10px',
-                      border: 'none',
-                      background: 'var(--accent-primary)',
+                      borderRadius: '8px',
+                      border: isDark ? '1px solid #30363D' : '1px solid #0F172A',
+                      background: isDark ? '#2D333B' : '#0F172A',
                       color: '#FFFFFF',
                       cursor: 'pointer',
                       boxShadow: 'none',
@@ -4507,8 +4597,8 @@ export const WatermarkView: React.FC = () => {
             minWidth: '360px',
             maxWidth: '420px',
             height: '100%',
-            backgroundColor: isDark ? 'var(--bg-secondary)' : '#FFFFFF',
-            borderLeft: '1px solid var(--border-color)',
+            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+            borderLeft: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
             borderTop: 'none',
             borderRight: 'none',
             borderBottom: 'none',
@@ -4535,11 +4625,11 @@ export const WatermarkView: React.FC = () => {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {(activeStudioFormat?.mode === 'grid' || studioMode === 'grid') ? (
-                <FiGrid style={{ color: 'var(--accent-primary)', fontSize: '1rem' }} />
+                <FiGrid style={{ color: 'var(--text-secondary)', fontSize: '1rem' }} />
               ) : studioMode === 'watermark' ? (
-                <FiShield style={{ color: 'var(--accent-primary)', fontSize: '1rem' }} />
+                <FiShield style={{ color: 'var(--text-secondary)', fontSize: '1rem' }} />
               ) : (
-                <FiScissors style={{ color: 'var(--accent-primary)', fontSize: '1rem' }} />
+                <FiScissors style={{ color: 'var(--text-secondary)', fontSize: '1rem' }} />
               )}
               <span
                 style={{
@@ -4708,12 +4798,12 @@ export const WatermarkView: React.FC = () => {
                     padding: '8px 12px',
                     borderRadius: '8px',
                     border: activePresetId === 'original'
-                      ? '1px solid var(--accent-primary)'
+                      ? (isDark ? '1px solid #484F58' : '1px solid #0F172A')
                       : '1px solid var(--border-color)',
                     backgroundColor: activePresetId === 'original'
-                      ? 'var(--accent-primary-alpha)'
+                      ? (isDark ? '#2D333B' : '#F1F5F9')
                       : (isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF'),
-                    color: activePresetId === 'original' ? 'var(--accent-primary)' : 'var(--text-primary)',
+                    color: 'var(--text-primary)',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
                   }}
@@ -4722,7 +4812,7 @@ export const WatermarkView: React.FC = () => {
                     <span style={{ fontSize: '0.8125rem', fontWeight: activePresetId === 'original' ? 700 : 600 }}>
                       None
                     </span>
-                    <span style={{ fontSize: '0.625rem', color: activePresetId === 'original' ? 'var(--accent-primary)' : 'var(--text-muted)' }}>
+                    <span style={{ fontSize: '0.625rem', color: activePresetId === 'original' ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
                       {activeImage ? `${activeImage.width || 1536} × ${activeImage.height || 1024} px • Native Resolution` : 'Native Resolution'}
                     </span>
                   </div>
@@ -4732,7 +4822,7 @@ export const WatermarkView: React.FC = () => {
                       fontWeight: 600,
                       padding: '2px 8px',
                       borderRadius: '4px',
-                      backgroundColor: activePresetId === 'original' ? 'var(--accent-primary)' : (isDark ? 'rgba(255,255,255,0.08)' : 'var(--bg-main)'),
+                      backgroundColor: activePresetId === 'original' ? (isDark ? '#30363D' : '#0F172A') : (isDark ? 'rgba(255,255,255,0.08)' : 'var(--bg-main)'),
                       color: activePresetId === 'original' ? '#FFFFFF' : 'var(--text-secondary)',
                     }}
                   >
@@ -4768,10 +4858,10 @@ export const WatermarkView: React.FC = () => {
                             height: '52px',
                             borderRadius: '8px',
                             border: isSelected
-                              ? '1.5px solid var(--accent-primary)'
+                              ? (isDark ? '1.5px solid #6E7681' : '1.5px solid #0F172A')
                               : '1px solid var(--border-color)',
                             backgroundColor: isSelected
-                              ? 'var(--accent-primary-alpha)'
+                              ? (isDark ? '#2D333B' : '#F1F5F9')
                               : (isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF'),
                             cursor: 'pointer',
                             padding: '4px 6px',
@@ -4782,7 +4872,7 @@ export const WatermarkView: React.FC = () => {
                             style={{
                               fontSize: '0.8125rem',
                               fontWeight: isSelected ? 700 : 600,
-                              color: isSelected ? 'var(--accent-primary)' : 'var(--text-primary)',
+                              color: isSelected ? 'var(--text-primary)' : 'var(--text-primary)',
                             }}
                           >
                             {preset.aspect}
@@ -4790,7 +4880,7 @@ export const WatermarkView: React.FC = () => {
                           <span
                             style={{
                               fontSize: '0.625rem',
-                              color: isSelected ? 'var(--accent-primary)' : 'var(--text-muted)',
+                              color: isSelected ? 'var(--text-secondary)' : 'var(--text-muted)',
                               marginTop: '1px',
                               whiteSpace: 'nowrap',
                               overflow: 'hidden',
@@ -4944,9 +5034,9 @@ export const WatermarkView: React.FC = () => {
                       height: '34px',
                       padding: '0 12px',
                       borderRadius: '7px',
-                      border: '1px solid var(--accent-primary)',
-                      backgroundColor: 'var(--accent-primary-alpha)',
-                      color: 'var(--accent-primary)',
+                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                      backgroundColor: isDark ? '#2D333B' : '#F1F5F9',
+                      color: 'var(--text-primary)',
                       fontSize: '0.75rem',
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -4999,7 +5089,7 @@ export const WatermarkView: React.FC = () => {
                         height: '30px',
                         borderRadius: '6px',
                         border: 'none',
-                        backgroundColor: fitMode === 'cover' ? 'var(--accent-primary)' : 'transparent',
+                        backgroundColor: fitMode === 'cover' ? (isDark ? '#2D333B' : '#0F172A') : 'transparent',
                         color: fitMode === 'cover' ? '#FFFFFF' : 'var(--text-secondary)',
                         fontSize: '0.75rem',
                         fontWeight: fitMode === 'cover' ? 600 : 500,
@@ -5016,7 +5106,7 @@ export const WatermarkView: React.FC = () => {
                         height: '30px',
                         borderRadius: '6px',
                         border: 'none',
-                        backgroundColor: fitMode === 'contain' ? 'var(--accent-primary)' : 'transparent',
+                        backgroundColor: fitMode === 'contain' ? (isDark ? '#2D333B' : '#0F172A') : 'transparent',
                         color: fitMode === 'contain' ? '#FFFFFF' : 'var(--text-secondary)',
                         fontSize: '0.75rem',
                         fontWeight: fitMode === 'contain' ? 600 : 500,
@@ -5050,7 +5140,7 @@ export const WatermarkView: React.FC = () => {
                       <SwitchToggle
                         checked={applyToAllImages}
                         onChange={(val) => setApplyToAllImages(val)}
-                        activeColor="var(--accent-primary)"
+                        activeColor={isDark ? '#484F58' : '#0F172A'}
                         isDark={isDark}
                       />
                       <span
@@ -5095,14 +5185,12 @@ export const WatermarkView: React.FC = () => {
                             height: '20px',
                             borderRadius: '4px',
                             border: isActive
-                              ? '1px solid var(--accent-primary)'
+                              ? (isDark ? '1px solid #6E7681' : '1px solid #0F172A')
                               : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)'),
                             backgroundColor: isActive
-                              ? 'var(--accent-primary)'
+                              ? (isDark ? '#2D333B' : '#0F172A')
                               : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF'),
-                            boxShadow: isActive
-                              ? '0 0 8px var(--accent-primary-alpha, rgba(37, 99, 235, 0.35))'
-                              : 'none',
+                            boxShadow: 'none',
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
@@ -5112,7 +5200,7 @@ export const WatermarkView: React.FC = () => {
                           }}
                           onMouseEnter={(e) => {
                             if (!isActive) {
-                              e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                              e.currentTarget.style.borderColor = isDark ? '#6E7681' : '#94A3B8';
                               e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.14)' : 'var(--bg-surface)';
                             }
                           }}
@@ -5168,7 +5256,7 @@ export const WatermarkView: React.FC = () => {
                   step="0.05"
                   value={cropZoom}
                   onChange={(e) => setCropZoom(parseFloat(e.target.value))}
-                  style={{ width: '100%', accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
+                  style={{ width: '100%', accentColor: isDark ? '#94A3B8' : '#0F172A', cursor: 'pointer' }}
                 />
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', marginTop: '2px' }}>
@@ -5189,11 +5277,11 @@ export const WatermarkView: React.FC = () => {
                           fontSize: '0.6875rem',
                           fontWeight: isSelected ? 600 : 500,
                           borderRadius: '6px',
-                          border: isSelected ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                          border: isSelected ? (isDark ? '1px solid #484F58' : '1px solid #0F172A') : '1px solid var(--border-color)',
                           backgroundColor: isSelected
-                            ? 'var(--accent-primary-alpha)'
+                            ? (isDark ? '#2D333B' : '#0F172A')
                             : (isDark ? 'transparent' : '#FFFFFF'),
-                          color: isSelected ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                          color: isSelected ? '#FFFFFF' : 'var(--text-secondary)',
                           cursor: 'pointer',
                           transition: 'all 0.12s ease',
                         }}
@@ -5783,7 +5871,7 @@ export const WatermarkView: React.FC = () => {
                             setApplyToAllTiles(val);
                             saveTileCropSettings(targetWidth, targetHeight, activePresetId, val, tileCropMap);
                           }}
-                          activeColor="var(--accent-primary)"
+                          activeColor={isDark ? '#484F58' : '#0F172A'}
                           isDark={isDark}
                         />
                         <span
@@ -6088,9 +6176,9 @@ export const WatermarkView: React.FC = () => {
                       height: '34px',
                       padding: '0 12px',
                       borderRadius: '7px',
-                      border: '1px solid var(--accent-primary)',
-                      backgroundColor: 'var(--accent-primary-alpha)',
-                      color: 'var(--accent-primary)',
+                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                      backgroundColor: isDark ? '#2D333B' : '#F1F5F9',
+                      color: 'var(--text-primary)',
                       fontSize: '0.75rem',
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -6333,9 +6421,10 @@ export const WatermarkView: React.FC = () => {
                 flexDirection: 'column',
                 gap: '12px',
                 padding: '14px',
-                borderRadius: '12px',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'var(--bg-main)',
-                border: '1px solid var(--border-color)',
+                gap: '16px',
+                padding: 0,
+                backgroundColor: 'transparent',
+                border: 'none',
                 flexShrink: 0,
               }}
             >
@@ -6346,15 +6435,11 @@ export const WatermarkView: React.FC = () => {
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 gap: '12px',
-                padding: '12px 14px',
-                borderRadius: '10px',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'var(--bg-secondary)',
-                border: watermarkConfig.enabled
-                  ? '1.5px solid var(--accent-primary)'
-                  : '1px solid var(--border-color)',
-                boxShadow: watermarkConfig.enabled
-                  ? (isDark ? '0 0 12px rgba(59, 130, 246, 0.2)' : '0 2px 8px rgba(59, 130, 246, 0.12)')
-                  : 'none',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                backgroundColor: 'transparent',
+                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                boxShadow: 'none',
                 transition: 'all 0.2s ease',
               }}
             >
@@ -6386,9 +6471,9 @@ export const WatermarkView: React.FC = () => {
                       style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
                     />
                   ) : watermarkConfig.type === 'text' && watermarkConfig.text ? (
-                    <FiType size={18} style={{ color: 'var(--accent-primary)' }} />
+                    <FiType size={18} style={{ color: 'var(--text-primary)' }} />
                   ) : (
-                    <FiShield size={18} style={{ color: watermarkConfig.enabled ? 'var(--accent-primary)' : 'var(--text-muted)' }} />
+                    <FiShield size={18} style={{ color: watermarkConfig.enabled ? 'var(--text-primary)' : 'var(--text-muted)' }} />
                   )}
                 </div>
 
@@ -6858,53 +6943,25 @@ export const WatermarkView: React.FC = () => {
                     {/* Font Style / Typeface */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                       <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>Font Style</span>
-                      <select
+                      <Select
                         value={watermarkConfig.fontFamily || FONT_FAMILY_OPTIONS[0].value}
-                        onChange={(e) => setWatermarkConfig((p) => ({ ...p, fontFamily: e.target.value, enabled: true }))}
-                        style={{
-                          height: '28px',
-                          padding: '0 6px',
-                          borderRadius: '6px',
-                          border: '1px solid var(--border-color)',
-                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
-                          color: 'var(--text-primary)',
-                          fontSize: '0.75rem',
-                          outline: 'none',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {FONT_FAMILY_OPTIONS.map((f) => (
-                          <option key={f.label} value={f.value} style={{ fontFamily: f.value, color: '#000000' }}>
-                            {f.label}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(val) => setWatermarkConfig((p) => ({ ...p, fontFamily: val, enabled: true }))}
+                        options={FONT_FAMILY_OPTIONS.map((f) => ({ value: f.value, label: f.label }))}
+                        width="100%"
+                        height="30px"
+                      />
                     </div>
 
                     {/* Font Weight */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                       <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>Weight</span>
-                      <select
+                      <Select
                         value={watermarkConfig.fontWeight || '600'}
-                        onChange={(e) => setWatermarkConfig((p) => ({ ...p, fontWeight: e.target.value, enabled: true }))}
-                        style={{
-                          height: '28px',
-                          padding: '0 6px',
-                          borderRadius: '6px',
-                          border: '1px solid var(--border-color)',
-                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
-                          color: 'var(--text-primary)',
-                          fontSize: '0.75rem',
-                          outline: 'none',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {FONT_WEIGHT_OPTIONS.map((w) => (
-                          <option key={w.value} value={w.value} style={{ color: '#000000' }}>
-                            {w.label} ({w.value})
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(val) => setWatermarkConfig((p) => ({ ...p, fontWeight: val, enabled: true }))}
+                        options={FONT_WEIGHT_OPTIONS.map((w) => ({ value: w.value, label: `${w.label} (${w.value})` }))}
+                        width="100%"
+                        height="30px"
+                      />
                     </div>
                   </div>
 
@@ -7013,7 +7070,7 @@ export const WatermarkView: React.FC = () => {
                       <SwitchToggle
                         checked={watermarkConfig.hasShadow}
                         onChange={(val) => setWatermarkConfig((p) => ({ ...p, hasShadow: val }))}
-                        activeColor="var(--accent-primary)"
+                        activeColor={isDark ? '#484F58' : '#0F172A'}
                         isDark={isDark}
                       />
                     </div>
@@ -7023,12 +7080,12 @@ export const WatermarkView: React.FC = () => {
             </div>
 
             {/* 3. Layout & Placement (Clean & Intuitive) */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '10px', borderTop: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: '14px', borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                   Layout & Position
                 </span>
-                <span style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', fontWeight: 600 }}>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
                   {watermarkConfig.layoutMode === 'single'
                     ? `Single (${POSITION_LABELS[watermarkConfig.position] || 'Bottom Right'})`
                     : watermarkConfig.layoutMode === 'top-bottom'
@@ -7191,9 +7248,9 @@ export const WatermarkView: React.FC = () => {
                             style={{
                               padding: '3px 8px',
                               borderRadius: '5px',
-                              border: isAct ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                              backgroundColor: isAct ? 'var(--accent-primary-alpha)' : 'transparent',
-                              color: isAct ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                              border: isAct ? (isDark ? '1px solid #484F58' : '1px solid #0F172A') : '1px solid var(--border-color)',
+                              backgroundColor: isAct ? (isDark ? '#2D333B' : '#0F172A') : 'transparent',
+                              color: isAct ? '#FFFFFF' : 'var(--text-secondary)',
                               fontSize: '0.6875rem',
                               fontWeight: isAct ? 600 : 500,
                               cursor: 'pointer',
@@ -7229,9 +7286,9 @@ export const WatermarkView: React.FC = () => {
                             style={{
                               padding: '3px 8px',
                               borderRadius: '5px',
-                              border: isAct ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                              backgroundColor: isAct ? 'var(--accent-primary-alpha)' : 'transparent',
-                              color: isAct ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                              border: isAct ? (isDark ? '1px solid #484F58' : '1px solid #0F172A') : '1px solid var(--border-color)',
+                              backgroundColor: isAct ? (isDark ? '#2D333B' : '#0F172A') : 'transparent',
+                              color: isAct ? '#FFFFFF' : 'var(--text-secondary)',
                               fontSize: '0.6875rem',
                               fontWeight: isAct ? 600 : 500,
                               cursor: 'pointer',
@@ -7296,9 +7353,9 @@ export const WatermarkView: React.FC = () => {
                             style={{
                               padding: '3px 8px',
                               borderRadius: '5px',
-                              border: isAct ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                              backgroundColor: isAct ? 'var(--accent-primary-alpha)' : 'transparent',
-                              color: isAct ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                              border: isAct ? (isDark ? '1px solid #484F58' : '1px solid #0F172A') : '1px solid var(--border-color)',
+                              backgroundColor: isAct ? (isDark ? '#2D333B' : '#0F172A') : 'transparent',
+                              color: isAct ? '#FFFFFF' : 'var(--text-secondary)',
                               fontSize: '0.6875rem',
                               fontWeight: isAct ? 600 : 500,
                               cursor: 'pointer',
@@ -7425,32 +7482,21 @@ export const WatermarkView: React.FC = () => {
               {/* Image Frame / Border */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Image Frame / Border</span>
-                <select
+                <Select
                   value={watermarkConfig.borderStyle || 'none'}
-                  onChange={(e) => {
-                    const val = e.target.value as WatermarkBorderStyle;
-                    setWatermarkConfig((p) => ({ ...p, borderStyle: val, enabled: true }));
+                  onChange={(val) => {
+                    setWatermarkConfig((p) => ({ ...p, borderStyle: val as WatermarkBorderStyle, enabled: true }));
                   }}
-                  style={{
-                    width: '100%',
-                    height: '34px',
-                    borderRadius: '8px',
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
-                    border: '1px solid var(--border-color)',
-                    color: 'var(--text-primary)',
-                    padding: '0 10px',
-                    fontSize: '0.75rem',
-                    fontWeight: 500,
-                    outline: 'none',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <option value="none">None (Clean Image)</option>
-                  <option value="solid-thin-white">Solid Thin White</option>
-                  <option value="solid-dark">Solid Dark Slate</option>
-                  <option value="luxury-gold">Luxury Gold Border</option>
-                  <option value="modern-accent">Modern Rounded Accent</option>
-                </select>
+                  options={[
+                    { value: 'none', label: 'None (Clean Image)' },
+                    { value: 'solid-thin-white', label: 'Solid Thin White' },
+                    { value: 'solid-dark', label: 'Solid Dark Slate' },
+                    { value: 'luxury-gold', label: 'Luxury Gold Border' },
+                    { value: 'modern-accent', label: 'Modern Rounded Accent' },
+                  ]}
+                  width="100%"
+                  height="34px"
+                />
               </div>
 
               {/* Peek Clean Photo Toggle */}
@@ -8209,27 +8255,16 @@ export const WatermarkView: React.FC = () => {
                     <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
                       Grid Slicing Preset
                     </label>
-                    <select
+                    <Select
                       value={editorFormGridLayoutId}
-                      onChange={(e) => setEditorFormGridLayoutId(e.target.value)}
-                      style={{
-                        width: '100%',
-                        height: '36px',
-                        padding: '0 10px',
-                        borderRadius: '8px',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: 'var(--bg-main)',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.8125rem',
-                        outline: 'none',
-                      }}
-                    >
-                      {SOCIAL_GRID_LAYOUTS.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name} ({g.tileCount} Tiles • {g.subtitle})
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(val) => setEditorFormGridLayoutId(val)}
+                      options={SOCIAL_GRID_LAYOUTS.map((g) => ({
+                        value: g.id,
+                        label: `${g.name} (${g.tileCount} Tiles • ${g.subtitle})`,
+                      }))}
+                      width="100%"
+                      height="36px"
+                    />
                   </div>
                 )}
 
@@ -9247,9 +9282,9 @@ export const WatermarkView: React.FC = () => {
                       gap: '6px',
                       padding: '7px 14px',
                       borderRadius: '8px',
-                      border: '1px solid var(--accent-primary)',
-                      backgroundColor: 'var(--accent-primary-alpha)',
-                      color: 'var(--accent-primary)',
+                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                      backgroundColor: isDark ? '#2D333B' : '#F1F5F9',
+                      color: 'var(--text-primary)',
                       fontSize: '0.75rem',
                       fontWeight: 600,
                       cursor: 'pointer',

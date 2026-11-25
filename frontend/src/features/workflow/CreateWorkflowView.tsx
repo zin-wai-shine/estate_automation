@@ -29,7 +29,10 @@ import {
   restoreDefaultWorkflowFormats,
   ensureIsolatedWorkflowConfig,
   ensureFormatsAreIsolated,
+  getSavedWorkflowGroups,
+  saveWorkflowGroups,
   type WorkflowFormat,
+  type WorkflowGroup,
 } from './workflowFormats';
 import { isWatermarkAIBox, isCropStudioBox, isTextFormatAIBox, isTextAIBox, isN8NAIBox, isExtensionAutofillBox, isExternalBrowserAIBox, isChromeProfileAIBox, isChromeTabGroupAIBox, isGoogleSheetBox } from '../facebook-import/aiModelUtils';
 import { runN8NWorkflow } from '../../services/n8nService';
@@ -39,10 +42,14 @@ import { getPersistedReferenceImage, loadPersistedReferenceImageAsync, clearPers
 import { extractCleanCondoNameFromAiText } from '../browser-processing/FBHeroSettingsSidebox';
 import { getSavedCropFormats, formatImageWithCropFormat, type CropStudioFormat } from '../watermark/cropFormats';
 import { loadActiveWatermarkConfig } from '../autopost/watermarkStorage';
+import { WorkflowBundleModal } from './WorkflowBundleModal';
 import {
   FiGitBranch,
   FiPlus,
   FiSave,
+  FiDownload,
+  FiUpload,
+  FiMoreVertical,
   FiCopy,
   FiTrash2,
   FiCheck,
@@ -63,6 +70,8 @@ import {
   FiImage,
   FiUploadCloud,
   FiX,
+  FiFolder,
+  FiFolderPlus,
 } from 'react-icons/fi';
 import { FaFacebook, FaTiktok } from 'react-icons/fa';
 import { HiSparkles } from 'react-icons/hi2';
@@ -242,6 +251,73 @@ export const CreateWorkflowView: React.FC = () => {
   const formatsRef = useRef<WorkflowFormat[]>(formats);
   formatsRef.current = formats;
   const [activeFormatId, setActiveId] = useState<string>(() => getActiveWorkflowFormatId());
+  const [bundleModalState, setBundleModalState] = useState<{
+    open: boolean;
+    tab: 'export' | 'import';
+    targetFormat?: WorkflowFormat | null;
+  }>({
+    open: false,
+    tab: 'export',
+    targetFormat: null,
+  });
+  const [cardMenuFormatId, setCardMenuFormatId] = useState<string | null>(null);
+  const [workflowGroups, setWorkflowGroups] = useState<WorkflowGroup[]>(() => getSavedWorkflowGroups());
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [groupModalName, setGroupModalName] = useState('');
+  const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
+  const [renamingGroupName, setRenamingGroupName] = useState('');
+
+  const handleCreateGroup = () => {
+    const trimmed = groupModalName.trim();
+    if (!trimmed) return;
+    const newGroup: WorkflowGroup = {
+      id: `group-${Date.now()}`,
+      name: trimmed,
+      createdAt: Date.now(),
+    };
+    const updated = [...workflowGroups, newGroup];
+    setWorkflowGroups(updated);
+    saveWorkflowGroups(updated);
+    setGroupModalName('');
+    setIsGroupModalOpen(false);
+  };
+
+  const handleSaveGroupRename = (groupId: string) => {
+    const trimmed = renamingGroupName.trim();
+    if (!trimmed) {
+      setRenamingGroupId(null);
+      return;
+    }
+    const updated = workflowGroups.map((g) => (g.id === groupId ? { ...g, name: trimmed } : g));
+    setWorkflowGroups(updated);
+    saveWorkflowGroups(updated);
+    setRenamingGroupId(null);
+  };
+
+  const handleDeleteGroup = (groupId: string) => {
+    const updatedGroups = workflowGroups.filter((g) => g.id !== groupId);
+    setWorkflowGroups(updatedGroups);
+    saveWorkflowGroups(updatedGroups);
+
+    const updatedFormats = formats.map((f) => (f.groupId === groupId ? { ...f, groupId: undefined } : f));
+    setFormats(updatedFormats);
+    saveWorkflowFormatsList(updatedFormats);
+  };
+
+  const handleMoveFormatToGroup = (formatId: string, groupId?: string) => {
+    const updatedFormats = formats.map((f) =>
+      f.id === formatId ? { ...f, groupId } : f
+    );
+    setFormats(updatedFormats);
+    saveWorkflowFormatsList(updatedFormats);
+  };
+
+  useEffect(() => {
+    if (!cardMenuFormatId) return;
+    const closeMenu = () => setCardMenuFormatId(null);
+    window.addEventListener('click', closeMenu);
+    return () => window.removeEventListener('click', closeMenu);
+  }, [cardMenuFormatId]);
   const [headerTitleEl, setHeaderTitleEl] = useState<HTMLElement | null>(null);
   const [headerCenterEl, setHeaderCenterEl] = useState<HTMLElement | null>(null);
   const [headerActionEl, setHeaderActionEl] = useState<HTMLElement | null>(null);
@@ -4875,23 +4951,70 @@ export const CreateWorkflowView: React.FC = () => {
         !isCanvasOpen &&
         formats.length > 0 &&
         createPortal(
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleCreateNewFormat}
-              leftIcon={<FiPlus style={{ fontSize: '14px' }} />}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={() => setBundleModalState({ open: true, tab: 'import', targetFormat: null })}
               style={{
                 height: '32px',
+                padding: '0 12px',
+                borderRadius: '7px',
+                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+                color: 'var(--text-primary)',
                 fontSize: '0.75rem',
                 fontWeight: 600,
-                borderRadius: '0.375rem',
-                boxShadow: 'none',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
               }}
             >
-              Create Workflow
-            </Button>
+              <FiUpload size={13} /> Import Project
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setGroupModalName('');
+                setIsGroupModalOpen(true);
+              }}
+              style={{
+                height: '32px',
+                padding: '0 12px',
+                borderRadius: '7px',
+                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+                color: 'var(--text-primary)',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <FiFolderPlus size={13} /> New Group
+            </button>
+            <button
+              type="button"
+              onClick={handleCreateNewFormat}
+              style={{
+                height: '32px',
+                padding: '0 12px',
+                borderRadius: '7px',
+                border: isDark ? '1px solid #30363D' : '1px solid #0F172A',
+                backgroundColor: isDark ? '#2D333B' : '#0F172A',
+                color: '#FFFFFF',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <FiPlus size={13} /> New Workflow
+            </button>
           </div>,
           headerActionEl
         )}
@@ -5230,6 +5353,8 @@ export const CreateWorkflowView: React.FC = () => {
             onToggleAutoSave={handleToggleAutoSave}
             onUndo={handleUndo}
             canUndo={undoStack.length > 0}
+            onOpenExportBundle={() => setBundleModalState({ open: true, tab: 'export' })}
+            onOpenImportBundle={() => setBundleModalState({ open: true, tab: 'import' })}
             onUseInFacebookImport={() => handleUseInFacebookImport(editingFormat.id)}
             isGeneralSettingsOpen={isGeneralSettingsOpen}
             onToggleGeneralSettings={setIsGeneralSettingsOpen}
@@ -5284,15 +5409,16 @@ export const CreateWorkflowView: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <div
               style={{
-                width: '38px',
-                height: '38px',
-                borderRadius: '0.625rem',
-                backgroundColor: 'rgba(99, 102, 241, 0.12)',
-                color: '#818CF8',
+                width: '34px',
+                height: '34px',
+                borderRadius: '8px',
+                backgroundColor: isDark ? '#1C2128' : '#F1F5F9',
+                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                color: 'var(--text-secondary)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '1.25rem',
+                fontSize: '1rem',
                 flexShrink: 0,
               }}
             >
@@ -5300,12 +5426,22 @@ export const CreateWorkflowView: React.FC = () => {
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                <h2 style={{ fontSize: '1.125rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
                   Workflow Formats
                 </h2>
-                <Badge variant="default">
+                <span
+                  style={{
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    backgroundColor: isDark ? '#1C2128' : '#F1F5F9',
+                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
                   {formats.length} {formats.length === 1 ? 'Format' : 'Formats'}
-                </Badge>
+                </span>
               </div>
             </div>
           </div>
@@ -5439,27 +5575,23 @@ export const CreateWorkflowView: React.FC = () => {
               key={format.id}
               onClick={() => handleOpenCanvas(format)}
               style={{
-                backgroundColor: 'var(--bg-secondary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '0.75rem',
-                padding: '1.25rem',
+                backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                borderRadius: '10px',
+                padding: '1rem 1.125rem',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '1rem',
+                gap: '0.85rem',
                 cursor: 'pointer',
-                transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+                transition: 'border-color 0.15s ease, background-color 0.15s ease',
                 position: 'relative',
-                boxShadow: 'var(--shadow-sm)',
+                boxShadow: 'none',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = 'var(--border-color-hover)';
-                e.currentTarget.style.boxShadow = isDark
-                  ? '0 10px 25px -3px rgba(0, 0, 0, 0.6)'
-                  : '0 10px 25px -3px rgba(0, 0, 0, 0.08)';
+                e.currentTarget.style.borderColor = isDark ? '#484F58' : '#CBD5E1';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = 'var(--border-color)';
-                e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+                e.currentTarget.style.borderColor = isDark ? '#30363D' : '#E2E8F0';
               }}
             >
               {/* Card Top: Title, Active Badge & Pin Button */}
@@ -5467,15 +5599,16 @@ export const CreateWorkflowView: React.FC = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 0 }}>
                   <div
                     style={{
-                      width: '34px',
-                      height: '34px',
-                      borderRadius: '0.5rem',
-                      backgroundColor: isActive ? 'rgba(59, 130, 246, 0.15)' : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)'),
-                      color: isActive ? (isDark ? '#60A5FA' : '#2563EB') : 'var(--text-secondary)',
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '7px',
+                      backgroundColor: isDark ? '#1C2128' : '#F8FAFC',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      color: isActive ? '#34D399' : 'var(--text-secondary)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '1.1rem',
+                      fontSize: '0.95rem',
                       flexShrink: 0,
                     }}
                   >
@@ -5513,7 +5646,6 @@ export const CreateWorkflowView: React.FC = () => {
                     ) : (
                       <div
                         style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                        title="Double-click to rename"
                         onDoubleClick={(e) => {
                           e.stopPropagation();
                           setInlineRenamingId(format.id);
@@ -5521,6 +5653,7 @@ export const CreateWorkflowView: React.FC = () => {
                         }}
                       >
                         <h3
+                          title={format.name}
                           style={{
                             fontSize: '0.9375rem',
                             fontWeight: 600,
@@ -5533,37 +5666,6 @@ export const CreateWorkflowView: React.FC = () => {
                         >
                           {format.name}
                         </h3>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setInlineRenamingId(format.id);
-                            setInlineRenamingName(format.name);
-                          }}
-                          title="Rename workflow"
-                          style={{
-                            border: 'none',
-                            background: 'transparent',
-                            color: 'var(--text-muted)',
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            padding: '2px',
-                            borderRadius: '4px',
-                            opacity: 0.6,
-                            transition: 'opacity 0.15s ease',
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.opacity = '1';
-                            e.currentTarget.style.color = 'var(--text-primary)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.opacity = '0.6';
-                            e.currentTarget.style.color = 'var(--text-muted)';
-                          }}
-                        >
-                          <FiEdit2 size={12} />
-                        </button>
                       </div>
                     )}
                     <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -5572,70 +5674,326 @@ export const CreateWorkflowView: React.FC = () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
-                  {isActive && (
-                    <Badge variant="info" size="sm">
-                      <FiCheckCircle style={{ marginRight: '3px' }} /> Active in FB Import
-                    </Badge>
-                  )}
-
-                  {/* Pin Toggle Button */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0, position: 'relative' }}>
+                  {/* Three-Dot Vertical Menu Button */}
                   <button
                     type="button"
-                    onClick={(e) => handleTogglePinFormat(format.id, e)}
-                    title={isPinned ? 'Unpin workflow from first row' : 'Pin workflow to first row'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCardMenuFormatId((prev) => (prev === format.id ? null : format.id));
+                    }}
+                    title="Workflow actions"
                     style={{
-                      height: '28px',
-                      width: '28px',
+                      height: '26px',
+                      width: '26px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      borderRadius: '0.375rem',
-                      backgroundColor: isPinned
-                        ? 'rgba(59, 130, 246, 0.15)'
-                        : isDark
-                        ? 'rgba(255, 255, 255, 0.04)'
-                        : 'rgba(0, 0, 0, 0.03)',
-                      border: isPinned
-                        ? '1px solid rgba(59, 130, 246, 0.45)'
-                        : '1px solid var(--border-color)',
-                      color: isPinned ? (isDark ? '#60A5FA' : '#2563EB') : 'var(--text-muted)',
+                      borderRadius: '6px',
+                      backgroundColor: cardMenuFormatId === format.id
+                        ? (isDark ? '#2D333B' : '#F1F5F9')
+                        : 'transparent',
+                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      color: 'var(--text-secondary)',
                       cursor: 'pointer',
                       transition: 'all 0.15s ease',
                     }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = isPinned
-                        ? 'rgba(59, 130, 246, 0.25)'
-                        : isDark
-                        ? 'rgba(255, 255, 255, 0.08)'
-                        : 'rgba(0, 0, 0, 0.06)';
-                      e.currentTarget.style.color = isPinned
-                        ? (isDark ? '#60A5FA' : '#2563EB')
-                        : 'var(--text-primary)';
-                      e.currentTarget.style.borderColor = isPinned
-                        ? 'rgba(59, 130, 246, 0.7)'
-                        : 'var(--border-color-hover)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = isPinned
-                        ? 'rgba(59, 130, 246, 0.15)'
-                        : isDark
-                        ? 'rgba(255, 255, 255, 0.04)'
-                        : 'rgba(0, 0, 0, 0.03)';
-                      e.currentTarget.style.color = isPinned
-                        ? (isDark ? '#60A5FA' : '#2563EB')
-                        : 'var(--text-muted)';
-                      e.currentTarget.style.borderColor = isPinned
-                        ? 'rgba(59, 130, 246, 0.45)'
-                        : 'var(--border-color)';
-                    }}
                   >
-                    {isPinned ? (
-                      <BsPinAngleFill style={{ fontSize: '13px' }} />
-                    ) : (
-                      <BsPinAngle style={{ fontSize: '13px' }} />
-                    )}
+                    <FiMoreVertical size={13} />
                   </button>
+
+                  {cardMenuFormatId === format.id && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        position: 'absolute',
+                        top: '32px',
+                        right: 0,
+                        minWidth: '160px',
+                        padding: '4px',
+                        borderRadius: '8px',
+                        backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        boxShadow: isDark
+                          ? '0 10px 25px -5px rgba(0, 0, 0, 0.5)'
+                          : '0 10px 25px -5px rgba(15, 23, 42, 0.14)',
+                        zIndex: 50,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '2px',
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: '3px 9px 2px',
+                          fontSize: '0.6875rem',
+                          fontWeight: 600,
+                          color: isDark ? '#8B949E' : '#64748B',
+                        }}
+                      >
+                        Workflow
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          setCardMenuFormatId(null);
+                          handleTogglePinFormat(format.id, e);
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          width: '100%',
+                          padding: '6px 9px',
+                          borderRadius: '6px',
+                          border: 'none',
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        {isPinned ? <BsPinAngleFill size={12} /> : <BsPinAngle size={12} />}
+                        <span>{isPinned ? 'Unpin' : 'Pin to Top'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCardMenuFormatId(null);
+                          setBundleModalState({ open: true, tab: 'export', targetFormat: format });
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          width: '100%',
+                          padding: '6px 9px',
+                          borderRadius: '6px',
+                          border: 'none',
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <FiDownload size={12} />
+                        <span>Export</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          setCardMenuFormatId(null);
+                          handleDuplicateFormat(format, e);
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          width: '100%',
+                          padding: '6px 9px',
+                          borderRadius: '6px',
+                          border: 'none',
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <FiCopy size={12} />
+                        <span>Duplicate</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCardMenuFormatId(null);
+                          setInlineRenamingId(format.id);
+                          setInlineRenamingName(format.name);
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          width: '100%',
+                          padding: '6px 9px',
+                          borderRadius: '6px',
+                          border: 'none',
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <FiEdit2 size={12} />
+                        <span>Rename</span>
+                      </button>
+
+                      <div
+                        style={{
+                          height: '1px',
+                          margin: '3px 4px',
+                          backgroundColor: isDark ? '#30363D' : '#E2E8F0',
+                        }}
+                      />
+
+                      <div
+                        style={{
+                          padding: '2px 9px',
+                          fontSize: '0.6875rem',
+                          fontWeight: 600,
+                          color: isDark ? '#8B949E' : '#64748B',
+                        }}
+                      >
+                        Move to Group
+                      </div>
+
+                      {workflowGroups.map((group) => {
+                        const isInGroup = format.groupId === group.id;
+                        return (
+                          <button
+                            key={group.id}
+                            type="button"
+                            onClick={() => {
+                              setCardMenuFormatId(null);
+                              handleMoveFormatToGroup(format.id, isInGroup ? undefined : group.id);
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '8px',
+                              width: '100%',
+                              padding: '6px 9px',
+                              borderRadius: '6px',
+                              border: 'none',
+                              backgroundColor: isInGroup ? (isDark ? 'rgba(56, 139, 253, 0.12)' : 'rgba(37, 99, 235, 0.08)') : 'transparent',
+                              color: isInGroup ? (isDark ? '#79C0FF' : '#2563EB') : 'var(--text-primary)',
+                              fontSize: '0.75rem',
+                              fontWeight: 500,
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                            }}
+                          >
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <FiFolder size={12} style={{ flexShrink: 0 }} />
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{group.name}</span>
+                            </span>
+                            {isInGroup && <FiCheck size={12} style={{ flexShrink: 0 }} />}
+                          </button>
+                        );
+                      })}
+
+                      {format.groupId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCardMenuFormatId(null);
+                            handleMoveFormatToGroup(format.id, undefined);
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            width: '100%',
+                            padding: '6px 9px',
+                            borderRadius: '6px',
+                            border: 'none',
+                            backgroundColor: 'transparent',
+                            color: isDark ? '#8B949E' : '#64748B',
+                            fontSize: '0.75rem',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                          }}
+                        >
+                          <FiX size={12} />
+                          <span>Remove from Group</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCardMenuFormatId(null);
+                          setGroupModalName('');
+                          setIsGroupModalOpen(true);
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          width: '100%',
+                          padding: '6px 9px',
+                          borderRadius: '6px',
+                          border: 'none',
+                          backgroundColor: 'transparent',
+                          color: isDark ? '#8B949E' : '#64748B',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <FiFolderPlus size={12} />
+                        <span>New Group...</span>
+                      </button>
+
+                      <div
+                        style={{
+                          height: '1px',
+                          margin: '3px 4px',
+                          backgroundColor: isDark ? '#30363D' : '#E2E8F0',
+                        }}
+                      />
+
+                      <div
+                        style={{
+                          padding: '2px 9px',
+                          fontSize: '0.6875rem',
+                          fontWeight: 600,
+                          color: isDark ? '#8B949E' : '#64748B',
+                        }}
+                      >
+                        Danger
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          setCardMenuFormatId(null);
+                          handleDeleteFormat(format.id, format.name, e);
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          width: '100%',
+                          padding: '6px 9px',
+                          borderRadius: '6px',
+                          border: 'none',
+                          backgroundColor: 'transparent',
+                          color: '#F87171',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <FiTrash2 size={12} />
+                        <span>Delete</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -5655,142 +6013,244 @@ export const CreateWorkflowView: React.FC = () => {
               >
                 {format.description || 'Configured Facebook import extraction and multi-box dynamic AI prompts.'}
               </p>
-
-              {/* Action Buttons */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '0.5rem',
-                  marginTop: 'auto',
-                  paddingTop: '0.75rem',
-                  borderTop: '1px solid var(--border-color)',
-                }}
-              >
-                {/* Main Trigger Button */}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleOpenCanvas(format);
-                  }}
-                  leftIcon={<FiMaximize2 style={{ fontSize: '13px' }} />}
-                  style={{
-                    height: '34px',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    borderRadius: '0.375rem',
-                    flex: 1,
-                  }}
-                >
-                  Open Workflow Canvas
-                </Button>
-
-                {!isActive && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={(e) => handleSetActiveFormat(format.id, e)}
-                    style={{
-                      height: '34px',
-                      fontSize: '0.75rem',
-                      borderRadius: '0.375rem',
-                      whiteSpace: 'nowrap',
-                    }}
-                    title="Set as active format for Facebook Import"
-                  >
-                    Set Active
-                  </Button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={(e) => handleDuplicateFormat(format, e)}
-                  title="Duplicate format"
-                  style={{
-                    height: '34px',
-                    width: '34px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: '0.375rem',
-                    backgroundColor: 'transparent',
-                    border: '1px solid var(--border-color)',
-                    color: 'var(--text-secondary)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <FiCopy style={{ fontSize: '13px' }} />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={(e) => handleDeleteFormat(format.id, format.name, e)}
-                  title="Delete format"
-                  style={{
-                    height: '34px',
-                    width: '34px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: '0.375rem',
-                    backgroundColor: 'transparent',
-                    border: '1px solid rgba(239, 68, 68, 0.3)',
-                    color: '#EF4444',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <FiTrash2 style={{ fontSize: '13px' }} />
-                </button>
-              </div>
             </div>
           );
         };
 
-        return (
-          /* WORKFLOW FORMAT CARDS: PINNED FIRST ROW + UNDER ROW WITH SEPARATION GAP */
-          pinnedFormats.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {/* First Row: Just Only Show Pinned Card */}
-              <div
+        const validGroupIds = new Set(workflowGroups.map((g) => g.id));
+        const unpinnedUngroupedFormats = unpinnedFormats.filter((f) => !f.groupId || !validGroupIds.has(f.groupId));
+        const hasNamedSectionsAbove = pinnedFormats.length > 0 || workflowGroups.length > 0;
+
+        const renderSectionHeader = (
+          icon: React.ReactNode,
+          title: string,
+          count: number,
+          extra?: React.ReactNode
+        ) => (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.75rem',
+              marginBottom: '0.75rem',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+              <span style={{ color: isDark ? '#8B949E' : '#64748B', display: 'inline-flex', alignItems: 'center' }}>
+                {icon}
+              </span>
+              <h3
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-                  gap: '1.25rem',
+                  margin: 0,
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  color: isDark ? '#E6EDF3' : '#0F172A',
+                  letterSpacing: '-0.01em',
                 }}
               >
-                {pinnedFormats.map(renderFormatCard)}
-              </div>
+                {title}
+              </h3>
+              <span
+                style={{
+                  fontSize: '0.6875rem',
+                  fontWeight: 500,
+                  padding: '1px 7px',
+                  borderRadius: '999px',
+                  backgroundColor: isDark ? '#1C2128' : '#F1F5F9',
+                  border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                  color: isDark ? '#8B949E' : '#64748B',
+                }}
+              >
+                {count}
+              </span>
+            </div>
+            {extra}
+          </div>
+        );
 
-              {/* Generous Gap Between First Row (Pin Row) and Under Row */}
-              <div style={{ height: '2.5rem' }} />
-
-              {/* Under Row: Remaining Unpinned Cards */}
-              {unpinnedFormats.length > 0 && (
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+            {/* Pinned Group */}
+            {pinnedFormats.length > 0 && (
+              <div>
+                {renderSectionHeader(<BsPinAngleFill size={13} />, 'Pinned', pinnedFormats.length)}
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-                    gap: '1.25rem',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+                    gap: '1rem',
                   }}
                 >
-                  {unpinnedFormats.map(renderFormatCard)}
+                  {pinnedFormats.map(renderFormatCard)}
                 </div>
-              )}
-            </div>
-          ) : (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-                gap: '1.25rem',
-              }}
-            >
-              {formats.map(renderFormatCard)}
-            </div>
-          )
+              </div>
+            )}
+
+            {/* User-Created Groups */}
+            {workflowGroups.map((group) => {
+              const groupFormats = unpinnedFormats.filter((f) => f.groupId === group.id);
+              const isRenamingThisGroup = renamingGroupId === group.id;
+
+              return (
+                <div key={group.id}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '0.75rem',
+                      marginBottom: '0.75rem',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+                      <span style={{ color: isDark ? '#8B949E' : '#64748B', display: 'inline-flex', alignItems: 'center' }}>
+                        <FiFolder size={14} />
+                      </span>
+                      {isRenamingThisGroup ? (
+                        <input
+                          type="text"
+                          autoFocus
+                          value={renamingGroupName}
+                          onChange={(e) => setRenamingGroupName(e.target.value)}
+                          onBlur={() => handleSaveGroupRename(group.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveGroupRename(group.id);
+                            if (e.key === 'Escape') setRenamingGroupId(null);
+                          }}
+                          style={{
+                            height: '26px',
+                            padding: '0 8px',
+                            borderRadius: '6px',
+                            border: isDark ? '1px solid #388BFD' : '1px solid #2563EB',
+                            backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                            color: isDark ? '#E6EDF3' : '#0F172A',
+                            fontSize: '0.8125rem',
+                            fontWeight: 600,
+                            outline: 'none',
+                          }}
+                        />
+                      ) : (
+                        <h3
+                          style={{
+                            margin: 0,
+                            fontSize: '0.8125rem',
+                            fontWeight: 600,
+                            color: isDark ? '#E6EDF3' : '#0F172A',
+                            letterSpacing: '-0.01em',
+                          }}
+                        >
+                          {group.name}
+                        </h3>
+                      )}
+                      <span
+                        style={{
+                          fontSize: '0.6875rem',
+                          fontWeight: 500,
+                          padding: '1px 7px',
+                          borderRadius: '999px',
+                          backgroundColor: isDark ? '#1C2128' : '#F1F5F9',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          color: isDark ? '#8B949E' : '#64748B',
+                        }}
+                      >
+                        {groupFormats.length}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRenamingGroupId(group.id);
+                          setRenamingGroupName(group.name);
+                        }}
+                        title="Rename Group"
+                        style={{
+                          width: '26px',
+                          height: '26px',
+                          borderRadius: '6px',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+                          color: isDark ? '#8B949E' : '#64748B',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <FiEdit2 size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteGroup(group.id)}
+                        title="Delete Group (keeps workflows)"
+                        style={{
+                          width: '26px',
+                          height: '26px',
+                          borderRadius: '6px',
+                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+                          color: isDark ? '#8B949E' : '#64748B',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <FiTrash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {groupFormats.length > 0 ? (
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+                        gap: '1rem',
+                      }}
+                    >
+                      {groupFormats.map(renderFormatCard)}
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        padding: '1rem',
+                        borderRadius: '10px',
+                        border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                        backgroundColor: isDark ? 'rgba(22, 27, 34, 0.5)' : '#F8FAFC',
+                        color: isDark ? '#8B949E' : '#64748B',
+                        fontSize: '0.75rem',
+                      }}
+                    >
+                      No workflows in this group yet. Open any card&apos;s <strong style={{ color: isDark ? '#E6EDF3' : '#0F172A' }}>⋮</strong> menu and choose <strong style={{ color: isDark ? '#E6EDF3' : '#0F172A' }}>Move to Group</strong>.
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Under Row: Remaining Unpinned / Ungrouped Workflows */}
+            {unpinnedUngroupedFormats.length > 0 && (
+              <div>
+                {renderSectionHeader(
+                  <FiLayers size={13} />,
+                  hasNamedSectionsAbove ? 'Other Workflows' : 'All Workflows',
+                  unpinnedUngroupedFormats.length
+                )}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+                    gap: '1rem',
+                  }}
+                >
+                  {unpinnedUngroupedFormats.map(renderFormatCard)}
+                </div>
+              </div>
+            )}
+          </div>
         );
       })()}
 
@@ -6559,6 +7019,143 @@ export const CreateWorkflowView: React.FC = () => {
               >
                 <FiTrash2 size={13} />
                 <span>Confirm Clear</span>
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      <WorkflowBundleModal
+        isOpen={bundleModalState.open}
+        initialTab={bundleModalState.tab}
+        isDark={isDark}
+        workflowName={
+          bundleModalState.targetFormat?.name ||
+          (isCanvasOpen ? modalFormatName || editingFormat?.name : '') ||
+          'Workflow'
+        }
+        workflowDescription={
+          bundleModalState.targetFormat?.description || editingFormat?.description
+        }
+        workflowConfig={
+          bundleModalState.targetFormat?.config ||
+          editingFormat?.config ||
+          formats[0]?.config
+        }
+        onClose={() => setBundleModalState((prev) => ({ ...prev, open: false, targetFormat: null }))}
+        onApplyWorkflow={(importedName, importedCfg, mode, importedDesc) => {
+          const targetEdit = bundleModalState.targetFormat || editingFormat;
+          if (mode === 'replace' && targetEdit) {
+            const isolated = ensureIsolatedWorkflowConfig(importedCfg, targetEdit.id);
+            handleCanvasConfigChange(isolated, targetEdit.id);
+            return;
+          }
+
+          const rawBase = (importedName || 'Imported Workflow').trim();
+          const existingNames = new Set(formats.map((f) => (f.name || '').trim().toLowerCase()));
+          let uniqueName = rawBase;
+          if (existingNames.has(uniqueName.toLowerCase())) {
+            let suffix = 1;
+            while (existingNames.has(`${rawBase}-${suffix}`.toLowerCase())) {
+              suffix += 1;
+            }
+            uniqueName = `${rawBase}-${suffix}`;
+          }
+
+          const newId = `format-import-${Date.now()}`;
+          const isolated = ensureIsolatedWorkflowConfig(importedCfg, newId);
+          const newFormat: WorkflowFormat = {
+            id: newId,
+            name: uniqueName,
+            description: importedDesc || 'Imported workflow bundle',
+            updatedAt: new Date().toISOString(),
+            config: isolated,
+          };
+          const updatedList = [...formats, newFormat];
+          setFormats(updatedList);
+          saveWorkflowFormatsList(updatedList, true);
+          if (isCanvasOpen) {
+            setEditingFormat(newFormat);
+            setModalFormatName(newFormat.name);
+            setActiveId(newId);
+            setActiveWorkflowFormatId(newId);
+          }
+        }}
+      />
+
+      {/* Create Workflow Group Modal */}
+      {isGroupModalOpen && (
+        <Modal
+          isOpen={isGroupModalOpen}
+          onClose={() => setIsGroupModalOpen(false)}
+          title="Create Workflow Group"
+          maxWidth="420px"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div>
+              <label style={{ fontSize: '0.75rem', fontWeight: 500, color: '#8B949E', display: 'block', marginBottom: '0.375rem' }}>
+                Group Title
+              </label>
+              <input
+                type="text"
+                autoFocus
+                placeholder="e.g. Facebook Rentals, TikTok Pipelines..."
+                value={groupModalName}
+                onChange={(e) => setGroupModalName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCreateGroup();
+                }}
+                style={{
+                  width: '100%',
+                  height: '36px',
+                  padding: '0 0.75rem',
+                  backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                  color: isDark ? '#E6EDF3' : '#0F172A',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  borderRadius: '6px',
+                  outline: 'none',
+                  fontSize: '0.8125rem',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', paddingTop: '0.5rem', borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0' }}>
+              <button
+                type="button"
+                onClick={() => setIsGroupModalOpen(false)}
+                style={{
+                  height: '32px',
+                  padding: '0 0.75rem',
+                  borderRadius: '6px',
+                  backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  color: isDark ? '#E6EDF3' : '#0F172A',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateGroup}
+                disabled={!groupModalName.trim()}
+                style={{
+                  height: '32px',
+                  padding: '0 0.875rem',
+                  borderRadius: '6px',
+                  backgroundColor: isDark ? '#21262D' : '#0F172A',
+                  border: isDark ? '1px solid #30363D' : '1px solid #0F172A',
+                  color: '#F0F6FC',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  cursor: groupModalName.trim() ? 'pointer' : 'not-allowed',
+                  opacity: groupModalName.trim() ? 1 : 0.5,
+                }}
+              >
+                Create Group
               </button>
             </div>
           </div>

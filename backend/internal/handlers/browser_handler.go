@@ -85,20 +85,27 @@ func OpenBrowserProfile(c *fiber.Ctx) error {
 		})
 	}
 
-	svc := services.GetBrowserProfileService()
-	profiles, err := svc.ListProfiles()
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Failed to locate profile",
-		})
+	var body struct {
+		ProfileKey string `json:"profile_key"`
 	}
+	_ = c.BodyParser(&body)
 
-	var targetKey string
-	for _, p := range profiles {
-		if p.ID == uint(id) {
-			targetKey = p.ProfileKey
-			break
+	svc := services.GetBrowserProfileService()
+	targetKey := body.ProfileKey
+	if targetKey == "" {
+		profiles, err := svc.ListProfiles()
+		if err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Failed to locate profile",
+			})
+		}
+
+		for _, p := range profiles {
+			if p.ID == uint(id) {
+				targetKey = p.ProfileKey
+				break
+			}
 		}
 	}
 
@@ -132,7 +139,8 @@ func OpenBrowserProfileURL(c *fiber.Ctx) error {
 	}
 
 	var body struct {
-		URL string `json:"url"`
+		URL        string `json:"url"`
+		ProfileKey string `json:"profile_key"`
 	}
 	if err := c.BodyParser(&body); err != nil || body.URL == "" {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
@@ -142,19 +150,21 @@ func OpenBrowserProfileURL(c *fiber.Ctx) error {
 	}
 
 	svc := services.GetBrowserProfileService()
-	profiles, err := svc.ListProfiles()
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Failed to locate profile",
-		})
-	}
+	targetKey := body.ProfileKey
+	if targetKey == "" {
+		profiles, err := svc.ListProfiles()
+		if err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Failed to locate profile",
+			})
+		}
 
-	var targetKey string
-	for _, p := range profiles {
-		if p.ID == uint(id) {
-			targetKey = p.ProfileKey
-			break
+		for _, p := range profiles {
+			if p.ID == uint(id) {
+				targetKey = p.ProfileKey
+				break
+			}
 		}
 	}
 	if targetKey == "" {

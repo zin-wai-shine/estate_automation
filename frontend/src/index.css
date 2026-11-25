@@ -258,5 +258,51 @@ button svg {
   }
 }
 
+/* Sleek, slim range sliders across the app */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 16px;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: #30363D;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #E2E8F0;
+  border: 1.5px solid #1C2128;
+  margin-top: -5.5px;
+  transition: transform 0.12s ease, background-color 0.12s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  background: #FFFFFF;
+  transform: scale(1.12);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: #30363D;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #E2E8F0;
+  border: 1.5px solid #1C2128;
+}
+
 
 

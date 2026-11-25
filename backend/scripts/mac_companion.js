@@ -3514,8 +3514,26 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         (stateFileSanitized && stateFileSanitized.includes(reqCondo)) ||
         (isRecentState && (!reqGroup || (state.group_name || state.groupName || '').toLowerCase().includes(reqGroup.toLowerCase().split(' ')[0])));
 
+      // Verify state.downloaded_file matches reqGroup modality/brand (prevent cross-brand mismatch when multiple hero nodes run)
+      const matchesRequestedGroupFile = (fileName) => {
+        if (!fileName) return false;
+        const lower = fileName.toLowerCase();
+        if (!reqGroup) return true;
+        const gLow = reqGroup.toLowerCase();
+        if ((gLow.includes('facebook') || gLow.includes('fb')) && !gLow.includes('tiktok')) {
+          return lower.includes('fb_hero') && !lower.includes('tiktok');
+        }
+        if (gLow.includes('bolthaven') && gLow.includes('tiktok')) {
+          return lower.includes('bolthaven') && lower.includes('tiktok') && !lower.includes('dot_');
+        }
+        if (gLow.includes('dot') && gLow.includes('tiktok')) {
+          return lower.includes('dot') && lower.includes('tiktok') && !lower.includes('bolthaven');
+        }
+        return true;
+      };
+
       // If state already has downloaded_file and matches, verify file ACTUALLY exists on disk in ~/Downloads or canvasCache!
-      if (state && state.downloaded_file && condoMatches) {
+      if (state && state.downloaded_file && condoMatches && matchesRequestedGroupFile(state.downloaded_file)) {
         const found = findImageFileOnDisk(state.downloaded_file);
         if (found) {
           state.downloaded_file_path = found.path;
@@ -3528,8 +3546,8 @@ function mergeTabGroups(scannedGroups, liveGroups) {
         }
       }
 
-      // If state does not match the requested condo/listing, or is missing downloaded_file, scan candidate dirs for matching hero image
-      if (!condoMatches || !state?.downloaded_file || !findImageFileOnDisk(state.downloaded_file)) {
+      // If state does not match the requested condo/listing/group, or is missing downloaded_file, scan candidate dirs for matching hero image
+      if (!condoMatches || !state?.downloaded_file || !matchesRequestedGroupFile(state.downloaded_file) || !findImageFileOnDisk(state.downloaded_file)) {
         const allCandidateDirs = getAllImageCandidateDirs();
         const candidateFiles = [];
         for (const dir of allCandidateDirs) {

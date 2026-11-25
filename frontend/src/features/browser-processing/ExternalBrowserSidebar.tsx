@@ -309,7 +309,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   }, [isHeroNode, isTabGroupNode, boxConfig.title, boxConfig.browserGroupName]);
 
   const [profiles, setProfiles] = useState<BrowserProfile[]>([]);
-  const [selectedProfileId, setSelectedProfileId] = useState<number>(() => boxConfig.browserProfileId || 11);
+  const [selectedProfileId, setSelectedProfileId] = useState<number>(() => boxConfig.browserProfileId || 0);
   const [tabGroups, setTabGroups] = useState<BrowserGroupItem[]>([]);
   const [selectedGroupName, setSelectedGroupName] = useState<string>(() => targetGroupName);
   const [stagingGroupName, setStagingGroupName] = useState<string>(() => boxConfig.stagingGroupName || 'FB Hero');
@@ -1870,18 +1870,26 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     });
   }, []);
 
-  // Sync selectedProfileId when boxConfig profile changes
+  // Sync selectedProfileId when boxConfig profile changes (prefer stable profile_key/name over DB row id)
   useEffect(() => {
-    if (boxConfig.browserProfileId) {
-      setSelectedProfileId(boxConfig.browserProfileId);
-    } else if (boxConfig.browserProfileKey && profiles.length > 0) {
+    if (boxConfig.browserProfileKey && profiles.length > 0) {
       const match = profiles.find((p) => p.profile_key === boxConfig.browserProfileKey);
-      if (match) setSelectedProfileId(match.id);
-    } else if (boxConfig.browserProfileName && profiles.length > 0) {
+      if (match) {
+        setSelectedProfileId(match.id);
+        return;
+      }
+    }
+    if (boxConfig.browserProfileName && profiles.length > 0) {
       const match = profiles.find(
         (p) => p.display_name === boxConfig.browserProfileName || p.display_name.includes(boxConfig.browserProfileName)
       );
-      if (match) setSelectedProfileId(match.id);
+      if (match) {
+        setSelectedProfileId(match.id);
+        return;
+      }
+    }
+    if (boxConfig.browserProfileId) {
+      setSelectedProfileId(boxConfig.browserProfileId);
     }
   }, [boxConfig.browserProfileId, boxConfig.browserProfileKey, boxConfig.browserProfileName, profiles]);
 
@@ -1889,6 +1897,15 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   useEffect(() => {
     if (selectedProfileId) {
       const currentProf = profiles.find((p) => p.id === selectedProfileId);
+      // Guard: if boxConfig specifies a browserProfileKey and profiles have loaded, don't overwrite with a stale DB row id
+      if (
+        boxConfig.browserProfileKey &&
+        profiles.length > 0 &&
+        currentProf &&
+        currentProf.profile_key !== boxConfig.browserProfileKey
+      ) {
+        return;
+      }
       const profKey = currentProf?.profile_key || boxConfig.browserProfileKey || (profiles[0]?.profile_key || 'Pro');
       const profName = currentProf?.display_name || boxConfig.browserProfileName || (profiles[0]?.display_name || 'Note Zin Wai');
 

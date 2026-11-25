@@ -68,6 +68,8 @@ export const openBrowserProfile = async (
   try {
     const res = await fetch(`${API_BASE}/profiles/${profileId}/open`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile_key: profileKey || '' }),
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {

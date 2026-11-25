@@ -32,6 +32,7 @@ import {
   FiAlertTriangle,
   FiEdit2,
   FiEdit3,
+  FiUpload,
   FiUploadCloud,
   FiClipboard,
   FiChevronLeft,
@@ -408,6 +409,7 @@ export interface FacebookWorkflowConfig {
   connections?: WorkflowWireConnection[];
   zoom: number;
   panOffset: { x: number; y: number };
+  highlightedLineColors?: Record<string, string>;
   codeFormat?: string;
   autoGenerateCode?: boolean;
   useGeneratedCode?: boolean;
@@ -3607,6 +3609,8 @@ export interface FacebookWorkflowCanvasProps {
   autoSave?: boolean;
   onToggleAutoSave?: (enabled: boolean) => void;
   onUndo?: () => void;
+  onOpenExportBundle?: () => void;
+  onOpenImportBundle?: () => void;
   canUndo?: boolean;
   onUseInFacebookImport?: () => void;
   isGeneralSettingsOpen?: boolean;
@@ -3802,6 +3806,8 @@ export const FacebookWorkflowCanvas = forwardRef<
     autoSave = true,
     onToggleAutoSave,
     onUndo,
+    onOpenExportBundle,
+    onOpenImportBundle,
     canUndo = false,
     onUseInFacebookImport: _onUseInFacebookImport,
     isGeneralSettingsOpen,
@@ -3821,6 +3827,27 @@ export const FacebookWorkflowCanvas = forwardRef<
   const RECEPTIVE_COLOR = isDark ? '#EAB308' : '#D97706';
   const canvasRef = useRef<HTMLDivElement>(null);
   const canvasStorageKey = formatId ? `${LOCAL_STORAGE_KEY}_${formatId}` : LOCAL_STORAGE_KEY;
+  const viewportStorageKey = `bolthaven_viewport_${canvasStorageKey}`;
+  const hasUserViewportRef = useRef<boolean>(false);
+  const viewportPersistTimerRef = useRef<any>(null);
+
+  const persistViewportState = (zoomVal: number, panVal: { x: number; y: number }) => {
+    hasUserViewportRef.current = true;
+    try {
+      localStorage.setItem(viewportStorageKey, JSON.stringify({ zoom: zoomVal, panOffset: panVal }));
+    } catch {}
+    if (viewportPersistTimerRef.current) clearTimeout(viewportPersistTimerRef.current);
+    viewportPersistTimerRef.current = setTimeout(() => {
+      const nextCfg = {
+        ...latestConfigRef.current,
+        zoom: zoomVal,
+        panOffset: panVal,
+      };
+      latestConfigRef.current = nextCfg;
+      if (onConfigChange) onConfigChange(nextCfg, formatId);
+    }, 350);
+  };
+
   const [config, setConfig] = useState<FacebookWorkflowConfig>(() => {
     const base = sanitizeAndResolveCollisions(initialConfig || loadSavedFacebookWorkflowConfig(formatId), formatId);
     const vWidth = typeof window !== 'undefined' ? window.innerWidth - 56 : 1200;
@@ -3833,12 +3860,31 @@ export const FacebookWorkflowCanvas = forwardRef<
     const isEmpty = isWorkflowInitialEmpty(base);
     const optimalZoom = isEmpty ? 0.9 : Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.55), 0.88);
     const centeredPan = calculateCenteredPanOffset(base, vWidth, vHeight, optimalZoom);
+
+    let savedViewport: { zoom?: number; panOffset?: { x: number; y: number } } | null = null;
+    try {
+      const rawVp = typeof localStorage !== 'undefined' ? localStorage.getItem(viewportStorageKey) : null;
+      if (rawVp) savedViewport = JSON.parse(rawVp);
+    } catch {}
+
+    if (savedViewport && typeof savedViewport.zoom === 'number' && savedViewport.panOffset) {
+      hasUserViewportRef.current = true;
+      return {
+        ...base,
+        zoom: savedViewport.zoom,
+        panOffset: savedViewport.panOffset,
+      };
+    }
+
+    const hasSavedPan = Boolean(base.panOffset && (base.panOffset.x !== 0 || base.panOffset.y !== 0));
+    if (hasSavedPan) {
+      hasUserViewportRef.current = true;
+    }
+
     return {
       ...base,
       zoom: typeof base.zoom === 'number' && base.zoom > 0 ? base.zoom : optimalZoom,
-      panOffset: isEmpty || !base.panOffset || (base.panOffset.x === 0 && base.panOffset.y === 0)
-        ? centeredPan
-        : base.panOffset,
+      panOffset: isEmpty || !hasSavedPan ? centeredPan : base.panOffset,
     };
   });
   const latestConfigRef = useRef<FacebookWorkflowConfig>(config);
@@ -4488,10 +4534,15 @@ export const FacebookWorkflowCanvas = forwardRef<
         aiBoxes: mergedAiBoxes,
         zoom,
         panOffset,
+        highlightedLineColors: sanitized.highlightedLineColors ?? prev?.highlightedLineColors,
       }, formatId);
       latestConfigRef.current = nextCfg;
       return nextCfg;
     });
+    if (initialConfig.highlightedLineColors && typeof initialConfig.highlightedLineColors === 'object') {
+      setNodeHighlightColors(initialConfig.highlightedLineColors);
+      setHighlightedLineNodeIds(new Set(Object.keys(initialConfig.highlightedLineColors)));
+    }
   }, [initialConfig]);
 
   // Keep canvas centered smoothly on initial viewport mount only (never jerk or re-center on sidebar toggle)
@@ -4508,7 +4559,7 @@ export const FacebookWorkflowCanvas = forwardRef<
           resizeTimer = setTimeout(() => {
             setConfig((prev) => {
               const isEmpty = isWorkflowInitialEmpty(prev);
-              if (hasInitializedPan.current && !isEmpty) return prev;
+              if ((hasInitializedPan.current || hasUserViewportRef.current) && !isEmpty) return prev;
               hasInitializedPan.current = true;
               const nextPan = calculateCenteredPanOffset(prev, width, height, prev.zoom);
               if (Math.abs(prev.panOffset.x - nextPan.x) <= 2 && Math.abs(prev.panOffset.y - nextPan.y) <= 2) {
@@ -5006,6 +5057,9 @@ export const FacebookWorkflowCanvas = forwardRef<
   const [hoveredWireId, setHoveredWireId] = useState<string | null>(null);
   const viewLinesStorageKey = `bolthaven_view_lines_${canvasStorageKey || 'default'}`;
   const [highlightedLineNodeIds, setHighlightedLineNodeIds] = useState<Set<string>>(() => {
+    if (initialConfig?.highlightedLineColors && typeof initialConfig.highlightedLineColors === 'object') {
+      return new Set(Object.keys(initialConfig.highlightedLineColors));
+    }
     try {
       const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(viewLinesStorageKey) : null;
       if (saved) {
@@ -5016,6 +5070,9 @@ export const FacebookWorkflowCanvas = forwardRef<
     return new Set();
   });
   const [nodeHighlightColors, setNodeHighlightColors] = useState<Record<string, string>>(() => {
+    if (initialConfig?.highlightedLineColors && typeof initialConfig.highlightedLineColors === 'object') {
+      return initialConfig.highlightedLineColors;
+    }
     try {
       const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(viewLinesStorageKey) : null;
       if (saved) {
@@ -5039,39 +5096,35 @@ export const FacebookWorkflowCanvas = forwardRef<
   }, [viewLinesStorageKey, highlightedLineNodeIds, nodeHighlightColors]);
 
   const toggleHighlightNodeLines = (nodeId: string) => {
-    setHighlightedLineNodeIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(nodeId)) {
-        next.delete(nodeId);
-        setNodeHighlightColors((prevColors) => {
-          const updated = { ...prevColors };
-          delete updated[nodeId];
-          return updated;
-        });
-      } else {
-        next.add(nodeId);
-        const palette = [
-          '#3B82F6', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6',
-          '#06B6D4', '#F97316', '#22C55E', '#EAB308', '#6366F1',
-          '#14B8A6', '#FB7185', '#A855F7', '#38BDF8', '#84CC16',
-          '#F43F5E',
-        ];
-        setNodeHighlightColors((prevColors) => {
-          const updated = { ...prevColors };
-          if (!updated[nodeId]) {
-            const used = new Set(Object.values(updated));
-            const available = palette.filter((p) => !used.has(p));
-            if (available.length > 0) {
-              updated[nodeId] = available[Math.floor(Math.random() * available.length)];
-            } else {
-              const hue = Math.round((used.size * 137.508) % 360);
-              updated[nodeId] = `hsl(${hue}, 85%, 60%)`;
-            }
-          }
-          return updated;
-        });
+    const nextIds = new Set(highlightedLineNodeIds);
+    const nextColors = { ...nodeHighlightColors };
+    if (nextIds.has(nodeId)) {
+      nextIds.delete(nodeId);
+      delete nextColors[nodeId];
+    } else {
+      nextIds.add(nodeId);
+      const palette = [
+        '#3B82F6', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6',
+        '#06B6D4', '#F97316', '#22C55E', '#EAB308', '#6366F1',
+        '#14B8A6', '#FB7185', '#A855F7', '#38BDF8', '#84CC16',
+        '#F43F5E',
+      ];
+      if (!nextColors[nodeId]) {
+        const used = new Set(Object.values(nextColors));
+        const available = palette.filter((p) => !used.has(p));
+        if (available.length > 0) {
+          nextColors[nodeId] = available[Math.floor(Math.random() * available.length)];
+        } else {
+          const hue = Math.round((used.size * 137.508) % 360);
+          nextColors[nodeId] = `hsl(${hue}, 85%, 60%)`;
+        }
       }
-      return next;
+    }
+    setHighlightedLineNodeIds(nextIds);
+    setNodeHighlightColors(nextColors);
+    updateConfig({
+      ...latestConfigRef.current,
+      highlightedLineColors: nextColors,
     });
   };
   const [hoveredXId, setHoveredXId] = useState<string | null>(null);
@@ -6107,6 +6160,13 @@ export const FacebookWorkflowCanvas = forwardRef<
             });
           }
         }
+
+        const hasAnyPayload =
+          Boolean(resolvedTitle) ||
+          Boolean(resolvedDesc) ||
+          resolvedHashtags.length > 0 ||
+          resolvedImgUrls.length > 0;
+        if (!hasAnyPayload) return;
 
         fetch('http://127.0.0.1:9224/dispatch-post', {
           method: 'POST',
@@ -9004,7 +9064,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       return;
     }
     // For all node-to-node wires (AI models, format presets, watermark/cut presets, combine boxes, destinations):
-    // Clicking (X) asks for confirmation before disconnecting the wire. It NEVER deletes the source or target box!
+    // Clicking (X) or the wire asks for confirmation before disconnecting. It NEVER deletes the source or target box!
     const fromLabel = getNodeDisplayName(conn.fromNodeId);
     const toLabel = getNodeDisplayName(conn.toNodeId);
     setDeleteConfirmTarget({
@@ -10606,7 +10666,10 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (dragWire) {
       setDragWire(null);
     }
-    if (isPanning) setIsPanning(false);
+    if (isPanning) {
+      setIsPanning(false);
+      persistViewportState(latestConfigRef.current.zoom, latestConfigRef.current.panOffset);
+    }
     if (isSelecting) {
       setIsSelecting(false);
       setSelectionBox(null);
@@ -10649,13 +10712,52 @@ export const FacebookWorkflowCanvas = forwardRef<
     hasMoved.current = false;
   };
 
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (isCanvasLocked) return;
-    const zoomFactor = e.deltaY < 0 ? 1.05 : 0.95;
-    const newZoom = Math.min(Math.max(config.zoom * zoomFactor, 0.45), 1.6);
-    setConfig((prev) => ({ ...prev, zoom: Number(newZoom.toFixed(2)) }));
-  };
+  // Non-passive wheel, gesture, and Cmd/Ctrl +/-/0 listeners so pinch/shortcut zoom only zooms the canvas, never the browser page
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+
+    const onNativeWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (isCanvasLocked) return;
+      const zoomFactor = e.deltaY < 0 ? (e.ctrlKey ? 1.03 : 1.05) : (e.ctrlKey ? 0.97 : 0.95);
+      setConfig((prev) => {
+        const newZoom = Number(Math.min(Math.max(prev.zoom * zoomFactor, 0.45), 1.6).toFixed(2));
+        persistViewportState(newZoom, prev.panOffset);
+        return { ...prev, zoom: newZoom };
+      });
+    };
+
+    const preventGesture = (e: Event) => {
+      e.preventDefault();
+    };
+
+    const onKeyZoom = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const key = e.key;
+      if (key !== '=' && key !== '+' && key !== '-' && key !== '_' && key !== '0') return;
+      e.preventDefault();
+      if (isCanvasLocked) return;
+      setConfig((prev) => {
+        const newZoom = key === '0'
+          ? 1
+          : Number(Math.min(Math.max(prev.zoom * (key === '-' || key === '_' ? 0.9 : 1.1), 0.45), 1.6).toFixed(2));
+        persistViewportState(newZoom, prev.panOffset);
+        return { ...prev, zoom: newZoom };
+      });
+    };
+
+    el.addEventListener('wheel', onNativeWheel, { passive: false });
+    el.addEventListener('gesturestart', preventGesture, { passive: false } as AddEventListenerOptions);
+    el.addEventListener('gesturechange', preventGesture, { passive: false } as AddEventListenerOptions);
+    window.addEventListener('keydown', onKeyZoom);
+    return () => {
+      el.removeEventListener('wheel', onNativeWheel);
+      el.removeEventListener('gesturestart', preventGesture);
+      el.removeEventListener('gesturechange', preventGesture);
+      window.removeEventListener('keydown', onKeyZoom);
+    };
+  }, [isCanvasLocked]);
 
   const startDragNode = (nodeId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -10921,7 +11023,6 @@ export const FacebookWorkflowCanvas = forwardRef<
         onMouseMove={handleCanvasMouseMove}
         onMouseUp={handleCanvasMouseUp}
         onClick={handleCanvasClick}
-        onWheel={handleWheel}
         onContextMenu={(e) => {
           if (
             (e.target as HTMLElement).closest('.canvas-node') ||
@@ -10966,9 +11067,11 @@ export const FacebookWorkflowCanvas = forwardRef<
             onClick={(e) => e.stopPropagation()}
             style={{
               position: 'fixed',
-              left: Math.min(canvasContextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 210),
-              top: Math.min(canvasContextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 110),
-              minWidth: '190px',
+              left: Math.max(8, Math.min(canvasContextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 216)),
+              top: Math.max(8, Math.min(canvasContextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 340)),
+              minWidth: '196px',
+              maxHeight: 'calc(100vh - 16px)',
+              overflowY: 'auto',
               padding: '4px',
               borderRadius: '8px',
               border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
@@ -10982,6 +11085,81 @@ export const FacebookWorkflowCanvas = forwardRef<
               gap: '2px',
             }}
           >
+            {(onOpenExportBundle || onOpenImportBundle) && (
+              <>
+                <div
+                  style={{
+                    padding: '2px 10px',
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
+                    color: isDark ? '#8B949E' : '#64748B',
+                  }}
+                >
+                  Workflow
+                </div>
+                {onOpenExportBundle && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCanvasContextMenu(null);
+                      onOpenExportBundle();
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '7px',
+                      width: '100%',
+                      padding: '7px 10px',
+                      borderRadius: '7px',
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      color: isDark ? '#E2E8F0' : '#0F172A',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <FiDownload size={13} />
+                    <span>Export Workflow</span>
+                  </button>
+                )}
+                {onOpenImportBundle && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCanvasContextMenu(null);
+                      onOpenImportBundle();
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '7px',
+                      width: '100%',
+                      padding: '7px 10px',
+                      borderRadius: '7px',
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      color: isDark ? '#E2E8F0' : '#0F172A',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <FiUpload size={13} />
+                    <span>Import Workflow</span>
+                  </button>
+                )}
+                <div
+                  style={{
+                    height: '1px',
+                    margin: '2px 6px',
+                    backgroundColor: isDark ? '#30363D' : '#E2E8F0',
+                  }}
+                />
+              </>
+            )}
             <div
               style={{
                 padding: '2px 10px',
@@ -11935,8 +12113,8 @@ export const FacebookWorkflowCanvas = forwardRef<
               const isExecDone = isConnectedAndEnabled && isExec && toCompleted;
               const isFastFlow = isConnectedAndEnabled && isRunning && toActive;
 
-              const isWireHovered = !isBaseVerticalWire && hoveredWireId === conn.id;
-              const isXHovered = !isBaseVerticalWire && hoveredXId === conn.id;
+              const isWireHovered = hoveredWireId === conn.id;
+              const isXHovered = hoveredXId === conn.id;
               const highlightOwnerId = highlightedLineNodeIds.has(conn.toNodeId)
                 ? conn.toNodeId
                 : highlightedLineNodeIds.has(conn.fromNodeId)
@@ -11944,7 +12122,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   : null;
               const highlightColor = highlightOwnerId ? nodeHighlightColors[highlightOwnerId] : undefined;
 
-              const wireStrokeColor = isXHovered
+              const wireStrokeColor = isXHovered || isWireHovered
                 ? '#F85149'
                 : highlightColor
                   ? highlightColor
@@ -11953,66 +12131,67 @@ export const FacebookWorkflowCanvas = forwardRef<
                     : (isDark ? '#4B5563' : '#94A3B8');
 
               const wireLen = Math.max(80, Math.hypot(toPos.x - fromPos.x, toPos.y - fromPos.y));
-              const tNearTarget = Math.max(0.72, Math.min(0.92, 1 - 38 / wireLen));
-              const dxWire = toPos.x - fromPos.x;
-              const ctrlOffset = dxWire >= 0 ? Math.max(dxWire * 0.45, 48) : Math.max(Math.abs(dxWire) * 0.5, 90);
-              const c1x = fromPos.x + ctrlOffset;
-              const c1y = fromPos.y;
-              const c2x = toPos.x - ctrlOffset;
-              const c2y = toPos.y;
-              const invT = 1 - tNearTarget;
-              const midX =
-                invT * invT * invT * fromPos.x +
-                3 * invT * invT * tNearTarget * c1x +
-                3 * invT * tNearTarget * tNearTarget * c2x +
-                tNearTarget * tNearTarget * tNearTarget * toPos.x;
-              const midY =
-                invT * invT * invT * fromPos.y +
-                3 * invT * invT * tNearTarget * c1y +
-                3 * invT * tNearTarget * tNearTarget * c2y +
-                tNearTarget * tNearTarget * tNearTarget * toPos.y;
+              const tNearTarget = Math.max(0.55, Math.min(0.78, 1 - 80 / wireLen));
+              let midX = (fromPos.x + toPos.x) / 2;
+              let midY = (fromPos.y + toPos.y) / 2;
+              if (isWireHovered && typeof document !== 'undefined') {
+                try {
+                  const tmpPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                  tmpPath.setAttribute('d', path);
+                  const totalLen = tmpPath.getTotalLength();
+                  if (totalLen > 0) {
+                    const pt = tmpPath.getPointAtLength(totalLen * tNearTarget);
+                    midX = pt.x;
+                    midY = pt.y;
+                  }
+                } catch {}
+              }
 
               return (
                 <g
                   key={conn.id}
                   className="workflow-wire-group"
                   onMouseEnter={() => {
-                    if (!isBaseVerticalWire) {
-                      setHoveredWireId(conn.id);
-                    }
+                    setHoveredWireId(conn.id);
                   }}
                   onMouseLeave={() => {
                     setHoveredWireId(null);
                     setHoveredXId(null);
                   }}
                   style={{
-                    pointerEvents: isBaseVerticalWire ? 'none' : 'auto',
-                    cursor: 'default',
+                    pointerEvents: 'auto',
+                    cursor: 'pointer',
                     opacity: !isConnectedAndEnabled ? 0.35 : 1,
                     transition: 'opacity 0.2s ease',
                   }}
                 >
-                  {/* Invisible thicker hit-path for hovering to reveal the disconnect (x) button */}
-                  {!isBaseVerticalWire && (
-                    <path
-                      d={path}
-                      fill="none"
-                      stroke="transparent"
-                      strokeWidth="16"
-                      style={{ cursor: 'default' }}
-                    />
-                  )}
+                  {/* Invisible thicker hit-path for hovering to reveal the disconnect (x) button and clicking to remove */}
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth="16"
+                    style={{ cursor: 'pointer' }}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleWireDelete(conn, e);
+                    }}
+                  />
                   {/* Visual straight/flowing wire */}
                   <path
                     d={path}
                     fill="none"
                     stroke={wireStrokeColor}
-                    strokeWidth={isXHovered ? '2.5' : highlightColor ? '3' : isExecActive ? '2.5' : isConnectedAndEnabled ? '2.2' : isWireHovered ? '2.2' : '1.8'}
-                    strokeDasharray={isExecActive ? '4, 4' : !isConnectedAndEnabled ? '4, 4' : 'none'}
+                    strokeWidth={isXHovered || isWireHovered ? '2.4' : highlightColor ? '2.2' : isExecActive ? '2' : isConnectedAndEnabled ? '1.5' : '1.3'}
+                    strokeDasharray={isExecActive || isWireHovered ? '6, 5' : !isConnectedAndEnabled ? '4, 4' : 'none'}
                     strokeLinecap="round"
                     style={{
-                      animation: isExecActive ? (isFastFlow ? 'n8nFlow 0.8s linear infinite' : 'n8nFlow 1.2s linear infinite') : 'none',
+                      animation: isExecActive || isWireHovered ? (isFastFlow ? 'n8nFlow 0.8s linear infinite' : 'n8nFlow 1.2s linear infinite') : 'none',
                       transition: 'stroke 0.18s ease, stroke-width 0.18s ease',
+                      pointerEvents: 'none',
                     }}
                   />
                   {/* Disconnect indicator on hover */}

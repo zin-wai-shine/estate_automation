@@ -27,6 +27,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const queueSelect = document.getElementById('queue-select');
   const platformBadge = document.getElementById('platform-badge');
   const imageGrid = document.getElementById('image-grid');
+  const imgPrevBtn = document.getElementById('img-prev-btn');
+  const imgNextBtn = document.getElementById('img-next-btn');
+  const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
   const selectedImgCountEl = document.getElementById('selected-img-count');
   const totalImgCountEl = document.getElementById('total-img-count');
   const toggleAllImgsBtn = document.getElementById('toggle-all-imgs-btn');
@@ -71,13 +74,30 @@ document.addEventListener('DOMContentLoaded', async () => {
   let batchStart = 0;
   let selectedBoxId = '';
 
-  // 1. Load saved profile, box assignment, and cached dispatch items
+  // 1. Load saved profile, box assignment, sidebar state, and cached dispatch items
   const stored = await chrome.storage.local.get([
     'profileKey',
     'assignedBoxId',
     'bolthavenDispatchItems',
     'bolthavenBatchSize',
+    'bolthavenSidebarOpen',
   ]);
+  const setSidebarOpen = (open) => {
+    document.documentElement.classList.toggle('sidebar-open', open);
+    document.body.classList.toggle('sidebar-open', open);
+    if (toggleSidebarBtn) {
+      toggleSidebarBtn.style.color = open ? '#ECEEF0' : '';
+      toggleSidebarBtn.style.background = open ? 'var(--bg-elevated)' : '';
+    }
+  };
+  let isSidebarOpen = Boolean(stored.bolthavenSidebarOpen);
+  setSidebarOpen(isSidebarOpen);
+  toggleSidebarBtn?.addEventListener('click', async () => {
+    isSidebarOpen = !isSidebarOpen;
+    setSidebarOpen(isSidebarOpen);
+    await chrome.storage.local.set({ bolthavenSidebarOpen: isSidebarOpen });
+    requestAnimationFrame(updateImageCarouselArrows);
+  });
   let profileKey = stored.profileKey || '';
   selectedBoxId = stored.assignedBoxId || '';
   if (batchSizeSelect && stored.bolthavenBatchSize) {
@@ -146,13 +166,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     syncDispatchQueue();
   });
 
+  const hasItemContent = (item) => {
+    if (!item) return false;
+    return (
+      (Array.isArray(item.images) && item.images.length > 0) ||
+      Boolean((item.description || '').trim()) ||
+      Boolean((item.title || '').trim()) ||
+      (Array.isArray(item.hashtags) && item.hashtags.length > 0)
+    );
+  };
+
   boxSelect?.addEventListener('change', async () => {
     selectedBoxId = boxSelect.value;
     await chrome.storage.local.set({ assignedBoxId: selectedBoxId });
-    const matching = selectedBoxId
+    const matching = (selectedBoxId
       ? dispatchItems.filter((x) => (x.boxId || x.id) === selectedBoxId)
-      : dispatchItems;
-    activeItem = matching[0] || dispatchItems[0] || null;
+      : dispatchItems
+    ).slice().sort((a, b) => Number(hasItemContent(b)) - Number(hasItemContent(a)));
+    activeItem = matching[0] || dispatchItems.find(hasItemContent) || dispatchItems[0] || null;
     batchStart = activeItem?.nextBatchStart || 0;
     renderQueueSelector(matching);
   });
@@ -265,9 +296,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  function updateImageCarouselArrows() {
+    if (!imageGrid || !imgPrevBtn || !imgNextBtn) return;
+    const maxScroll = Math.max(0, imageGrid.scrollWidth - imageGrid.clientWidth);
+    imgPrevBtn.disabled = imageGrid.scrollLeft <= 2;
+    imgNextBtn.disabled = maxScroll <= 2 || imageGrid.scrollLeft >= maxScroll - 2;
+  }
+
+  imgPrevBtn?.addEventListener('click', () => {
+    imageGrid?.scrollBy({ left: -210, behavior: 'smooth' });
+  });
+  imgNextBtn?.addEventListener('click', () => {
+    imageGrid?.scrollBy({ left: 210, behavior: 'smooth' });
+  });
+  imageGrid?.addEventListener('scroll', updateImageCarouselArrows);
+
   function renderActiveItem() {
     if (!activeItem) {
-      imageGrid.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;">No staged post for this profile/box yet. Click <strong>Sync Queue</strong> or <strong>Input from Site</strong>.</div>';
+      imageGrid.innerHTML = '<div class="empty-state" style="width: 100%;">No staged post for this profile/box yet. Click <strong>Sync Queue</strong> or <strong>Input from Site</strong>.</div>';
       selectedImgCountEl.textContent = '0';
       totalImgCountEl.textContent = '0';
       previewTitle.value = '';
@@ -276,6 +322,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       updatePlatformBadge('auto');
       updateCounters();
       updateBatchSummary();
+      updateImageCarouselArrows();
       return;
     }
 
@@ -290,7 +337,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const imgs = Array.isArray(activeItem.images) ? activeItem.images : [];
     if (imgs.length === 0) {
-      imageGrid.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;">Text-only post (no photos attached).</div>';
+      imageGrid.innerHTML = '<div class="empty-state" style="width: 100%;">Text-only post (no photos attached).</div>';
     } else {
       imageGrid.innerHTML = '';
       imgs.forEach((img, idx) => {
@@ -311,6 +358,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     }
     updateBatchSummary();
+    requestAnimationFrame(updateImageCarouselArrows);
   }
 
   function populateBoxSelector() {
@@ -427,12 +475,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       },
       (res) => {
         if (res && res.success) {
-          dispatchItems = res.items || [];
+          dispatchItems = (res.items || []).slice().sort((a, b) => Number(hasItemContent(b)) - Number(hasItemContent(a)));
           populateBoxSelector();
           const matching = selectedBoxId
             ? dispatchItems.filter((x) => (x.boxId || x.id) === selectedBoxId)
             : dispatchItems;
-          activeItem = matching[0] || dispatchItems[0] || null;
+          activeItem = matching.find(hasItemContent) || matching[0] || dispatchItems.find(hasItemContent) || dispatchItems[0] || null;
           batchStart = activeItem?.nextBatchStart || 0;
           renderQueueSelector(matching);
           if (syncDispatchLabel) syncDispatchLabel.textContent = `Synced (${dispatchItems.length})`;
@@ -447,6 +495,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   syncDispatchBtn?.addEventListener('click', syncDispatchQueue);
+
+  // Auto-sync on popup open and periodically while popup stays open
+  syncDispatchQueue();
+  setInterval(() => {
+    const focused = document.activeElement;
+    const isEditingField =
+      focused === previewTitle || focused === previewDesc || focused === previewHashtags;
+    if (!isFilling && !isEditingField) {
+      syncDispatchQueue();
+    }
+  }, 5000);
 
   // Pull / Input from Active Site
   pullSiteBtn?.addEventListener('click', () => {

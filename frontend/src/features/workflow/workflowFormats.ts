@@ -11,20 +11,45 @@ import {
   stripLargeBase64FromWorkflowConfig,
 } from '../facebook-import/FacebookWorkflowCanvas';
 
+export interface WorkflowGroup {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
 export interface WorkflowFormat {
   id: string;
   name: string;
   description: string;
   isDefault?: boolean;
   isPinned?: boolean;
+  groupId?: string;
   createdAt: number;
   updatedAt: number;
   config: FacebookWorkflowConfig;
 }
 
 const STORAGE_FORMATS_KEY = 'estate_saved_workflow_formats_v2';
+const STORAGE_GROUPS_KEY = 'estate_saved_workflow_groups_v1';
 const STORAGE_SELECTED_FORMAT_ID_KEY = 'estate_active_workflow_format_id_v2';
 const STORAGE_PINNED_FORMAT_ID_KEY = 'estate_pinned_workflow_format_id_v2';
+
+export const getSavedWorkflowGroups = (): WorkflowGroup[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_GROUPS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {}
+  return [];
+};
+
+export const saveWorkflowGroups = (groups: WorkflowGroup[]) => {
+  try {
+    localStorage.setItem(STORAGE_GROUPS_KEY, JSON.stringify(groups));
+  } catch (e) {}
+};
 
 export const getPinnedWorkflowFormatId = (): string => {
   try {

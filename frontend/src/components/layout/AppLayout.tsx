@@ -157,7 +157,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       title: 'Automation & AI',
       items: [
         { id: 'create-workflow', label: 'Create Workflow', icon: <FiGitBranch /> },
-        { id: 'n8n-automation', label: 'n8n Automation', icon: <FiServer /> },
         { id: 'add-url', label: 'Add URL', icon: <FiPlusSquare /> },
         { id: 'prompts', label: 'Prompt Templates', icon: <FiFileText /> },
       ],
@@ -518,13 +517,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                       rel={isCurrentlyInCanvas && item.id !== 'create-workflow' ? 'noopener noreferrer' : undefined}
                       onClick={(e) => handleNavClick(e, item.id)}
                       aria-label={isCollapsed ? item.label : undefined}
-                      title={
-                        isCurrentlyInCanvas && item.id !== 'create-workflow'
-                          ? `Open ${item.label} in new tab (keeps Canvas open)`
-                          : isCollapsed
-                          ? item.label
-                          : undefined
-                      }
                       style={{
                         display: 'flex',
                         alignItems: 'center',

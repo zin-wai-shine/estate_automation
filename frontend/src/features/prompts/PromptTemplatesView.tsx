@@ -13,11 +13,16 @@ import {
   FiPower,
   FiCheckCircle,
   FiEye,
+  FiEdit2,
   FiSearch,
   FiTrash2,
   FiAlertTriangle,
   FiDownload,
   FiUpload,
+  FiCopy,
+  FiCheck,
+  FiChevronLeft,
+  FiChevronRight,
 } from 'react-icons/fi';
 
 const INITIAL_DEFAULT_TEMPLATES: PromptTemplate[] = [
@@ -263,6 +268,27 @@ export const PromptTemplatesView: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importNotification, setImportNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+
+  const handleCopyPromptText = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedPrompt(true);
+      setTimeout(() => setCopiedPrompt(false), 2000);
+    } catch {
+      // Fallback for non-secure contexts
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      setCopiedPrompt(true);
+      setTimeout(() => setCopiedPrompt(false), 2000);
+    }
+  };
 
   const normalizeCategory = (cat: string): PromptTemplate['category'] => {
     if (!cat) return 'FACEBOOK_RENT';
@@ -457,6 +483,9 @@ export const PromptTemplatesView: React.FC = () => {
     }
   };
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   const filteredPrompts = prompts.filter((p) => {
     const matchesSearch =
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -464,6 +493,21 @@ export const PromptTemplatesView: React.FC = () => {
     const matchesCategory = categoryFilter === 'ALL' || p.category === categoryFilter;
     return matchesSearch && matchesCategory;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredPrompts.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStartIndex = (safeCurrentPage - 1) * pageSize;
+  const paginatedPrompts = filteredPrompts.slice(pageStartIndex, pageStartIndex + pageSize);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, categoryFilter, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', maxWidth: '1280px', margin: '0 auto', boxSizing: 'border-box' }}>
@@ -495,22 +539,50 @@ export const PromptTemplatesView: React.FC = () => {
       )}
 
       {/* Clean Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.375rem' }}>
-            <span style={{ fontSize: '0.6875rem', fontWeight: 600, padding: '0.2rem 0.6rem', borderRadius: '0.375rem', backgroundColor: 'var(--accent-primary-alpha)', color: 'var(--accent-primary)' }}>
-              AI Generation Engine
-            </span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '8px',
+              backgroundColor: '#1C2128',
+              border: '1px solid #30363D',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#8B949E',
+              flexShrink: 0,
+            }}
+          >
+            <FiFileText size={17} />
           </div>
-          <h2 style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.01em' }}>
-            Prompt Templates
-          </h2>
-          <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.25rem', margin: '0.25rem 0 0 0' }}>
-            Manage structured AI copy prompts and dynamic variables for Facebook listings, TikTok scripts, and marketing copy.
-          </p>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <h2 style={{ fontSize: '1.125rem', fontWeight: 600, color: '#E6EDF3', margin: 0, letterSpacing: '-0.01em' }}>
+                Prompt Templates
+              </h2>
+              <span
+                style={{
+                  fontSize: '0.6875rem',
+                  fontWeight: 500,
+                  padding: '2px 8px',
+                  borderRadius: '9999px',
+                  backgroundColor: '#1C2128',
+                  border: '1px solid #30363D',
+                  color: '#8B949E',
+                }}
+              >
+                {prompts.length} Templates
+              </span>
+            </div>
+            <p style={{ fontSize: '0.75rem', color: '#8B949E', margin: '0.2rem 0 0 0' }}>
+              Manage structured AI copy prompts and dynamic variables for listings and marketing copy.
+            </p>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
           {/* Hidden File Input for Excel Import */}
           <input
             type="file"
@@ -520,47 +592,89 @@ export const PromptTemplatesView: React.FC = () => {
             style={{ display: 'none' }}
           />
 
-          {/* Import Excel Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            leftIcon={<FiUpload />}
+          <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
-            style={{ height: '38px', padding: '0 0.875rem', fontSize: '0.8125rem' }}
+            style={{
+              height: '32px',
+              padding: '0 0.75rem',
+              borderRadius: '6px',
+              backgroundColor: '#1C2128',
+              border: '1px solid #30363D',
+              color: '#E6EDF3',
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              cursor: 'pointer',
+              transition: 'background-color 0.15s ease',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2D333B')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#1C2128')}
           >
-            Import Excel
-          </Button>
+            <FiUpload size={13} />
+            <span>Import Excel</span>
+          </button>
 
-          {/* Export Excel Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            leftIcon={<FiDownload />}
+          <button
+            type="button"
             onClick={handleExportExcel}
-            style={{ height: '38px', padding: '0 0.875rem', fontSize: '0.8125rem' }}
+            style={{
+              height: '32px',
+              padding: '0 0.75rem',
+              borderRadius: '6px',
+              backgroundColor: '#1C2128',
+              border: '1px solid #30363D',
+              color: '#E6EDF3',
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              cursor: 'pointer',
+              transition: 'background-color 0.15s ease',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2D333B')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#1C2128')}
           >
-            Export Excel
-          </Button>
+            <FiDownload size={13} />
+            <span>Export Excel</span>
+          </button>
 
-          {/* Create Template Button */}
-          <Button
-            variant="primary"
-            size="sm"
-            leftIcon={<FiPlus />}
+          <button
+            type="button"
             onClick={() => setIsCreating(true)}
-            style={{ height: '38px', padding: '0 1.125rem', fontSize: '0.8125rem' }}
+            style={{
+              height: '32px',
+              padding: '0 0.875rem',
+              borderRadius: '6px',
+              backgroundColor: '#21262D',
+              border: '1px solid #30363D',
+              color: '#F0F6FC',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              cursor: 'pointer',
+              transition: 'background-color 0.15s ease',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2D333B')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#21262D')}
           >
-            Create Template
-          </Button>
+            <FiPlus size={14} />
+            <span>New Template</span>
+          </button>
         </div>
       </div>
 
       {/* Filter Bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', flex: 1, minWidth: '280px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: '280px' }}>
           {/* Search Bar */}
-          <div style={{ position: 'relative', width: '100%', maxWidth: '340px' }}>
-            <FiSearch style={{ position: 'absolute', left: '0.875rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.9375rem' }} />
+          <div style={{ position: 'relative', width: '100%', maxWidth: '320px' }}>
+            <FiSearch style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#8B949E', fontSize: '0.875rem' }} />
             <input
               type="text"
               placeholder="Search templates or variables..."
@@ -568,20 +682,21 @@ export const PromptTemplatesView: React.FC = () => {
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
                 width: '100%',
-                padding: '0.5rem 0.875rem 0.5rem 2.375rem',
-                backgroundColor: 'var(--bg-secondary)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '0.5rem',
+                height: '34px',
+                padding: '0 0.75rem 0 2.125rem',
+                backgroundColor: '#161B22',
+                color: '#E6EDF3',
+                border: '1px solid #30363D',
+                borderRadius: '6px',
                 outline: 'none',
-                fontSize: '0.8125rem',
+                fontSize: '0.75rem',
                 boxSizing: 'border-box',
               }}
             />
           </div>
 
           {/* Clean Custom React Dropdown */}
-          <div style={{ width: '200px' }}>
+          <div style={{ width: '190px' }}>
             <CustomDropdown
               options={categoryOptions}
               value={categoryFilter}
@@ -590,43 +705,42 @@ export const PromptTemplatesView: React.FC = () => {
           </div>
         </div>
 
-        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+        <span style={{ fontSize: '0.75rem', color: '#8B949E', fontWeight: 500 }}>
           Showing {filteredPrompts.length} of {prompts.length} Templates
         </span>
       </div>
 
-      {/* Modern React Table Container */}
+      {/* Data Table Container */}
       <div
         style={{
           width: '100%',
-          backgroundColor: 'var(--bg-surface)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '0.875rem',
+          backgroundColor: '#161B22',
+          border: '1px solid #30363D',
+          borderRadius: '8px',
           overflow: 'hidden',
-          boxShadow: 'var(--shadow-sm)',
         }}
       >
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
             <tr
               style={{
-                backgroundColor: 'var(--bg-secondary)',
-                borderBottom: '1px solid var(--border-color)',
+                backgroundColor: '#1C2128',
+                borderBottom: '1px solid #30363D',
               }}
             >
-              <th style={{ padding: '0.875rem 1.25rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '48%', whiteSpace: 'nowrap' }}>
-                Template Name & Preview
+              <th style={{ padding: '0.625rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#8B949E', textTransform: 'uppercase', letterSpacing: '0.04em', width: '48%', whiteSpace: 'nowrap' }}>
+                Template
               </th>
-              <th style={{ padding: '0.875rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '18%', whiteSpace: 'nowrap' }}>
+              <th style={{ padding: '0.625rem 0.875rem', fontSize: '0.6875rem', fontWeight: 600, color: '#8B949E', textTransform: 'uppercase', letterSpacing: '0.04em', width: '18%', whiteSpace: 'nowrap' }}>
                 Category
               </th>
-              <th style={{ padding: '0.875rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '10%', whiteSpace: 'nowrap' }}>
+              <th style={{ padding: '0.625rem 0.875rem', fontSize: '0.6875rem', fontWeight: 600, color: '#8B949E', textTransform: 'uppercase', letterSpacing: '0.04em', width: '10%', whiteSpace: 'nowrap' }}>
                 Version
               </th>
-              <th style={{ padding: '0.875rem 1rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', width: '10%', whiteSpace: 'nowrap' }}>
+              <th style={{ padding: '0.625rem 0.875rem', fontSize: '0.6875rem', fontWeight: 600, color: '#8B949E', textTransform: 'uppercase', letterSpacing: '0.04em', width: '10%', whiteSpace: 'nowrap' }}>
                 Status
               </th>
-              <th style={{ padding: '0.875rem 1.25rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'right', width: '14%', whiteSpace: 'nowrap' }}>
+              <th style={{ padding: '0.625rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#8B949E', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right', width: '14%', whiteSpace: 'nowrap' }}>
                 Actions
               </th>
             </tr>
@@ -635,50 +749,51 @@ export const PromptTemplatesView: React.FC = () => {
           <tbody>
             {filteredPrompts.length === 0 ? (
               <tr>
-                <td colSpan={5} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                <td colSpan={5} style={{ padding: '3rem 1rem', textAlign: 'center', color: '#8B949E', fontSize: '0.8125rem' }}>
                   No prompt templates found matching your search.
                 </td>
               </tr>
             ) : (
-              filteredPrompts.map((prompt) => (
+              paginatedPrompts.map((prompt, idx) => (
                 <tr
                   key={prompt.id}
                   onClick={() => setActivePrompt(prompt)}
                   style={{
-                    borderBottom: '1px solid var(--border-color)',
+                    borderBottom: idx === paginatedPrompts.length - 1 ? 'none' : '1px solid #21262D',
                     cursor: 'pointer',
-                    transition: 'background-color 0.15s ease',
+                    transition: 'background-color 0.12s ease',
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-secondary)')}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#1C2128')}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                 >
                   {/* Template Name & Preview */}
-                  <td style={{ padding: '1rem 1.25rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
+                  <td style={{ padding: '0.75rem 1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                       <div
                         style={{
-                          width: '36px',
-                          height: '36px',
-                          borderRadius: '0.5rem',
-                          backgroundColor: 'var(--accent-primary-alpha)',
-                          color: 'var(--accent-primary)',
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '6px',
+                          backgroundColor: '#1C2128',
+                          border: '1px solid #30363D',
+                          color: '#8B949E',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontSize: '1.125rem',
+                          fontSize: '0.9375rem',
                           flexShrink: 0,
                         }}
                       >
                         <FiFileText />
                       </div>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>
+                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#E6EDF3', marginBottom: '0.15rem' }}>
                           {prompt.name}
                         </div>
                         <div
                           style={{
                             fontSize: '0.75rem',
-                            color: 'var(--text-muted)',
+                            color: '#8B949E',
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -693,21 +808,33 @@ export const PromptTemplatesView: React.FC = () => {
                   </td>
 
                   {/* Category */}
-                  <td style={{ padding: '1rem', whiteSpace: 'nowrap' }}>
-                    <Badge variant={getCategoryBadgeVariant(prompt.category)} size="sm">
+                  <td style={{ padding: '0.75rem 0.875rem', whiteSpace: 'nowrap' }}>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '0.6875rem',
+                        fontWeight: 500,
+                        backgroundColor: '#1C2128',
+                        border: '1px solid #30363D',
+                        color: '#C9D1D9',
+                      }}
+                    >
                       {formatCategoryLabel(prompt.category)}
-                    </Badge>
+                    </span>
                   </td>
 
                   {/* Version */}
-                  <td style={{ padding: '1rem', whiteSpace: 'nowrap' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-muted)' }}>
+                  <td style={{ padding: '0.75rem 0.875rem', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#8B949E', fontFamily: 'monospace' }}>
                       {prompt.version}
                     </span>
                   </td>
 
                   {/* Status */}
-                  <td style={{ padding: '1rem', whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '0.75rem 0.875rem', whiteSpace: 'nowrap' }}>
                     <div
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', whiteSpace: 'nowrap', cursor: 'pointer' }}
                       onClick={(e) => toggleActive(prompt.id, e)}
@@ -715,49 +842,79 @@ export const PromptTemplatesView: React.FC = () => {
                     >
                       <span
                         style={{
-                          width: '7px',
-                          height: '7px',
+                          width: '6px',
+                          height: '6px',
                           borderRadius: '50%',
-                          backgroundColor: prompt.active ? 'var(--status-success)' : 'var(--text-muted)',
+                          backgroundColor: prompt.active ? '#3FB950' : '#6E7681',
                           display: 'inline-block',
                           flexShrink: 0,
                         }}
                       />
-                      <span style={{ color: prompt.active ? 'var(--status-success)' : 'var(--text-muted)', fontWeight: 500 }}>
+                      <span style={{ color: prompt.active ? '#E6EDF3' : '#8B949E', fontWeight: 500 }}>
                         {prompt.active ? 'Active' : 'Inactive'}
                       </span>
                     </div>
                   </td>
 
                   {/* Actions */}
-                  <td style={{ padding: '1rem 1.25rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        leftIcon={<FiEye />}
+                  <td style={{ padding: '0.75rem 1rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
                         onClick={() => setActivePrompt({ ...prompt })}
-                        style={{ height: '32px', fontSize: '0.75rem', padding: '0 0.75rem', whiteSpace: 'nowrap' }}
+                        style={{
+                          height: '28px',
+                          padding: '0 0.625rem',
+                          borderRadius: '6px',
+                          backgroundColor: '#1C2128',
+                          border: '1px solid #30363D',
+                          color: '#E6EDF3',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.375rem',
+                          cursor: 'pointer',
+                          transition: 'background-color 0.12s ease',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2D333B')}
+                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#1C2128')}
+                        title="View & Edit Template"
                       >
-                        Detail & Edit
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        leftIcon={<FiTrash2 style={{ color: '#EF4444' }} />}
+                        <FiEdit2 size={12} />
+                        <span>Edit</span>
+                      </button>
+                      <button
+                        type="button"
                         onClick={(e) => handleDeletePrompt(prompt.id, e)}
                         style={{
-                          height: '32px',
-                          fontSize: '0.75rem',
-                          padding: '0 0.625rem',
-                          whiteSpace: 'nowrap',
-                          borderColor: 'rgba(239, 68, 68, 0.4)',
-                          color: '#EF4444',
+                          width: '28px',
+                          height: '28px',
+                          padding: 0,
+                          borderRadius: '6px',
+                          backgroundColor: '#1C2128',
+                          border: '1px solid #30363D',
+                          color: '#8B949E',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          transition: 'background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgba(248, 81, 73, 0.12)';
+                          e.currentTarget.style.borderColor = 'rgba(248, 81, 73, 0.45)';
+                          e.currentTarget.style.color = '#F85149';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = '#1C2128';
+                          e.currentTarget.style.borderColor = '#30363D';
+                          e.currentTarget.style.color = '#8B949E';
                         }}
                         title="Delete Template"
                       >
-                        Delete
-                      </Button>
+                        <FiTrash2 size={13} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -765,36 +922,186 @@ export const PromptTemplatesView: React.FC = () => {
             )}
           </tbody>
         </table>
+
+        {/* Pagination Footer */}
+        {filteredPrompts.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '0.75rem',
+              padding: '0.625rem 1rem',
+              backgroundColor: '#1C2128',
+              borderTop: '1px solid #30363D',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.75rem', color: '#8B949E' }}>
+                Showing{' '}
+                <strong style={{ color: '#E6EDF3', fontWeight: 600 }}>
+                  {pageStartIndex + 1}–{Math.min(pageStartIndex + pageSize, filteredPrompts.length)}
+                </strong>{' '}
+                of <strong style={{ color: '#E6EDF3', fontWeight: 600 }}>{filteredPrompts.length}</strong>
+              </span>
+
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                <span style={{ fontSize: '0.75rem', color: '#8B949E', marginRight: '0.25rem' }}>Rows:</span>
+                {[10, 20, 50].map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => setPageSize(size)}
+                    style={{
+                      height: '26px',
+                      padding: '0 0.5rem',
+                      borderRadius: '6px',
+                      border: `1px solid ${pageSize === size ? '#484F58' : '#30363D'}`,
+                      backgroundColor: pageSize === size ? '#2D333B' : '#161B22',
+                      color: pageSize === size ? '#F0F6FC' : '#8B949E',
+                      fontSize: '0.75rem',
+                      fontWeight: pageSize === size ? 600 : 500,
+                      cursor: 'pointer',
+                      transition: 'background-color 0.12s ease, color 0.12s ease',
+                    }}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+              <button
+                type="button"
+                disabled={safeCurrentPage <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                style={{
+                  height: '28px',
+                  padding: '0 0.5rem',
+                  borderRadius: '6px',
+                  border: '1px solid #30363D',
+                  backgroundColor: '#161B22',
+                  color: safeCurrentPage <= 1 ? '#484F58' : '#E6EDF3',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.25rem',
+                  cursor: safeCurrentPage <= 1 ? 'not-allowed' : 'pointer',
+                  opacity: safeCurrentPage <= 1 ? 0.6 : 1,
+                }}
+              >
+                <FiChevronLeft size={13} />
+                <span>Prev</span>
+              </button>
+
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                const isActive = page === safeCurrentPage;
+                return (
+                  <button
+                    key={page}
+                    type="button"
+                    onClick={() => setCurrentPage(page)}
+                    style={{
+                      minWidth: '28px',
+                      height: '28px',
+                      padding: '0 0.5rem',
+                      borderRadius: '6px',
+                      border: `1px solid ${isActive ? '#484F58' : '#30363D'}`,
+                      backgroundColor: isActive ? '#2D333B' : '#161B22',
+                      color: isActive ? '#F0F6FC' : '#8B949E',
+                      fontSize: '0.75rem',
+                      fontWeight: isActive ? 600 : 500,
+                      cursor: 'pointer',
+                      transition: 'background-color 0.12s ease, color 0.12s ease',
+                    }}
+                  >
+                    {page}
+                  </button>
+                );
+              })}
+
+              <button
+                type="button"
+                disabled={safeCurrentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                style={{
+                  height: '28px',
+                  padding: '0 0.5rem',
+                  borderRadius: '6px',
+                  border: '1px solid #30363D',
+                  backgroundColor: '#161B22',
+                  color: safeCurrentPage >= totalPages ? '#484F58' : '#E6EDF3',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.25rem',
+                  cursor: safeCurrentPage >= totalPages ? 'not-allowed' : 'pointer',
+                  opacity: safeCurrentPage >= totalPages ? 0.6 : 1,
+                }}
+              >
+                <span>Next</span>
+                <FiChevronRight size={13} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Prompt Detail & Editor Modal */}
       {activePrompt && (
         <Modal isOpen={!!activePrompt} onClose={() => setActivePrompt(null)} title={`Prompt Template Detail: ${activePrompt.name}`} maxWidth="600px">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            {/* Header info pills */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.875rem 1rem', borderRadius: '0.625rem', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Badge variant={getCategoryBadgeVariant(activePrompt.category)} size="sm">
-                  {formatCategoryLabel(activePrompt.category)}
-                </Badge>
-              </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* Header info bar */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.625rem 0.875rem', borderRadius: '8px', backgroundColor: '#1C2128', border: '1px solid #30363D', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '0.6875rem',
+                  fontWeight: 500,
+                  backgroundColor: '#161B22',
+                  border: '1px solid #30363D',
+                  color: '#C9D1D9',
+                }}
+              >
+                {formatCategoryLabel(activePrompt.category)}
+              </span>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-muted)' }}>{activePrompt.version}</span>
-                <span style={{ fontSize: '0.75rem', fontWeight: 500, color: activePrompt.active ? 'var(--status-success)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: activePrompt.active ? 'var(--status-success)' : 'var(--text-muted)' }} />
+                <span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#8B949E', fontFamily: 'monospace' }}>{activePrompt.version}</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: 500, color: activePrompt.active ? '#E6EDF3' : '#8B949E', display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: activePrompt.active ? '#3FB950' : '#6E7681' }} />
                   {activePrompt.active ? 'Active' : 'Inactive'}
                 </span>
               </div>
             </div>
 
             <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.375rem' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 500, color: '#8B949E', display: 'block', marginBottom: '0.375rem' }}>
                 Template Name
               </label>
-              <Input
+              <input
+                type="text"
                 value={activePrompt.name}
                 onChange={(e) => setActivePrompt({ ...activePrompt, name: e.target.value })}
+                style={{
+                  width: '100%',
+                  height: '36px',
+                  padding: '0 0.75rem',
+                  backgroundColor: '#161B22',
+                  color: '#E6EDF3',
+                  border: '1px solid #30363D',
+                  borderRadius: '6px',
+                  outline: 'none',
+                  fontSize: '0.8125rem',
+                  boxSizing: 'border-box',
+                }}
               />
             </div>
 
@@ -808,9 +1115,41 @@ export const PromptTemplatesView: React.FC = () => {
             </div>
 
             <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.375rem' }}>
-                Prompt Structure & Dynamic Variables ({'{title}'}, {'{price}'}, {'{location}'})
-              </label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.375rem', gap: '0.5rem' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 500, color: '#8B949E' }}>
+                  Prompt Structure & Dynamic Variables ({'{title}'}, {'{price}'}, {'{location}'})
+                </label>
+                <button
+                  type="button"
+                  onClick={() => handleCopyPromptText(activePrompt.templateText)}
+                  style={{
+                    height: '26px',
+                    padding: '0 0.625rem',
+                    borderRadius: '6px',
+                    backgroundColor: '#1C2128',
+                    border: `1px solid ${copiedPrompt ? 'rgba(63, 185, 80, 0.5)' : '#30363D'}`,
+                    color: copiedPrompt ? '#3FB950' : '#E6EDF3',
+                    fontSize: '0.75rem',
+                    fontWeight: 500,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.375rem',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease',
+                    flexShrink: 0,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!copiedPrompt) e.currentTarget.style.backgroundColor = '#2D333B';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#1C2128';
+                  }}
+                  title="Copy prompt text to clipboard"
+                >
+                  {copiedPrompt ? <FiCheck size={12} /> : <FiCopy size={12} />}
+                  <span>{copiedPrompt ? 'Copied' : 'Copy'}</span>
+                </button>
+              </div>
               <textarea
                 rows={7}
                 value={activePrompt.templateText}
@@ -818,21 +1157,22 @@ export const PromptTemplatesView: React.FC = () => {
                 style={{
                   width: '100%',
                   padding: '0.75rem',
-                  backgroundColor: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '0.5rem',
+                  backgroundColor: '#0D1117',
+                  color: '#E6EDF3',
+                  border: '1px solid #30363D',
+                  borderRadius: '6px',
                   outline: 'none',
-                  fontSize: '0.8125rem',
+                  fontSize: '0.75rem',
                   fontFamily: 'monospace',
-                  lineHeight: 1.5,
+                  lineHeight: 1.55,
                   boxSizing: 'border-box',
+                  resize: 'vertical',
                 }}
               />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.75rem', borderTop: '1px solid #21262D', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                 <button
                   type="button"
                   role="switch"
@@ -850,9 +1190,9 @@ export const PromptTemplatesView: React.FC = () => {
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '0.5rem',
-                    borderRadius: '0.375rem',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: 'var(--bg-main)',
+                    borderRadius: '6px',
+                    border: '1px solid #30363D',
+                    backgroundColor: '#1C2128',
                     cursor: 'pointer',
                     userSelect: 'none',
                   }}
@@ -860,54 +1200,90 @@ export const PromptTemplatesView: React.FC = () => {
                 >
                   <div
                     style={{
-                      width: '32px',
-                      height: '18px',
-                      borderRadius: '9px',
-                      backgroundColor: activePrompt.active ? '#10B981' : 'rgba(255, 255, 255, 0.15)',
-                      border: `1px solid ${activePrompt.active ? '#059669' : 'rgba(255, 255, 255, 0.25)'}`,
+                      width: '28px',
+                      height: '16px',
+                      borderRadius: '9999px',
+                      backgroundColor: activePrompt.active ? '#238636' : '#30363D',
                       position: 'relative',
-                      transition: 'background-color 0.2s ease',
+                      transition: 'background-color 0.15s ease',
                       flexShrink: 0,
                     }}
                   >
                     <div
                       style={{
                         position: 'absolute',
-                        top: '1px',
-                        left: activePrompt.active ? '15px' : '1px',
-                        width: '14px',
-                        height: '14px',
+                        top: '2px',
+                        left: activePrompt.active ? '14px' : '2px',
+                        width: '12px',
+                        height: '12px',
                         borderRadius: '50%',
                         backgroundColor: '#FFFFFF',
-                        transition: 'left 0.2s',
-                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.35)',
+                        transition: 'left 0.15s ease',
                       }}
                     />
                   </div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: activePrompt.active ? '#34D399' : 'var(--text-muted)' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 500, color: activePrompt.active ? '#E6EDF3' : '#8B949E' }}>
                     {activePrompt.active ? 'Active' : 'Inactive'}
                   </span>
                 </button>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  leftIcon={<FiTrash2 style={{ color: '#EF4444' }} />}
+                <button
+                  type="button"
                   onClick={() => handleDeletePrompt(activePrompt.id)}
-                  style={{ borderColor: 'rgba(239, 68, 68, 0.4)', color: '#EF4444' }}
+                  style={{
+                    height: '32px',
+                    padding: '0 0.625rem',
+                    borderRadius: '6px',
+                    backgroundColor: '#1C2128',
+                    border: '1px solid #30363D',
+                    color: '#8B949E',
+                    fontSize: '0.75rem',
+                    fontWeight: 500,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.375rem',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(248, 81, 73, 0.12)';
+                    e.currentTarget.style.borderColor = 'rgba(248, 81, 73, 0.45)';
+                    e.currentTarget.style.color = '#F85149';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#1C2128';
+                    e.currentTarget.style.borderColor = '#30363D';
+                    e.currentTarget.style.color = '#8B949E';
+                  }}
                 >
-                  Delete Template
-                </Button>
+                  <FiTrash2 size={13} />
+                  <span>Delete</span>
+                </button>
               </div>
 
               <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <Button variant="outline" size="sm" onClick={() => setActivePrompt(null)}>
+                <button
+                  type="button"
+                  onClick={() => setActivePrompt(null)}
+                  style={{
+                    height: '32px',
+                    padding: '0 0.75rem',
+                    borderRadius: '6px',
+                    backgroundColor: '#1C2128',
+                    border: '1px solid #30363D',
+                    color: '#E6EDF3',
+                    fontSize: '0.75rem',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    transition: 'background-color 0.12s ease',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2D333B')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#1C2128')}
+                >
                   Cancel
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  leftIcon={<FiCheckCircle />}
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     if (!activePrompt.name.trim() || !activePrompt.templateText.trim()) return;
                     const savedItem: PromptTemplate = {
@@ -920,9 +1296,27 @@ export const PromptTemplatesView: React.FC = () => {
                     setPrompts(updatedList);
                     setActivePrompt(null);
                   }}
+                  style={{
+                    height: '32px',
+                    padding: '0 0.875rem',
+                    borderRadius: '6px',
+                    backgroundColor: '#21262D',
+                    border: '1px solid #30363D',
+                    color: '#F0F6FC',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.375rem',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.12s ease',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2D333B')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#21262D')}
                 >
-                  Save Changes
-                </Button>
+                  <FiCheckCircle size={13} />
+                  <span>Save Changes</span>
+                </button>
               </div>
             </div>
           </div>
@@ -932,15 +1326,28 @@ export const PromptTemplatesView: React.FC = () => {
       {/* Create New Prompt Modal */}
       {isCreating && (
         <Modal isOpen={isCreating} onClose={() => setIsCreating(false)} title="Create Prompt Template" maxWidth="560px">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.125rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.375rem' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 500, color: '#8B949E', display: 'block', marginBottom: '0.375rem' }}>
                 Template Name
               </label>
-              <Input
+              <input
+                type="text"
                 placeholder="e.g. Facebook High-Yield Property Sale Copy"
                 value={newTemplate.name}
                 onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
+                style={{
+                  width: '100%',
+                  height: '36px',
+                  padding: '0 0.75rem',
+                  backgroundColor: '#161B22',
+                  color: '#E6EDF3',
+                  border: '1px solid #30363D',
+                  borderRadius: '6px',
+                  outline: 'none',
+                  fontSize: '0.8125rem',
+                  boxSizing: 'border-box',
+                }}
               />
             </div>
 
@@ -954,7 +1361,7 @@ export const PromptTemplatesView: React.FC = () => {
             </div>
 
             <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.375rem' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 500, color: '#8B949E', display: 'block', marginBottom: '0.375rem' }}>
                 Prompt Structure & Variables ({'{title}'}, {'{price}'}, {'{location}'})
               </label>
               <textarea
@@ -965,31 +1372,65 @@ export const PromptTemplatesView: React.FC = () => {
                 style={{
                   width: '100%',
                   padding: '0.75rem',
-                  backgroundColor: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '0.5rem',
+                  backgroundColor: '#0D1117',
+                  color: '#E6EDF3',
+                  border: '1px solid #30363D',
+                  borderRadius: '6px',
                   outline: 'none',
-                  fontSize: '0.8125rem',
+                  fontSize: '0.75rem',
                   fontFamily: 'monospace',
-                  lineHeight: 1.5,
+                  lineHeight: 1.55,
                   boxSizing: 'border-box',
+                  resize: 'vertical',
                 }}
               />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
-              <Button variant="outline" size="sm" onClick={() => setIsCreating(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                leftIcon={<FiCheckCircle />}
-                onClick={handleCreateNew}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid #21262D' }}>
+              <button
+                type="button"
+                onClick={() => setIsCreating(false)}
+                style={{
+                  height: '32px',
+                  padding: '0 0.75rem',
+                  borderRadius: '6px',
+                  backgroundColor: '#1C2128',
+                  border: '1px solid #30363D',
+                  color: '#E6EDF3',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  transition: 'background-color 0.12s ease',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2D333B')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#1C2128')}
               >
-                Create Template
-              </Button>
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateNew}
+                style={{
+                  height: '32px',
+                  padding: '0 0.875rem',
+                  borderRadius: '6px',
+                  backgroundColor: '#21262D',
+                  border: '1px solid #30363D',
+                  color: '#F0F6FC',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.375rem',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.12s ease',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2D333B')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#21262D')}
+              >
+                <FiCheckCircle size={13} />
+                <span>Create Template</span>
+              </button>
             </div>
           </div>
         </Modal>

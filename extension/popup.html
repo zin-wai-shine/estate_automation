@@ -11,326 +11,468 @@
     }
 
     :root {
-      --bg-base: #0B0D11;
-      --bg-surface: #12151C;
-      --bg-surface-elevated: #181C26;
-      --bg-surface-hover: #1E2330;
-      --border-subtle: rgba(255, 255, 255, 0.08);
+      --bg-sidebar: #25282B;
+      --bg-main: #1D1F22;
+      --bg-elevated: #2A2D32;
+      --bg-hover: #31353B;
+      --border-divider: rgba(255, 255, 255, 0.08);
       --border-strong: rgba(255, 255, 255, 0.16);
-      --border-focus: #3B82F6;
-      --text-primary: #F1F5F9;
-      --text-secondary: #94A3B8;
-      --text-muted: #64748B;
-      --accent-primary: #2563EB;
-      --accent-hover: #1D4ED8;
-      --accent-soft: rgba(37, 99, 235, 0.14);
-      --success: #10B981;
-      --success-glow: rgba(16, 185, 129, 0.25);
-      --warning: #F59E0B;
-      --danger: #EF4444;
-      --tiktok: #FE2C55;
-      --meta: #1877F2;
+      --text-primary: #ECEEF0;
+      --text-secondary: #B4B8BE;
+      --text-muted: #7D828A;
+      --accent-blue: #326EE6;
+      --accent-blue-hover: #295EC9;
+      --success: #3FB950;
+      --warning: #D29922;
+      --danger: #F85149;
+      --tiktok: #FB7185;
+      --meta: #B4B8BE;
     }
 
-    body {
-      width: 390px;
+    html, body {
+      width: 375px;
+      min-width: 375px;
+      max-height: 580px;
+      overflow: hidden;
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
-      background: var(--bg-base);
+      background: var(--bg-main);
       color: var(--text-primary);
-      padding: 12px 14px 14px;
       font-size: 12px;
       line-height: 1.45;
       user-select: none;
       -webkit-font-smoothing: antialiased;
     }
 
-    /* ── Header ── */
-    .header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding-bottom: 10px;
-      border-bottom: 1px solid var(--border-subtle);
-      margin-bottom: 10px;
+    html.sidebar-open, body.sidebar-open {
+      width: 520px;
+      min-width: 520px;
     }
-    .header-left {
+
+    .app-shell {
       display: flex;
-      align-items: center;
-      gap: 9px;
+      width: 100%;
+      height: 550px;
+      max-height: 580px;
+      background: var(--bg-main);
     }
-    .logo-mark {
-      width: 28px;
-      height: 28px;
-      border-radius: 8px;
-      background: linear-gradient(135deg, #2563EB 0%, #1E293B 100%);
-      border: 1px solid rgba(255, 255, 255, 0.16);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 2px 6px rgba(0, 0, 0, 0.45);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #FFFFFF;
+
+    /* ── Left Sidebar ── */
+    .sidebar-pane {
+      width: 185px;
       flex-shrink: 0;
-    }
-    .title-row {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .title-text {
-      font-size: 13px;
-      font-weight: 600;
-      letter-spacing: -0.2px;
-    }
-    .version-chip {
-      font-size: 9.5px;
-      font-weight: 600;
-      padding: 1px 5px;
-      border-radius: 4px;
-      background: rgba(59, 130, 246, 0.12);
-      color: #60A5FA;
-      border: 1px solid rgba(59, 130, 246, 0.25);
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    }
-    .subtitle-text {
-      font-size: 10.5px;
-      color: var(--text-muted);
-    }
-
-    .status-beacon {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      padding: 3px 8px;
-      border-radius: 100px;
-      font-size: 10px;
-      font-weight: 500;
-      background: rgba(16, 185, 129, 0.08);
-      color: var(--success);
-      border: 1px solid rgba(16, 185, 129, 0.22);
-    }
-    .status-dot {
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: currentColor;
-      box-shadow: 0 0 6px var(--success-glow);
-    }
-
-    /* ── Segmented Nav Tabs ── */
-    .nav-tabs {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 4px;
-      background: var(--bg-surface);
-      padding: 3px;
-      border-radius: 8px;
-      border: 1px solid var(--border-subtle);
-      margin-bottom: 10px;
-    }
-    .nav-tab {
-      border: none;
-      background: transparent;
-      color: var(--text-muted);
-      font-size: 11px;
-      font-weight: 600;
-      padding: 6px 8px;
-      border-radius: 6px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 5px;
-      transition: all 0.15s ease;
-    }
-    .nav-tab:hover {
-      color: var(--text-secondary);
-    }
-    .nav-tab.active {
-      background: var(--bg-surface-elevated);
-      color: var(--text-primary);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    }
-
-    .tab-panel {
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border-divider);
       display: none;
+      flex-direction: column;
+      height: 100%;
     }
-    .tab-panel.active {
-      display: block;
+    body.sidebar-open .sidebar-pane {
+      display: flex;
     }
 
-    /* ── Cards & Inputs ── */
-    .section-card {
-      background: var(--bg-surface);
-      border-radius: 9px;
-      padding: 10px 11px;
-      margin-bottom: 9px;
-      border: 1px solid var(--border-subtle);
+    .sidebar-section {
+      padding: 13px 15px;
+      border-bottom: 1px solid var(--border-divider);
     }
-    .section-header {
+
+    .sidebar-label-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 7px;
-    }
-    .section-label {
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: var(--text-muted);
-    }
-    .section-meta {
-      font-size: 10.5px;
-      font-weight: 500;
-      color: var(--text-secondary);
+      gap: 6px;
+      margin-bottom: 4px;
     }
 
-    .row-2 {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 7px;
+    .sidebar-label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .sidebar-meta {
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--success);
     }
 
     .select-wrapper {
       position: relative;
       width: 100%;
     }
-    .profile-select, .input-field {
+
+    .sidebar-select {
       width: 100%;
       appearance: none;
       -webkit-appearance: none;
-      padding: 6px 26px 6px 9px;
-      border-radius: 6px;
-      background: var(--bg-surface-elevated);
+      background: transparent;
+      border: none;
       color: var(--text-primary);
-      border: 1px solid var(--border-subtle);
-      font-size: 11.5px;
-      font-weight: 500;
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 2px 20px 2px 0;
       outline: none;
       font-family: inherit;
-      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      cursor: pointer;
+      text-overflow: ellipsis;
     }
-    .input-field {
-      padding: 6px 9px;
-      user-select: text;
-    }
-    .textarea-field {
-      width: 100%;
-      min-height: 76px;
-      max-height: 130px;
-      resize: vertical;
-      padding: 7px 9px;
-      border-radius: 6px;
-      background: var(--bg-surface-elevated);
+
+    .sidebar-select option {
+      background: var(--bg-sidebar);
       color: var(--text-primary);
-      border: 1px solid var(--border-subtle);
-      font-size: 11.5px;
-      line-height: 1.45;
-      font-family: inherit;
-      outline: none;
-      user-select: text;
     }
-    .profile-select:hover, .input-field:hover, .textarea-field:hover {
-      border-color: var(--border-strong);
-    }
-    .profile-select:focus, .input-field:focus, .textarea-field:focus {
-      border-color: var(--border-focus);
-      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.22);
-    }
+
     .select-arrow {
       position: absolute;
-      right: 8px;
+      right: 0;
       top: 50%;
       transform: translateY(-50%);
       pointer-events: none;
       color: var(--text-muted);
+      display: flex;
+      align-items: center;
     }
 
-    /* ── Toolbar Buttons ── */
-    .toolbar-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 7px;
-      margin-bottom: 9px;
+    /* Key-value stats like reference */
+    .sidebar-stats {
+      padding: 13px 15px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
     }
-    .mini-btn {
-      height: 30px;
-      border-radius: 7px;
-      border: 1px solid var(--border-subtle);
-      background: var(--bg-surface-elevated);
+
+    .stat-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11.5px;
+    }
+
+    .stat-key {
+      color: var(--text-muted);
+    }
+
+    .stat-val {
       color: var(--text-primary);
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .status-beacon {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
       font-size: 11px;
-      font-weight: 600;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+
+    /* Sidebar Footer Switcher (like Personalize >) */
+    .sidebar-footer {
+      padding: 12px 15px;
+      border-top: 1px solid var(--border-divider);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .nav-tab {
+      width: 100%;
+      height: 32px;
+      padding: 0 10px;
+      border-radius: 7px;
+      border: 1px solid var(--border-divider);
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 11.5px;
+      font-weight: 500;
       cursor: pointer;
       display: flex;
       align-items: center;
-      justify-content: center;
-      gap: 5px;
-      transition: all 0.14s ease;
-    }
-    .mini-btn:hover {
-      background: var(--bg-surface-hover);
-      border-color: var(--border-strong);
-    }
-    .mini-btn:active {
-      transform: scale(0.98);
+      justify-content: space-between;
+      transition: background-color 0.14s ease, color 0.14s ease, border-color 0.14s ease;
     }
 
-    /* ── Platform Pills ── */
+    .nav-tab:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .nav-tab.active {
+      background: var(--bg-elevated);
+      border-color: var(--border-strong);
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .nav-tab-left {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    /* ── Right Main Pane ── */
+    .main-pane {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      background: var(--bg-main);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .main-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border-divider);
+      flex-shrink: 0;
+    }
+
+    .brand-inline {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .brand-name {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
+
+    .version-chip {
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--text-muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: nowrap;
+    }
+
     .platform-pill {
       display: inline-flex;
       align-items: center;
       gap: 4px;
       padding: 2px 7px;
-      border-radius: 100px;
-      font-size: 9.5px;
-      font-weight: 600;
-      border: 1px solid var(--border-subtle);
-      background: rgba(255, 255, 255, 0.04);
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 500;
+      border: 1px solid var(--border-divider);
+      background: var(--bg-elevated);
       color: var(--text-secondary);
+      white-space: nowrap;
     }
     .platform-pill.meta {
-      background: rgba(24, 119, 242, 0.14);
-      color: #60A5FA;
-      border-color: rgba(24, 119, 242, 0.3);
+      color: var(--text-secondary);
     }
     .platform-pill.tiktok {
-      background: rgba(254, 44, 85, 0.14);
-      color: #FB7185;
-      border-color: rgba(254, 44, 85, 0.3);
+      color: var(--tiktok);
+      border-color: rgba(251, 113, 133, 0.3);
     }
 
-    /* ── Image Preview Grid ── */
-    .image-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
+    .topbar-actions {
+      display: flex;
+      align-items: center;
       gap: 6px;
-      max-height: 136px;
-      overflow-y: auto;
-      padding: 2px 0 4px;
+      flex-shrink: 0;
     }
-    .image-grid::-webkit-scrollbar,
-    .groups-list::-webkit-scrollbar {
+
+    .photo-strip-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .photo-strip-controls {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .icon-action-btn {
+      height: 24px;
+      padding: 0 8px;
+      border-radius: 5px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 500;
+      white-space: nowrap;
+      flex-shrink: 0;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: background-color 0.14s ease, color 0.14s ease;
+    }
+
+    .icon-action-btn:hover {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+    }
+
+    .tab-panel {
+      display: none;
+      flex: 1;
+      min-height: 0;
+      flex-direction: column;
+    }
+    .tab-panel.active {
+      display: flex;
+    }
+
+    .main-body {
+      flex: 1;
+      min-height: 0;
+      padding: 12px 14px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      overflow-y: auto;
+    }
+
+    /* Clean inputs & textarea */
+    .input-field, .textarea-field {
+      width: 100%;
+      border-radius: 7px;
+      background: var(--bg-sidebar);
+      color: var(--text-primary);
+      border: 1px solid var(--border-divider);
+      font-size: 12px;
+      line-height: 1.5;
+      font-family: inherit;
+      outline: none;
+      user-select: text;
+      transition: border-color 0.15s ease;
+    }
+
+    .input-field {
+      padding: 6px 10px;
+    }
+
+    .textarea-field {
+      min-height: 82px;
+      max-height: 126px;
+      resize: vertical;
+      padding: 8px 10px;
+    }
+    .textarea-field::-webkit-scrollbar {
+      width: 5px;
+    }
+    .textarea-field::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .textarea-field::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.16);
+      border-radius: 4px;
+    }
+
+    .input-field:hover, .textarea-field:hover {
+      border-color: var(--border-strong);
+    }
+
+    .input-field:focus, .textarea-field:focus {
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+
+    .field-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      font-size: 10.5px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .link-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 10.5px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .link-btn:hover {
+      color: var(--text-primary);
+      text-decoration: underline;
+    }
+
+    /* Horizontal Photo Strip */
+    .image-grid {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      scroll-behavior: smooth;
+      scrollbar-width: none;
+      padding: 2px 0;
+    }
+    .image-grid::-webkit-scrollbar {
+      display: none;
+    }
+    .groups-list::-webkit-scrollbar,
+    .main-body::-webkit-scrollbar {
       width: 4px;
     }
-    .image-grid::-webkit-scrollbar-thumb,
-    .groups-list::-webkit-scrollbar-thumb {
+    .groups-list::-webkit-scrollbar-thumb,
+    .main-body::-webkit-scrollbar-thumb {
       background: rgba(255, 255, 255, 0.14);
       border-radius: 4px;
     }
+
     .img-tile {
       position: relative;
-      aspect-ratio: 1 / 1;
+      width: 64px;
+      height: 64px;
+      flex-shrink: 0;
       border-radius: 6px;
       overflow: hidden;
-      border: 1.5px solid var(--border-subtle);
-      background: var(--bg-surface-elevated);
+      border: 1.5px solid var(--border-divider);
+      background: var(--bg-sidebar);
       cursor: pointer;
-      transition: all 0.14s ease;
+      transition: border-color 0.14s ease, opacity 0.14s ease;
+    }
+    .arrow-nav-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 5px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-secondary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background-color 0.14s ease, color 0.14s ease, opacity 0.14s ease;
+    }
+    .arrow-nav-btn:hover:not(:disabled) {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+    }
+    .arrow-nav-btn:disabled {
+      opacity: 0.35;
+      cursor: default;
     }
     .img-tile.selected {
-      border-color: #3B82F6;
-      box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.4);
+      border-color: var(--text-primary);
     }
     .img-tile:not(.selected) {
       opacity: 0.45;
@@ -345,46 +487,53 @@
       position: absolute;
       top: 4px;
       right: 4px;
-      width: 16px;
-      height: 16px;
+      width: 15px;
+      height: 15px;
       border-radius: 4px;
-      background: rgba(11, 13, 17, 0.8);
-      border: 1px solid rgba(255, 255, 255, 0.3);
+      background: rgba(29, 31, 34, 0.85);
+      border: 1px solid var(--border-strong);
       display: flex;
       align-items: center;
       justify-content: center;
       color: #FFFFFF;
-      font-size: 10px;
+      font-size: 9px;
     }
     .img-tile.selected .img-check {
-      background: #2563EB;
-      border-color: #60A5FA;
+      background: #238636;
+      border-color: #3FB950;
     }
     .img-idx {
       position: absolute;
       bottom: 3px;
       left: 4px;
       font-size: 9px;
-      font-weight: 700;
+      font-weight: 600;
       padding: 0 4px;
       border-radius: 3px;
-      background: rgba(11, 13, 17, 0.78);
-      color: #E2E8F0;
+      background: rgba(29, 31, 34, 0.82);
+      color: var(--text-primary);
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
 
-    /* ── Batch Bar ── */
+    .empty-state {
+      color: var(--text-muted);
+      font-size: 11px;
+      text-align: center;
+      padding: 12px 8px;
+      border: 1px dashed var(--border-divider);
+      border-radius: 6px;
+    }
+
     .batch-bar {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 6px;
-      padding: 6px 8px;
+      padding: 6px 9px;
       border-radius: 6px;
-      background: var(--bg-surface-elevated);
-      border: 1px solid var(--border-subtle);
-      margin-top: 7px;
-      font-size: 10.5px;
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border-divider);
+      font-size: 11px;
     }
     .batch-left {
       display: flex;
@@ -393,78 +542,68 @@
       color: var(--text-secondary);
     }
     .batch-select {
-      background: var(--bg-base);
+      background: var(--bg-main);
       color: var(--text-primary);
-      border: 1px solid var(--border-subtle);
+      border: 1px solid var(--border-divider);
       border-radius: 4px;
       padding: 2px 5px;
       font-size: 10.5px;
-      font-weight: 600;
+      font-weight: 500;
       outline: none;
     }
-    .link-btn {
-      background: transparent;
-      border: none;
-      color: #60A5FA;
-      font-size: 10.5px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .link-btn:hover {
-      text-decoration: underline;
-    }
 
-    .field-label-row {
+    /* Action Row (like Insert + Rewrite in reference) */
+    .action-row {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      margin: 8px 0 4px;
-      font-size: 10px;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
+      gap: 10px;
+      padding-top: 2px;
     }
 
-    /* ── Primary & Secondary Action Buttons ── */
-    .button-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin-top: 4px;
-    }
-    .btn {
-      width: 100%;
-      height: 35px;
+    .btn-primary-clean {
+      height: 34px;
+      padding: 0 16px;
       border-radius: 7px;
-      border: 1px solid rgba(255, 255, 255, 0.14);
-      background: linear-gradient(180deg, #2563EB 0%, #1D4ED8 100%);
+      border: none;
+      background: var(--accent-blue);
       color: #FFFFFF;
       font-weight: 600;
       font-size: 12px;
-      letter-spacing: -0.1px;
       cursor: pointer;
-      display: flex;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 2px 6px rgba(37, 99, 235, 0.3);
-      transition: all 0.15s ease;
+      transition: background-color 0.14s ease;
     }
-    .btn:hover {
-      background: linear-gradient(180deg, #3B82F6 0%, #2563EB 100%);
+    .btn-primary-clean:hover {
+      background: var(--accent-blue-hover);
     }
-    .btn:active {
-      transform: translateY(1px);
-    }
-    .btn:disabled {
+    .btn-primary-clean:disabled {
       opacity: 0.55;
       cursor: not-allowed;
-      transform: none;
     }
-    .btn:disabled:hover {
-      background: linear-gradient(180deg, #2563EB 0%, #1D4ED8 100%);
+
+    .btn-ghost-clean {
+      height: 34px;
+      padding: 0 12px;
+      border-radius: 7px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-weight: 500;
+      font-size: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background-color 0.14s ease, color 0.14s ease;
     }
+    .btn-ghost-clean:hover {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+    }
+
     .btn-spinner {
       width: 12px;
       height: 12px;
@@ -477,34 +616,75 @@
     @keyframes btn-spin {
       to { transform: rotate(360deg); }
     }
-    .btn-secondary {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      color: var(--text-secondary);
-      box-shadow: none;
-      height: 32px;
-      font-size: 11.5px;
-    }
-    .btn-secondary:hover {
-      background: var(--bg-surface-elevated);
-      color: var(--text-primary);
-      border-color: var(--border-strong);
+
+    /* Bottom Dock Bar (like Add extra instructions + Generate in reference) */
+    .bottom-dock {
+      flex-shrink: 0;
+      padding: 9px 14px 10px;
+      border-top: 1px solid var(--border-divider);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      background: var(--bg-main);
     }
 
-    /* ── Worker Tabs List (Preserved) ── */
+    .dock-pill {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 4px 5px 4px 11px;
+      border-radius: 8px;
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border-divider);
+    }
+
+    .dock-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .dock-btn {
+      flex-shrink: 0;
+      height: 28px;
+      padding: 0 11px;
+      border-radius: 6px;
+      border: 1px solid var(--border-strong);
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: background-color 0.14s ease;
+    }
+    .dock-btn:hover {
+      background: var(--bg-hover);
+    }
+
+    /* Worker Tabs List */
     .groups-list {
       display: flex;
       flex-direction: column;
       gap: 8px;
-      max-height: 220px;
+      flex: 1;
+      max-height: 280px;
       overflow-y: auto;
-      padding-right: 2px;
     }
     .group-section {
-      background: var(--bg-surface-elevated);
-      border-radius: 6px;
-      padding: 8px 9px;
-      border: 1px solid var(--border-subtle);
+      background: var(--bg-sidebar);
+      border-radius: 7px;
+      padding: 9px 10px;
+      border: 1px solid var(--border-divider);
     }
     .group-section-title {
       display: flex;
@@ -517,11 +697,11 @@
     .group-badge {
       font-size: 9.5px;
       font-weight: 500;
-      padding: 1px 5px;
+      padding: 1px 6px;
       border-radius: 4px;
-      background: rgba(255, 255, 255, 0.05);
+      background: var(--bg-elevated);
       color: var(--text-secondary);
-      border: 1px solid var(--border-subtle);
+      border: 1px solid var(--border-divider);
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
     .group-tabs-list {
@@ -539,7 +719,7 @@
       font-size: 11px;
     }
     .tab-item:hover {
-      background: var(--bg-surface-hover);
+      background: var(--bg-elevated);
     }
     .tab-left {
       display: flex;
@@ -573,12 +753,12 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
     .focus-btn {
-      padding: 3px 7px;
+      padding: 3px 8px;
       font-size: 10px;
       font-weight: 500;
-      border-radius: 4px;
-      border: 1px solid var(--border-subtle);
-      background: rgba(255, 255, 255, 0.04);
+      border-radius: 5px;
+      border: 1px solid var(--border-divider);
+      background: var(--bg-elevated);
       color: var(--text-secondary);
       cursor: pointer;
       display: inline-flex;
@@ -586,218 +766,243 @@
       gap: 4px;
     }
     .focus-btn:hover {
-      background: rgba(255, 255, 255, 0.09);
+      background: var(--bg-hover);
       color: var(--text-primary);
-    }
-
-    .empty-state {
-      color: var(--text-muted);
-      font-size: 11px;
-      text-align: center;
-      padding: 16px 8px;
-      border: 1px dashed var(--border-subtle);
-      border-radius: 6px;
-      background: rgba(255, 255, 255, 0.01);
     }
   </style>
 </head>
 <body>
-  <!-- Header -->
-  <header class="header">
-    <div class="header-left">
-      <div class="logo-mark">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-        </svg>
-      </div>
-      <div>
-        <div class="title-row">
-          <span class="title-text">BoltHaven Pro</span>
-          <span class="version-chip">v2.6</span>
+  <div class="app-shell">
+    <!-- ── Left Sidebar ── -->
+    <aside class="sidebar-pane">
+      <div class="sidebar-section">
+        <div class="sidebar-label-row">
+          <span class="sidebar-label">Browser Profile</span>
+          <span id="profile-status" class="sidebar-meta">Isolated</span>
         </div>
-        <div class="subtitle-text">Social Autofill & Pipeline Companion</div>
-      </div>
-    </div>
-    <div class="status-beacon" id="companion-beacon">
-      <span class="status-dot"></span>
-      <span id="beacon-text">Port :9224</span>
-    </div>
-  </header>
-
-  <!-- Mode Tabs -->
-  <nav class="nav-tabs">
-    <button class="nav-tab active" data-tab="autofill" type="button">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 20h9"></path>
-        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
-      </svg>
-      Post Autofill
-    </button>
-    <button class="nav-tab" data-tab="workers" type="button">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="3" width="7" height="7"></rect>
-        <rect x="14" y="3" width="7" height="7"></rect>
-        <rect x="14" y="14" width="7" height="7"></rect>
-        <rect x="3" y="14" width="7" height="7"></rect>
-      </svg>
-      Worker Tabs
-    </button>
-  </nav>
-
-  <!-- ════════════════════════════════════════════════════════════════════════
-       TAB 1: POST AUTOFILL (Meta Business Suite & TikTok Studio)
-       ════════════════════════════════════════════════════════════════════════ -->
-  <div id="tab-autofill" class="tab-panel active">
-    <!-- Profile & Box Assignment -->
-    <section class="section-card">
-      <div class="section-header">
-        <span class="section-label">Browser Profile & Assigned Box</span>
-        <span id="profile-status" class="section-meta" style="color: var(--success);">Isolated</span>
-      </div>
-      <div class="row-2">
         <div class="select-wrapper">
-          <select id="profile-select" class="profile-select" title="Chrome Profile">
+          <select id="profile-select" class="sidebar-select" title="Chrome Profile">
             <option value="">Auto-Detect Profile</option>
           </select>
           <div class="select-arrow">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </div>
         </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label-row">
+          <span class="sidebar-label">Assigned Box</span>
+        </div>
         <div class="select-wrapper">
-          <select id="box-select" class="profile-select" title="Select Extension Box from Site">
+          <select id="box-select" class="sidebar-select" title="Select Extension Box from Site">
             <option value="">All / Auto Box</option>
           </select>
           <div class="select-arrow">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </div>
         </div>
       </div>
-    </section>
 
-    <!-- Sync & Input From Site Toolbar -->
-    <div class="toolbar-row">
-      <button class="mini-btn" id="sync-dispatch-btn" type="button">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
-        </svg>
-        <span id="sync-dispatch-label">Sync Queue</span>
-      </button>
-      <button class="mini-btn" id="pull-site-btn" type="button">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
-        </svg>
-        <span id="pull-site-label">Input from Site</span>
-      </button>
-    </div>
-
-    <!-- Joined Post Preview Card -->
-    <section class="section-card">
-      <div class="section-header">
-        <span class="section-label">Staged Post Preview</span>
-        <span id="platform-badge" class="platform-pill">Auto Detect</span>
-      </div>
-
-      <!-- Queue Selector (when >1 item exists) -->
-      <div id="queue-select-wrap" class="select-wrapper" style="margin-bottom: 8px; display: none;">
-        <select id="queue-select" class="profile-select"></select>
-        <div class="select-arrow">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      <div id="queue-select-wrap" class="sidebar-section" style="display: none;">
+        <div class="sidebar-label-row">
+          <span class="sidebar-label">Staged Post</span>
+        </div>
+        <div class="select-wrapper">
+          <select id="queue-select" class="sidebar-select"></select>
+          <div class="select-arrow">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </div>
         </div>
       </div>
 
-      <!-- Image Selection Grid -->
-      <div class="field-label-row" style="margin-top: 2px;">
-        <span>Photos (<span id="selected-img-count">0</span>/<span id="total-img-count">0</span>)</span>
-        <button id="toggle-all-imgs-btn" class="link-btn" type="button">Select All</button>
-      </div>
-      <div id="image-grid" class="image-grid">
-        <div class="empty-state" style="grid-column: 1 / -1;">Click <strong>Sync Queue</strong> to load joined photos &amp; copy.</div>
-      </div>
-
-      <!-- Batch Control (TikTok Safe Mode) -->
-      <div id="tiktok-batch-bar" class="batch-bar">
-        <div class="batch-left">
-          <span>Batch:</span>
-          <select id="batch-size-select" class="batch-select" title="Images per Fill click (5 recommended for TikTok)">
-            <option value="5" selected>5 / click</option>
-            <option value="10">10 / click</option>
-            <option value="35">All (35 max)</option>
-          </select>
-          <span id="batch-progress-text" style="color: var(--text-primary); font-weight: 600;">Ready</span>
+      <!-- Clean Stats -->
+      <div class="sidebar-stats">
+        <div class="stat-row">
+          <span class="stat-key">Photos</span>
+          <span class="stat-val"><span id="selected-img-count">0</span> / <span id="total-img-count">0</span></span>
         </div>
-        <button id="reset-batch-btn" class="link-btn" type="button" title="Restart from photo #1">Reset</button>
-      </div>
-
-      <!-- Title (TikTok) -->
-      <div id="tiktok-title-wrap">
-        <div class="field-label-row">
-          <span>Title (TikTok)</span>
-          <span id="title-counter">0/90</span>
+        <div class="stat-row">
+          <span class="stat-key">Characters</span>
+          <span id="desc-counter" class="stat-val">0 chars</span>
         </div>
-        <input id="preview-title" class="input-field" type="text" maxlength="90" placeholder="Catchy title for TikTok..." />
-      </div>
-
-      <!-- Description -->
-      <div class="field-label-row">
-        <span id="desc-label-text">Description</span>
-        <span id="desc-counter">0 chars</span>
-      </div>
-      <textarea id="preview-desc" class="textarea-field" placeholder="Caption will appear here..."></textarea>
-
-      <!-- Hashtags (TikTok) -->
-      <div id="tiktok-hashtags-wrap" style="margin-top: 8px;">
-        <div class="field-label-row">
-          <span>#Hashtags (TikTok)</span>
-          <span id="hashtags-counter">0 tags</span>
+        <div class="stat-row">
+          <span class="stat-key">Companion</span>
+          <span class="status-beacon" id="companion-beacon">
+            <span class="status-dot"></span>
+            <span id="beacon-text">Port :9224</span>
+          </span>
         </div>
-        <input id="preview-hashtags" class="input-field" type="text" placeholder="#ElioDelRay #Sukhumvit64 #CondoForRent" />
       </div>
-    </section>
 
-    <!-- Primary Fill CTA -->
-    <div class="button-group">
-      <button class="btn" id="fill-btn" type="button">
-        <svg id="fill-btn-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-        </svg>
-        <span class="btn-spinner" id="fill-btn-spinner" style="display: none;"></span>
-        <span id="fill-btn-label">Fill Active Page</span>
-      </button>
-    </div>
-  </div>
-
-  <!-- ════════════════════════════════════════════════════════════════════════
-       TAB 2: WORKER TABS (Existing Tab Memory & ChatGPT Pipelines)
-       ════════════════════════════════════════════════════════════════════════ -->
-  <div id="tab-workers" class="tab-panel">
-    <section class="section-card">
-      <div class="section-header">
-        <span class="section-label">Worker Pipelines</span>
-        <span id="tabs-summary" class="section-meta">Sync Ready</span>
+      <!-- Sidebar Mode Switcher -->
+      <div class="sidebar-footer">
+        <button class="nav-tab active" data-tab="autofill" type="button">
+          <span class="nav-tab-left">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20h9"></path>
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+            </svg>
+            Post Autofill
+          </span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+        <button class="nav-tab" data-tab="workers" type="button">
+          <span class="nav-tab-left">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            Worker Tabs
+          </span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
       </div>
-      <div class="groups-list" id="groups-container">
-        <div style="color: var(--text-muted); font-size: 11px; padding: 12px 0; text-align: center;">Scanning memorized worker pipelines...</div>
-      </div>
-    </section>
+    </aside>
 
-    <div class="button-group">
-      <button class="btn" id="sync-btn" type="button">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
-        </svg>
-        <span id="sync-btn-label">Sync Memory to BoltHaven Workflow</span>
-      </button>
-      <button class="btn btn-secondary" id="open-workers-btn" type="button">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-          <polyline points="15 3 21 3 21 9"></polyline>
-          <line x1="10" y1="14" x2="21" y2="3"></line>
-        </svg>
-        <span id="open-btn-label">Focus Active Worker Tabs</span>
-      </button>
-    </div>
+    <!-- ── Right Main Pane ── -->
+    <main class="main-pane">
+      <div class="main-topbar">
+        <div class="brand-inline">
+          <button id="toggle-sidebar-btn" class="arrow-nav-btn" type="button" title="Toggle Sidebar">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+              <line x1="9" y1="3" x2="9" y2="21"></line>
+            </svg>
+          </button>
+          <span class="brand-name">BoltHaven Pro</span>
+          <span class="version-chip">v2.6</span>
+        </div>
+        <div class="topbar-actions">
+          <span id="platform-badge" class="platform-pill">Auto Detect</span>
+        </div>
+      </div>
+
+      <!-- TAB 1: POST AUTOFILL -->
+      <div id="tab-autofill" class="tab-panel active">
+        <div class="main-body">
+          <!-- Photo Strip Controls -->
+          <div class="photo-strip-bar">
+            <span class="field-label-row" style="margin: 0;">Photos</span>
+            <div class="photo-strip-controls">
+              <button id="img-prev-btn" class="arrow-nav-btn" type="button" title="Previous Photos">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="19" y1="12" x2="5" y2="12"></line>
+                  <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+              </button>
+              <button id="img-next-btn" class="arrow-nav-btn" type="button" title="Next Photos">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                  <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+              </button>
+              <button id="toggle-all-imgs-btn" class="icon-action-btn" type="button">Select All</button>
+            </div>
+          </div>
+
+          <!-- Image Selection Strip -->
+          <div id="image-grid" class="image-grid">
+            <div class="empty-state" style="width: 100%;">Text-only post (no photos attached). Click <strong>Sync Queue</strong> below to load.</div>
+          </div>
+
+          <!-- Batch Control (TikTok Safe Mode) -->
+          <div id="tiktok-batch-bar" class="batch-bar">
+            <div class="batch-left">
+              <span>Batch:</span>
+              <select id="batch-size-select" class="batch-select" title="Images per Fill click">
+                <option value="5" selected>5 / click</option>
+                <option value="10">10 / click</option>
+                <option value="35">All (35 max)</option>
+              </select>
+              <span id="batch-progress-text" style="color: var(--text-primary); font-weight: 600;">Ready</span>
+            </div>
+            <button id="reset-batch-btn" class="link-btn" type="button" title="Restart from photo #1">Reset</button>
+          </div>
+
+          <!-- Title (TikTok) -->
+          <div id="tiktok-title-wrap">
+            <div class="field-label-row">
+              <span>Title (TikTok)</span>
+              <span id="title-counter">0/90</span>
+            </div>
+            <input id="preview-title" class="input-field" type="text" maxlength="90" placeholder="Catchy title for TikTok..." />
+          </div>
+
+          <!-- Description -->
+          <div>
+            <div class="field-label-row">
+              <span id="desc-label-text">Description</span>
+            </div>
+            <textarea id="preview-desc" class="textarea-field" placeholder="Caption will appear here..."></textarea>
+          </div>
+
+          <!-- Hashtags (TikTok) -->
+          <div id="tiktok-hashtags-wrap">
+            <div class="field-label-row">
+              <span>#Hashtags (TikTok)</span>
+              <span id="hashtags-counter">0 tags</span>
+            </div>
+            <input id="preview-hashtags" class="input-field" type="text" placeholder="#ElioDelRay #Sukhumvit64 #CondoForRent" />
+          </div>
+
+          <!-- Primary Action Row (like Insert + Rewrite) -->
+          <div class="action-row">
+            <button class="btn-primary-clean" id="fill-btn" type="button">
+              <svg id="fill-btn-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+              </svg>
+              <span class="btn-spinner" id="fill-btn-spinner" style="display: none;"></span>
+              <span id="fill-btn-label">Fill Active Page</span>
+            </button>
+            <button class="btn-ghost-clean" id="pull-site-btn" type="button">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span id="pull-site-label">Input from Site</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Bottom Dock Bar -->
+        <div class="bottom-dock">
+          <div class="dock-pill">
+            <span class="dock-hint">Auto-syncs with staged queue</span>
+            <button class="dock-btn" id="sync-dispatch-btn" type="button">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+              </svg>
+              <span id="sync-dispatch-label">Sync Queue</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: WORKER TABS -->
+      <div id="tab-workers" class="tab-panel">
+        <div class="main-body">
+          <div class="field-label-row">
+            <span>Worker Pipelines</span>
+            <span id="tabs-summary">Sync Ready</span>
+          </div>
+          <div class="groups-list" id="groups-container">
+            <div style="color: var(--text-muted); font-size: 11px; padding: 12px 0; text-align: center;">Scanning memorized worker pipelines...</div>
+          </div>
+          <div class="action-row">
+            <button class="btn-primary-clean" id="sync-btn" type="button">
+              <span id="sync-btn-label">Sync Memory to Workflow</span>
+            </button>
+            <button class="btn-ghost-clean" id="open-workers-btn" type="button">
+              <span id="open-btn-label">Focus Active Tabs</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
   </div>
 
   <script src="popup.js"></script>

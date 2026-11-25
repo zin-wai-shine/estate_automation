@@ -19,7 +19,6 @@ import { AutoPostView } from './features/autopost/AutoPostView';
 import { PostHistoryView } from './features/autopost/PostHistoryView';
 import { AuthManagerView } from './features/autopost/AuthManagerView';
 import { WatermarkView } from './features/watermark/WatermarkView';
-import { N8NAutomationView } from './features/n8n/N8NAutomationView';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import type { Property } from './types';
 
@@ -201,7 +200,6 @@ const MainApp: React.FC = () => {
           <Route path="/auth-manager" element={<AuthManagerView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
           <Route path="/facebook-tokens" element={<AuthManagerView onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
           <Route path="/create-workflow" element={<CreateWorkflowView />} />
-          <Route path="/n8n-automation" element={<N8NAutomationView />} />
           <Route path="/inbox" element={<PropertyInboxView properties={properties} onProcessProperty={(id) => handleProcessBatch([id])} onNavigateTab={(tab) => navigate(`/${tab}`)} />} />
           <Route path="/prompts" element={<PromptTemplatesView />} />
           <Route path="/testing" element={<TestingView />} />
