@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const tiktokBatchBar = document.getElementById('tiktok-batch-bar');
   const tiktokTitleWrap = document.getElementById('tiktok-title-wrap');
+  const tiktokHashtagsWrap = document.getElementById('tiktok-hashtags-wrap');
   const descLabelText = document.getElementById('desc-label-text');
   const batchSizeSelect = document.getElementById('batch-size-select');
   const batchProgressText = document.getElementById('batch-progress-text');
@@ -40,10 +41,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const previewTitle = document.getElementById('preview-title');
   const previewDesc = document.getElementById('preview-desc');
+  const previewHashtags = document.getElementById('preview-hashtags');
   const titleCounter = document.getElementById('title-counter');
   const descCounter = document.getElementById('desc-counter');
+  const hashtagsCounter = document.getElementById('hashtags-counter');
   const fillBtn = document.getElementById('fill-btn');
+  const fillBtnIcon = document.getElementById('fill-btn-icon');
+  const fillBtnSpinner = document.getElementById('fill-btn-spinner');
   const fillBtnLabel = document.getElementById('fill-btn-label');
+
+  let isFilling = false;
+  function setFillLoading(loading, label) {
+    isFilling = loading;
+    if (fillBtnIcon) fillBtnIcon.style.display = loading ? 'none' : '';
+    if (fillBtnSpinner) fillBtnSpinner.style.display = loading ? 'inline-block' : 'none';
+    if (label !== undefined && fillBtnLabel) fillBtnLabel.textContent = label;
+    if (loading && fillBtn) fillBtn.disabled = true;
+  }
 
   // Worker tabs elements
   const groupsContainer = document.getElementById('groups-container');
@@ -148,9 +162,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateBatchSummary();
   });
 
+  function parseHashtagsInput(str) {
+    return String(str || '')
+      .split(/[\s,;]+/)
+      .map((t) => t.trim().replace(/^#+/, ''))
+      .filter(Boolean)
+      .map((t) => `#${t}`);
+  }
+
   function updateCounters() {
     if (titleCounter) titleCounter.textContent = `${(previewTitle.value || '').length}/90`;
     if (descCounter) descCounter.textContent = `${(previewDesc.value || '').length} chars`;
+    if (hashtagsCounter && previewHashtags) {
+      const count = parseHashtagsInput(previewHashtags.value).length;
+      hashtagsCounter.textContent = `${count} tag${count === 1 ? '' : 's'}`;
+    }
   }
   previewTitle?.addEventListener('input', () => {
     if (activeItem) activeItem.title = previewTitle.value;
@@ -158,6 +184,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   previewDesc?.addEventListener('input', () => {
     if (activeItem) activeItem.description = previewDesc.value;
+    updateCounters();
+  });
+  previewHashtags?.addEventListener('input', () => {
+    if (activeItem) activeItem.hashtags = parseHashtagsInput(previewHashtags.value);
     updateCounters();
   });
 
@@ -168,25 +198,34 @@ document.addEventListener('DOMContentLoaded', async () => {
       platformBadge.classList.add('meta');
       platformBadge.textContent = 'Meta Business';
       if (tiktokTitleWrap) tiktokTitleWrap.style.display = 'none';
+      if (tiktokHashtagsWrap) tiktokHashtagsWrap.style.display = 'none';
       if (tiktokBatchBar) tiktokBatchBar.style.display = 'none';
       if (descLabelText) descLabelText.textContent = 'Description';
     } else if (p === 'tiktok') {
       platformBadge.classList.add('tiktok');
       platformBadge.textContent = 'TikTok Studio';
       if (tiktokTitleWrap) tiktokTitleWrap.style.display = 'block';
+      if (tiktokHashtagsWrap) tiktokHashtagsWrap.style.display = 'block';
       if (tiktokBatchBar) tiktokBatchBar.style.display = 'flex';
-      if (descLabelText) descLabelText.textContent = 'Description & #Hashtags';
+      if (descLabelText) descLabelText.textContent = 'Description';
     } else {
       platformBadge.textContent = 'Auto Detect';
       if (tiktokTitleWrap) tiktokTitleWrap.style.display = 'block';
+      if (tiktokHashtagsWrap) tiktokHashtagsWrap.style.display = 'block';
       if (tiktokBatchBar) tiktokBatchBar.style.display = 'flex';
-      if (descLabelText) descLabelText.textContent = 'Description & #Hashtags';
+      if (descLabelText) descLabelText.textContent = 'Description';
     }
   }
 
   function updateBatchSummary() {
     if (!activeItem || !Array.isArray(activeItem.images)) {
       batchProgressText.textContent = 'Ready';
+      if (fillBtn && !isFilling) {
+        fillBtn.disabled = false;
+        if (fillBtnLabel && fillBtnLabel.textContent.startsWith('All Batches')) {
+          fillBtnLabel.textContent = 'Fill Active Page';
+        }
+      }
       return;
     }
     const selected = activeItem.images.filter((img) => img.selected !== false);
@@ -196,15 +235,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (total === 0) {
       batchProgressText.textContent = '0 selected';
+      if (fillBtn && !isFilling) fillBtn.disabled = false;
       return;
     }
 
+    const effectivePlatform = detectedTabPlatform !== 'auto' ? detectedTabPlatform : (activeItem?.platform || 'auto');
     const size = Number(batchSizeSelect.value) || 5;
+
+    if (effectivePlatform !== 'meta' && batchStart >= total) {
+      batchStart = total;
+      batchProgressText.textContent = `All ${total}/${total} uploaded ✓`;
+      if (fillBtn && !isFilling) {
+        fillBtn.disabled = true;
+        if (fillBtnLabel) fillBtnLabel.textContent = 'All Batches Done ✓';
+      }
+      return;
+    }
+
     if (batchStart >= total) batchStart = 0;
     const end = Math.min(batchStart + size, total);
     const totalBatches = Math.ceil(total / size);
     const currentBatch = Math.floor(batchStart / size) + 1;
     batchProgressText.textContent = `Batch ${currentBatch}/${totalBatches} (#${batchStart + 1}–${end})`;
+    if (fillBtn && !isFilling) {
+      fillBtn.disabled = false;
+      if (fillBtnLabel && fillBtnLabel.textContent.startsWith('All Batches')) {
+        fillBtnLabel.textContent = 'Fill Active Page';
+      }
+    }
   }
 
   function renderActiveItem() {
@@ -214,6 +272,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       totalImgCountEl.textContent = '0';
       previewTitle.value = '';
       previewDesc.value = '';
+      if (previewHashtags) previewHashtags.value = '';
       updatePlatformBadge('auto');
       updateCounters();
       updateBatchSummary();
@@ -225,8 +284,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const tags = Array.isArray(activeItem.hashtags) && activeItem.hashtags.length > 0
       ? activeItem.hashtags.map((h) => (h.startsWith('#') ? h : `#${h}`)).join(' ')
       : '';
-    const descVal = activeItem.description || '';
-    previewDesc.value = tags && !descVal.includes(tags) ? `${descVal}\n\n${tags}`.trim() : descVal;
+    previewDesc.value = activeItem.description || '';
+    if (previewHashtags) previewHashtags.value = tags;
     updateCounters();
 
     const imgs = Array.isArray(activeItem.images) ? activeItem.images : [];
@@ -426,6 +485,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const effectivePlatform = detectedTabPlatform !== 'auto' ? detectedTabPlatform : (activeItem?.platform || 'auto');
     const titleVal = effectivePlatform === 'meta' ? '' : previewTitle.value.trim();
     const descVal = previewDesc.value.trim();
+    const hashtagsVal = effectivePlatform === 'meta' || !previewHashtags ? [] : parseHashtagsInput(previewHashtags.value);
     const selectedImages = (activeItem?.images || []).filter((img) => img.selected !== false);
     const batchSize = Number(batchSizeSelect.value) || 5;
 
@@ -435,7 +495,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Meta Business Suite accepts all selected photos in one fill
         batchImages = selectedImages;
       } else {
-        if (batchStart >= selectedImages.length) batchStart = 0;
+        if (batchStart >= selectedImages.length) {
+          updateBatchSummary();
+          return;
+        }
         batchImages = selectedImages.slice(batchStart, batchStart + batchSize);
       }
     }
@@ -446,10 +509,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    fillBtn.disabled = true;
-    fillBtnLabel.textContent = batchImages.length > 0
-      ? `Filling ${batchImages.length} photo(s) + text...`
-      : 'Filling text...';
+    setFillLoading(
+      true,
+      batchImages.length > 0
+        ? `Uploading ${batchImages.length} photo(s)...`
+        : 'Filling text...'
+    );
 
     chrome.runtime.sendMessage(
       {
@@ -458,33 +523,44 @@ document.addEventListener('DOMContentLoaded', async () => {
           platform: effectivePlatform,
           title: titleVal,
           description: descVal,
-          hashtags: [],
+          hashtags: hashtagsVal,
           images: batchImages,
         },
       },
       (res) => {
-        fillBtn.disabled = false;
+        setFillLoading(false);
         const lastErr = chrome.runtime.lastError?.message;
         if (res && res.success) {
           if (selectedImages.length > 0 && effectivePlatform !== 'meta') {
             batchStart += batchImages.length;
-            if (batchStart >= selectedImages.length) {
-              batchStart = 0;
-              fillBtnLabel.textContent = 'All Batches Filled ✓';
-            } else {
-              fillBtnLabel.textContent = `Batch Filled ✓ (Next: #${batchStart + 1})`;
-            }
             updateBatchSummary();
+            if (batchStart >= selectedImages.length) {
+              fillBtn.disabled = true;
+              fillBtnLabel.textContent = 'All Batches Done ✓';
+            } else {
+              fillBtn.disabled = false;
+              fillBtnLabel.textContent = `Batch Filled ✓ (Next: #${batchStart + 1})`;
+              setTimeout(() => {
+                if (!isFilling && batchStart < selectedImages.length) {
+                  fillBtnLabel.textContent = 'Fill Active Page';
+                }
+              }, 2500);
+            }
           } else {
+            fillBtn.disabled = false;
             fillBtnLabel.textContent = 'Filled ✓';
+            setTimeout(() => {
+              if (!isFilling) fillBtnLabel.textContent = 'Fill Active Page';
+            }, 2500);
           }
         } else {
+          fillBtn.disabled = false;
           const errMsg = res?.error || lastErr || 'Fill Failed';
           fillBtnLabel.textContent = `Error: ${errMsg.slice(0, 24)}`;
+          setTimeout(() => {
+            if (!isFilling) fillBtnLabel.textContent = 'Fill Active Page';
+          }, 2500);
         }
-        setTimeout(() => {
-          fillBtnLabel.textContent = 'Fill Active Page';
-        }, 2500);
       }
     );
   });

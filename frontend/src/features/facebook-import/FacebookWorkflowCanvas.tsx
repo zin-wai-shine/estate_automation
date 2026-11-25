@@ -5004,8 +5004,39 @@ export const FacebookWorkflowCanvas = forwardRef<
   }
   const [dragWire, setDragWire] = useState<DragWireState | null>(null);
   const [hoveredWireId, setHoveredWireId] = useState<string | null>(null);
-  const [highlightedLineNodeIds, setHighlightedLineNodeIds] = useState<Set<string>>(new Set());
-  const [nodeHighlightColors, setNodeHighlightColors] = useState<Record<string, string>>({});
+  const viewLinesStorageKey = `bolthaven_view_lines_${canvasStorageKey || 'default'}`;
+  const [highlightedLineNodeIds, setHighlightedLineNodeIds] = useState<Set<string>>(() => {
+    try {
+      const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(viewLinesStorageKey) : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed?.nodeIds)) return new Set(parsed.nodeIds);
+      }
+    } catch {}
+    return new Set();
+  });
+  const [nodeHighlightColors, setNodeHighlightColors] = useState<Record<string, string>>(() => {
+    try {
+      const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(viewLinesStorageKey) : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.colors && typeof parsed.colors === 'object') return parsed.colors;
+      }
+    } catch {}
+    return {};
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        viewLinesStorageKey,
+        JSON.stringify({
+          nodeIds: Array.from(highlightedLineNodeIds),
+          colors: nodeHighlightColors,
+        })
+      );
+    } catch {}
+  }, [viewLinesStorageKey, highlightedLineNodeIds, nodeHighlightColors]);
 
   const toggleHighlightNodeLines = (nodeId: string) => {
     setHighlightedLineNodeIds((prev) => {
@@ -5897,8 +5928,8 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const getExtSourceIds = (
     box: any,
-    arrayKey: 'extensionImageSourceIds' | 'extensionDescriptionSourceIds' | 'extensionTitleSourceIds',
-    singleKey: 'extensionImageSourceId' | 'extensionDescriptionSourceId' | 'extensionTitleSourceId',
+    arrayKey: 'extensionImageSourceIds' | 'extensionDescriptionSourceIds' | 'extensionTitleSourceIds' | 'extensionHashtagsSourceIds',
+    singleKey: 'extensionImageSourceId' | 'extensionDescriptionSourceId' | 'extensionTitleSourceId' | 'extensionHashtagsSourceId',
     joinedIds: Set<string>
   ): string[] => {
     const arr = Array.isArray(box?.[arrayKey])
@@ -5908,6 +5939,24 @@ export const FacebookWorkflowCanvas = forwardRef<
     const single = box?.[singleKey];
     if (single && single !== 'auto' && joinedIds.has(single)) return [single];
     return [];
+  };
+
+  const parseHashtagsFromText = (text: string): string[] => {
+    const raw = String(text || '').trim();
+    if (!raw) return [];
+    const hashMatches = raw.match(/#[A-Za-z0-9_\u0E00-\u0E7F\u1000-\u109F]+/g);
+    if (hashMatches && hashMatches.length > 0) {
+      return Array.from(new Set(hashMatches));
+    }
+    return Array.from(
+      new Set(
+        raw
+          .split(/[\s,;]+/)
+          .map((t) => t.trim().replace(/^#+/, ''))
+          .filter(Boolean)
+          .map((t) => `#${t}`)
+      )
+    );
   };
 
   const resolveExtTextFromIds = (
@@ -5944,10 +5993,14 @@ export const FacebookWorkflowCanvas = forwardRef<
         const extPlatform = (box as any).extensionPlatform || 'auto';
         const descSrcIds = getExtSourceIds(box, 'extensionDescriptionSourceIds', 'extensionDescriptionSourceId', joinedIds);
         const titleSrcIds = getExtSourceIds(box, 'extensionTitleSourceIds', 'extensionTitleSourceId', joinedIds);
+        const hashtagsSrcIds = getExtSourceIds(box, 'extensionHashtagsSourceIds', 'extensionHashtagsSourceId', joinedIds);
 
         const resolvedDesc = joinedConns.length > 0
           ? resolveExtTextFromIds(descSrcIds, joinedConns, aiGeneratedOutputs, rawContent)
           : '';
+        const resolvedHashtags = extPlatform !== 'meta' && hashtagsSrcIds.length > 0
+          ? parseHashtagsFromText(resolveExtTextFromIds(hashtagsSrcIds, joinedConns, aiGeneratedOutputs, rawContent))
+          : [];
 
         let resolvedTitle = '';
         if (extPlatform !== 'meta' && joinedConns.length > 0) {
@@ -6066,6 +6119,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             platform: extPlatform,
             title: extPlatform === 'meta' ? '' : resolvedTitle.slice(0, 90),
             description: resolvedDesc,
+            hashtags: extPlatform === 'meta' ? [] : resolvedHashtags,
             images: resolvedImgUrls.map((u, idx) => ({
               id: `${box.id}_img_${idx}`,
               name: `photo_${idx + 1}.jpg`,
@@ -15391,11 +15445,12 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                           const selectedTitleIds = getExtSourceIds(currentModalAIBox, 'extensionTitleSourceIds', 'extensionTitleSourceId', joinedIds);
                           const selectedDescIds = getExtSourceIds(currentModalAIBox, 'extensionDescriptionSourceIds', 'extensionDescriptionSourceId', joinedIds);
+                          const selectedHashtagsIds = getExtSourceIds(currentModalAIBox, 'extensionHashtagsSourceIds', 'extensionHashtagsSourceId', joinedIds);
                           const selectedImgIds = getExtSourceIds(currentModalAIBox, 'extensionImageSourceIds', 'extensionImageSourceId', joinedIds);
 
                           const updateSourceOrder = (
-                            arrayKey: 'extensionTitleSourceIds' | 'extensionDescriptionSourceIds' | 'extensionImageSourceIds',
-                            singleKey: 'extensionTitleSourceId' | 'extensionDescriptionSourceId' | 'extensionImageSourceId',
+                            arrayKey: 'extensionTitleSourceIds' | 'extensionDescriptionSourceIds' | 'extensionHashtagsSourceIds' | 'extensionImageSourceIds',
+                            singleKey: 'extensionTitleSourceId' | 'extensionDescriptionSourceId' | 'extensionHashtagsSourceId' | 'extensionImageSourceId',
                             nextIds: string[]
                           ) => {
                             updateConfig({
@@ -15410,8 +15465,8 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                           const renderMultiSourcePicker = (
                             label: string,
-                            arrayKey: 'extensionTitleSourceIds' | 'extensionDescriptionSourceIds' | 'extensionImageSourceIds',
-                            singleKey: 'extensionTitleSourceId' | 'extensionDescriptionSourceId' | 'extensionImageSourceId',
+                            arrayKey: 'extensionTitleSourceIds' | 'extensionDescriptionSourceIds' | 'extensionHashtagsSourceIds' | 'extensionImageSourceIds',
+                            singleKey: 'extensionTitleSourceId' | 'extensionDescriptionSourceId' | 'extensionHashtagsSourceId' | 'extensionImageSourceId',
                             selectedIds: string[]
                           ) => (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
@@ -15624,6 +15679,13 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                               {/* Description Source */}
                               {renderMultiSourcePicker('Description Source', 'extensionDescriptionSourceIds', 'extensionDescriptionSourceId', selectedDescIds)}
+
+                              {extPlatform !== 'meta' && (
+                                <>
+                                  <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
+                                  {renderMultiSourcePicker('Hashtags Source (TikTok)', 'extensionHashtagsSourceIds', 'extensionHashtagsSourceId', selectedHashtagsIds)}
+                                </>
+                              )}
 
                               <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
 
@@ -19551,10 +19613,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                           const extPlatform = (currentModalAIBox as any).extensionPlatform || 'auto';
                           const descSrcIds = getExtSourceIds(currentModalAIBox, 'extensionDescriptionSourceIds', 'extensionDescriptionSourceId', joinedIds);
                           const titleSrcIds = getExtSourceIds(currentModalAIBox, 'extensionTitleSourceIds', 'extensionTitleSourceId', joinedIds);
+                          const hashtagsSrcIds = getExtSourceIds(currentModalAIBox, 'extensionHashtagsSourceIds', 'extensionHashtagsSourceId', joinedIds);
 
                           const resolvedDesc = joinedConns.length > 0
                             ? resolveExtTextFromIds(descSrcIds, joinedConns, aiGeneratedOutputs, rawContent)
                             : '';
+                          const resolvedHashtags = extPlatform !== 'meta' && hashtagsSrcIds.length > 0
+                            ? parseHashtagsFromText(resolveExtTextFromIds(hashtagsSrcIds, joinedConns, aiGeneratedOutputs, rawContent))
+                            : [];
 
                           let resolvedTitle = '';
                           if (extPlatform !== 'meta' && joinedConns.length > 0) {
@@ -19694,6 +19760,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   platform: extPlatform,
                                   title: extPlatform === 'meta' ? '' : resolvedTitle.slice(0, 90),
                                   description: resolvedDesc,
+                                  hashtags: extPlatform === 'meta' ? [] : resolvedHashtags,
                                   images: previewImgs,
                                   batchSize: Number((currentModalAIBox as any).extensionBatchSize) || 5,
                                 }),
@@ -19728,7 +19795,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 {extPlatform !== 'meta' && resolvedTitle && (
                                   <div>
                                     <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: '2px' }}>Title</div>
-                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.35 }}>
                                       {resolvedTitle}
                                     </div>
                                   </div>
@@ -19755,6 +19822,28 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     {resolvedDesc || 'No text collected yet — run workflow or connect a Content/Format node.'}
                                   </div>
                                 </div>
+
+                                {extPlatform !== 'meta' && resolvedHashtags.length > 0 && (
+                                  <div>
+                                    <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
+                                      Hashtags ({resolvedHashtags.length})
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: '0.7rem',
+                                        color: '#60A5FA',
+                                        whiteSpace: 'pre-wrap',
+                                        lineHeight: 1.4,
+                                        padding: '0.35rem 0.5rem',
+                                        borderRadius: '6px',
+                                        backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                                        border: '1px solid var(--border-color)',
+                                      }}
+                                    >
+                                      {resolvedHashtags.join(' ')}
+                                    </div>
+                                  </div>
+                                )}
 
                                 <div>
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px', gap: '6px' }}>

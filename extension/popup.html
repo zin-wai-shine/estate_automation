@@ -460,6 +460,22 @@
     .btn:disabled {
       opacity: 0.55;
       cursor: not-allowed;
+      transform: none;
+    }
+    .btn:disabled:hover {
+      background: linear-gradient(180deg, #2563EB 0%, #1D4ED8 100%);
+    }
+    .btn-spinner {
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      border-top-color: #FFFFFF;
+      border-radius: 50%;
+      animation: btn-spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes btn-spin {
+      to { transform: rotate(360deg); }
     }
     .btn-secondary {
       background: var(--bg-surface);
@@ -723,20 +739,30 @@
         <input id="preview-title" class="input-field" type="text" maxlength="90" placeholder="Catchy title for TikTok..." />
       </div>
 
-      <!-- Description & Hashtags -->
+      <!-- Description -->
       <div class="field-label-row">
-        <span id="desc-label-text">Description &amp; #Hashtags</span>
+        <span id="desc-label-text">Description</span>
         <span id="desc-counter">0 chars</span>
       </div>
       <textarea id="preview-desc" class="textarea-field" placeholder="Caption will appear here..."></textarea>
+
+      <!-- Hashtags (TikTok) -->
+      <div id="tiktok-hashtags-wrap" style="margin-top: 8px;">
+        <div class="field-label-row">
+          <span>#Hashtags (TikTok)</span>
+          <span id="hashtags-counter">0 tags</span>
+        </div>
+        <input id="preview-hashtags" class="input-field" type="text" placeholder="#ElioDelRay #Sukhumvit64 #CondoForRent" />
+      </div>
     </section>
 
     <!-- Primary Fill CTA -->
     <div class="button-group">
       <button class="btn" id="fill-btn" type="button">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <svg id="fill-btn-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
         </svg>
+        <span class="btn-spinner" id="fill-btn-spinner" style="display: none;"></span>
         <span id="fill-btn-label">Fill Active Page</span>
       </button>
     </div>

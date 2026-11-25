@@ -3216,6 +3216,19 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 <img
                   src={img.url}
                   alt={img.filename || `Photo #${photoNum}`}
+                  referrerPolicy="no-referrer"
+                  crossOrigin={img.url?.startsWith('data:') || img.url?.startsWith('blob:') ? undefined : 'anonymous'}
+                  onError={(e) => {
+                    const fallbackUrl = img.url;
+                    if (
+                      fallbackUrl &&
+                      !fallbackUrl.startsWith('data:') &&
+                      !fallbackUrl.startsWith('blob:') &&
+                      !e.currentTarget.src.includes('/proxy-image')
+                    ) {
+                      e.currentTarget.src = `http://127.0.0.1:9224/proxy-image?url=${encodeURIComponent(fallbackUrl)}`;
+                    }
+                  }}
                   style={{
                     width: '100%',
                     height: '100%',

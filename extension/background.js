@@ -3636,6 +3636,174 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
           action: 'BOLTHAVEN_SOCIAL_FILL',
           payload,
         });
+
+        // For TikTok Studio, insert Description & #Hashtags via CDP Input.insertText
+        // so Draft.js/Lexical EditorState stays 100% synced with the DOM (allowing normal manual editing/deletion).
+        const tiktokDesc = (payload.description || '').trim();
+        const tiktokHashtags = Array.isArray(payload.hashtags) ? payload.hashtags.filter(Boolean) : [];
+        if (tabUrl.includes('tiktok.com') && !result?.skipTextFill && (tiktokDesc || tiktokHashtags.length > 0)) {
+          const target = { tabId: activeTab.id };
+          const cdp = (method, params = {}) => chrome.debugger.sendCommand(target, method, params);
+          const evalPage = async (expression) => {
+            const r = await cdp('Runtime.evaluate', { expression, returnByValue: true });
+            return r?.result?.value;
+          };
+          try {
+            await chrome.debugger.attach(target, '1.3');
+            const coords = await evalPage(`(() => {
+              const titleInput =
+                document.querySelector('input[placeholder*="title" i]') ||
+                document.querySelector('textarea[placeholder*="title" i]');
+              const editors = Array.from(document.querySelectorAll('[contenteditable="true"]')).filter((el) => {
+                if (titleInput && (el === titleInput || el.contains(titleInput) || titleInput.contains(el))) return false;
+                const r = el.getBoundingClientRect();
+                return r.width > 120 && r.height >= 16;
+              });
+              const descEditor =
+                editors.find((el) => {
+                  const ct = (el.closest('div[class*="editor" i], div[class*="caption" i], div[class*="desc" i]')?.textContent || el.parentElement?.textContent || '').toLowerCase();
+                  const aria = (el.getAttribute('aria-label') || el.getAttribute('data-placeholder') || '').toLowerCase();
+                  return ct.includes('writing a long description') || aria.includes('description') || ct.includes('hashtags');
+                }) ||
+                editors.sort((a, b) => {
+                  const ra = a.getBoundingClientRect();
+                  const rb = b.getBoundingClientRect();
+                  return rb.width * rb.height - ra.width * ra.height;
+                })[0] ||
+                null;
+              if (!descEditor) return null;
+              descEditor.scrollIntoView({ block: 'center' });
+              const rect = descEditor.getBoundingClientRect();
+              return { x: Math.round(rect.left + Math.min(rect.width * 0.25, 80)), y: Math.round(rect.top + Math.min(rect.height * 0.5, 24)) };
+            })()`);
+
+            if (coords) {
+              await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: coords.x, y: coords.y });
+              await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: coords.x, y: coords.y, button: 'left', clickCount: 1 });
+              await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: coords.x, y: coords.y, button: 'left', clickCount: 1 });
+              await delay(120);
+
+              // Select all and clear existing editor content cleanly
+              const isMac = navigator.userAgent.toLowerCase().includes('mac');
+              await cdp('Input.dispatchKeyEvent', { type: 'keyDown', modifiers: isMac ? 4 : 2, key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65 });
+              await cdp('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: isMac ? 4 : 2, key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65 });
+              await delay(60);
+              await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
+              await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
+              await delay(100);
+
+              if (tiktokDesc) {
+                const lines = tiktokDesc.split(/\r?\n/);
+                for (let li = 0; li < lines.length; li++) {
+                  if (lines[li]) {
+                    await cdp('Input.insertText', { text: lines[li] });
+                  }
+                  if (li < lines.length - 1) {
+                    await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+                    await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+                  }
+                }
+              }
+
+              if (tiktokHashtags.length > 0) {
+                await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+                await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+                await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+                await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+
+                for (let hi = 0; hi < tiktokHashtags.length; hi++) {
+                  const rawTag = tiktokHashtags[hi];
+                  const cleanTag = rawTag.replace(/^#+/, '').trim();
+                  if (!cleanTag) continue;
+                  const tag = `#${cleanTag}`;
+                  const tagLower = cleanTag.toLowerCase();
+
+                  // Ensure editor stays focused and has a separating space before the next hashtag
+                  if (hi > 0) {
+                    const needsSpace = await evalPage(`(() => {
+                      const titleInput =
+                        document.querySelector('input[placeholder*="title" i]') ||
+                        document.querySelector('textarea[placeholder*="title" i]');
+                      let el = document.activeElement;
+                      if (!el || el.getAttribute('contenteditable') !== 'true' || (titleInput && (el === titleInput || titleInput.contains(el)))) {
+                        const editors = Array.from(document.querySelectorAll('[contenteditable="true"]')).filter((e) => {
+                          if (titleInput && (e === titleInput || e.contains(titleInput) || titleInput.contains(e))) return false;
+                          const r = e.getBoundingClientRect();
+                          return r.width > 120 && r.height >= 16;
+                        });
+                        el = editors[0] || null;
+                        if (el) {
+                          el.focus();
+                          const range = document.createRange();
+                          range.selectNodeContents(el);
+                          range.collapse(false);
+                          const sel = window.getSelection();
+                          sel.removeAllRanges();
+                          sel.addRange(range);
+                        }
+                      }
+                      const t = el ? (el.innerText || el.textContent || '') : '';
+                      return t.length > 0 && !/\\s$/.test(t);
+                    })()`);
+                    if (needsSpace) {
+                      await cdp('Input.insertText', { text: ' ' });
+                      await delay(80);
+                    }
+                  }
+
+                  await cdp('Input.insertText', { text: tag });
+
+                  // Wait for TikTok's hashtag suggestion dropdown to appear for this tag, then press Enter to select the first suggestion
+                  let dropdownReady = false;
+                  const popStart = Date.now();
+                  while (Date.now() - popStart < 1800) {
+                    dropdownReady = await evalPage(`(() => {
+                      const needle = ${JSON.stringify('#' + tagLower)};
+                      const opt = document.querySelector('[class*="hashtag" i] [role="option"], [class*="mention" i] [role="option"], [role="listbox"] [role="option"]');
+                      if (opt && !opt.closest('[class*="history" i]')) {
+                        const r = opt.getBoundingClientRect();
+                        if (r.width > 40 && r.height > 16) return true;
+                      }
+                      // Fallback: detect any visible suggestion row outside the editor/history showing "#tagName"
+                      const rows = document.querySelectorAll('div, li, span');
+                      for (const el of rows) {
+                        if (el.closest('[contenteditable="true"]') || el.closest('[class*="history" i]')) continue;
+                        if (el.children.length > 4) continue;
+                        const txt = (el.innerText || '').trim().toLowerCase();
+                        if (!txt.startsWith(needle)) continue;
+                        const r = el.getBoundingClientRect();
+                        if (r.width > 80 && r.height >= 20 && r.height <= 90) return true;
+                      }
+                      return false;
+                    })()`);
+                    if (dropdownReady) break;
+                    await delay(100);
+                  }
+
+                  if (dropdownReady) {
+                    await delay(100);
+                    await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+                    await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+                    await delay(220);
+                  } else {
+                    await cdp('Input.insertText', { text: ' ' });
+                    await delay(100);
+                  }
+                }
+              } else {
+                // Add trailing # at the end if no hashtags were supplied
+                await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+                await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+                await cdp('Input.insertText', { text: '#' });
+              }
+            }
+          } catch (cdpErr) {
+            console.warn('[BOLTHAVEN EXT] TikTok CDP description failed:', cdpErr.message);
+          } finally {
+            await chrome.debugger.detach(target).catch(() => {});
+          }
+        }
+
         sendResponse(result || { success: true });
       } catch (err) {
         sendResponse({ success: false, error: err.message });

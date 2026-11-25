@@ -321,11 +321,26 @@
       document.querySelector('input[placeholder*="title" i]') ||
       document.querySelector('textarea[placeholder*="title" i]');
 
-    const editors = Array.from(document.querySelectorAll('[contenteditable="true"]'));
-    const descEditor = editors.find((el) => {
+    const editors = Array.from(document.querySelectorAll('[contenteditable="true"]')).filter((el) => {
+      if (titleInput && (el === titleInput || el.contains(titleInput) || titleInput.contains(el))) {
+        return false;
+      }
       const rect = el.getBoundingClientRect();
-      return rect.width > 150 && rect.height >= 40;
+      return rect.width > 120 && rect.height >= 16;
     });
+
+    const descEditor =
+      editors.find((el) => {
+        const containerText = (el.closest('div[class*="editor" i], div[class*="caption" i], div[class*="desc" i]')?.textContent || el.parentElement?.textContent || '').toLowerCase();
+        const aria = (el.getAttribute('aria-label') || el.getAttribute('data-placeholder') || '').toLowerCase();
+        return containerText.includes('writing a long description') || aria.includes('description') || containerText.includes('hashtags');
+      }) ||
+      editors.sort((a, b) => {
+        const ra = a.getBoundingClientRect();
+        const rb = b.getBoundingClientRect();
+        return rb.width * rb.height - ra.width * ra.height;
+      })[0] ||
+      null;
 
     if (titleInput || descEditor) {
       return { titleInput, descEditor };
@@ -334,7 +349,9 @@
   }
 
   async function typeTikTokDescriptionWithHashtags(editor, description, hashtags = []) {
+    editor.click();
     editor.focus();
+    await sleep(80);
     // Clear existing content
     const selection = window.getSelection();
     const range = document.createRange();
@@ -342,7 +359,7 @@
     selection.removeAllRanges();
     selection.addRange(range);
     document.execCommand('delete', false);
-    await sleep(100);
+    await sleep(80);
 
     const combinedText = [
       description.trim(),
@@ -353,32 +370,81 @@
 
     if (!combinedText) return;
 
+    const insertChunk = (text) => {
+      const beforeLen = (editor.innerText || editor.textContent || '').length;
+      try {
+        const dt = new DataTransfer();
+        dt.setData('text/plain', text);
+        const pasteEvt = new ClipboardEvent('paste', {
+          bubbles: true,
+          cancelable: true,
+          clipboardData: dt,
+        });
+        editor.dispatchEvent(pasteEvt);
+      } catch {}
+      const afterPasteLen = (editor.innerText || editor.textContent || '').length;
+      if (afterPasteLen <= beforeLen) {
+        document.execCommand('insertText', false, text);
+        try {
+          editor.dispatchEvent(new InputEvent('input', { bubbles: true, data: text, inputType: 'insertText' }));
+        } catch {}
+      }
+    };
+
     // Split into plain text and #hashtag tokens (supports Latin, digits, underscores, Thai)
     const tokenRegex = /(#[A-Za-z0-9_\u0E00-\u0E7F]+)/g;
     const parts = combinedText.split(tokenRegex);
+    let insertedHashtag = false;
 
     for (const part of parts) {
       if (!part) continue;
       if (part.startsWith('#') && part.length > 1) {
-        // Insert '#' + tag name to trigger TikTok's hashtag autocomplete
+        insertedHashtag = true;
+        // Type # + tag via execCommand so TikTok opens its hashtag autocomplete dropdown
         document.execCommand('insertText', false, part);
-        await sleep(320);
+        try {
+          editor.dispatchEvent(new InputEvent('input', { bubbles: true, data: part, inputType: 'insertText' }));
+        } catch {}
 
-        // Try clicking the top hashtag suggestion if TikTok opened a popover, otherwise press Space/Enter
-        const suggestion = document.querySelector(
-          '[class*="hashtag" i] [role="option"], [class*="mention" i] [role="option"], div[class*="TagList" i] > div:first-child'
-        );
+        // Poll briefly for TikTok's hashtag suggestion popover and select the top match
+        let suggestion = null;
+        const popStart = Date.now();
+        while (Date.now() - popStart < 850) {
+          suggestion = document.querySelector(
+            '[class*="hashtag" i] [role="option"], [class*="mention" i] [role="option"], [role="listbox"] [role="option"], div[class*="TagList" i] > div:first-child'
+          );
+          if (suggestion) break;
+          await sleep(100);
+        }
+
         if (suggestion) {
           suggestion.click();
-          await sleep(120);
+          await sleep(140);
         } else {
           editor.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', keyCode: 32, bubbles: true }));
           document.execCommand('insertText', false, ' ');
           await sleep(80);
         }
       } else {
-        document.execCommand('insertText', false, part);
+        insertChunk(part);
         await sleep(40);
+      }
+    }
+
+    // If no hashtags were present, add a trailing # at the end so TikTok's hashtag picker is ready
+    const currentText = (editor.innerText || editor.textContent || '').trimEnd();
+    if (!insertedHashtag && !currentText.endsWith('#')) {
+      insertChunk('\n');
+      await sleep(80);
+      const hashtagBtn = Array.from(document.querySelectorAll('button, div[role="button"], span')).find(
+        (el) => /^#\s*hashtags$/i.test((el.textContent || '').trim())
+      );
+      if (hashtagBtn) {
+        hashtagBtn.click();
+        await sleep(100);
+      } else {
+        insertChunk('#');
+        await sleep(80);
       }
     }
   }
@@ -390,18 +456,39 @@
       : (payload.images || []);
 
     let details = findTikTokDetailsInputs();
+    const hadDetailsAlready = Boolean(details);
     let attachedCount = 0;
 
-    // Step 1: If we are on the upload screen (or have images and details not yet open)
-    if (!details && images.length > 0) {
-      // Ensure "Photos" tab is selected
-      const tabs = Array.from(document.querySelectorAll('button, div[role="tab"], span'));
-      const photosTab = tabs.find((el) => (el.textContent || '').trim() === 'Photos');
-      if (photosTab) {
-        photosTab.click();
-        await sleep(450);
-      }
+    const findPhotoFileInput = () => {
+      const allInputs = Array.from(document.querySelectorAll('input[type="file"]'));
+      const isVideoOnly = (el) => {
+        const acc = (el.getAttribute('accept') || '').toLowerCase();
+        return acc.includes('video') && !/image|jpg|jpeg|png|webp/.test(acc);
+      };
+      const isImageInput = (el) => {
+        const acc = (el.getAttribute('accept') || '').toLowerCase();
+        return /image|jpg|jpeg|png|webp/.test(acc);
+      };
+      const hasVisibleContainer = (el) => {
+        let p = el.parentElement;
+        while (p && p !== document.body) {
+          const st = getComputedStyle(p);
+          if (st.display === 'none' || st.visibility === 'hidden') return false;
+          p = p.parentElement;
+        }
+        return true;
+      };
+      const nonVideoInputs = allInputs.filter((el) => !isVideoOnly(el));
+      return (
+        nonVideoInputs.find((el) => isImageInput(el) && hasVisibleContainer(el)) ||
+        nonVideoInputs.find((el) => isImageInput(el)) ||
+        nonVideoInputs.find((el) => hasVisibleContainer(el)) ||
+        nonVideoInputs[0] ||
+        null
+      );
+    };
 
+    const buildImageFiles = async () => {
       const files = [];
       for (let i = 0; i < images.length; i++) {
         const img = images[i];
@@ -409,28 +496,64 @@
           files.push(await dataUrlToFile(img.dataUrl, img.name || `tiktok_${i + 1}.jpg`));
         }
       }
+      return files;
+    };
 
+    // Step 1A: On the initial upload screen (before Details opens)
+    if (!details && images.length > 0) {
+      const tabs = Array.from(document.querySelectorAll('button, div[role="tab"], span'));
+      const photosTab = tabs.find((el) => (el.textContent || '').trim() === 'Photos');
+      if (photosTab) {
+        photosTab.click();
+        await sleep(450);
+      }
+
+      const files = await buildImageFiles();
       if (files.length > 0) {
-        const fileInput =
-          document.querySelector('input[type="file"][accept*="image"]') ||
-          document.querySelector('input[type="file"]');
+        const fileInput = findPhotoFileInput();
+        const findInnermostDropZone = () => {
+          const matches = Array.from(document.querySelectorAll('div')).filter((el) => {
+            if (!/select photos to upload|drag and drop them here/i.test(el.textContent || '')) return false;
+            const r = el.getBoundingClientRect();
+            return r.width > 120 && r.height > 80;
+          });
+          matches.sort((a, b) => {
+            const ra = a.getBoundingClientRect();
+            const rb = b.getBoundingClientRect();
+            return ra.width * ra.height - rb.width * rb.height;
+          });
+          return matches[0] || null;
+        };
+
+        const dropZone = findInnermostDropZone();
 
         if (fileInput) {
           attachFilesToInput(fileInput, files);
           attachedCount = files.length;
-        } else {
-          const dropZone = Array.from(document.querySelectorAll('div')).find((el) =>
-            /select photos to upload|drag and drop them here/i.test(el.textContent || '')
-          );
-          if (dropZone) {
+          await sleep(1200);
+          if (!findTikTokDetailsInputs() && dropZone && document.contains(dropZone) && dropZone.getBoundingClientRect().height > 80) {
             dispatchDropFiles(dropZone, files);
-            attachedCount = files.length;
           }
+        } else if (dropZone) {
+          dispatchDropFiles(dropZone, files);
+          attachedCount = files.length;
         }
 
         if (attachedCount > 0) {
           showToast(`Uploaded ${attachedCount} photo(s) — waiting for Details screen...`, 'info');
           details = await waitForSelector(findTikTokDetailsInputs, 35000);
+        }
+      }
+    } else if (details && images.length > 0) {
+      // Step 1B: Already on /upload/post/photo — append this batch of photos via the + uploader input
+      const files = await buildImageFiles();
+      if (files.length > 0) {
+        const fileInput = findPhotoFileInput();
+        if (fileInput) {
+          attachFilesToInput(fileInput, files);
+          attachedCount = files.length;
+          showToast(`Added ${attachedCount} more photo(s) to TikTok post`, 'info');
+          await sleep(500);
         }
       }
     }
@@ -449,18 +572,26 @@
       };
     }
 
-    // Step 2: Fill Title (0/90) and Description with #Hashtags
-    await sleep(400);
-    if (details.titleInput && title) {
-      setNativeInputValue(details.titleInput, title.slice(0, 90));
+    // Step 2: Fill Title (0/90); Description & #Hashtags are filled via CDP Input.insertText in background.js.
+    // On subsequent batch clicks (Details already open and Title+Description already filled), keep existing text.
+    const existingTitle = (details.titleInput?.value || '').trim();
+    const existingDesc = (details.descEditor?.innerText || details.descEditor?.textContent || '').trim();
+    const skipTextFill = hadDetailsAlready && attachedCount > 0 && existingTitle.length > 0 && existingDesc.length > 20;
+
+    if (!skipTextFill) {
+      await sleep(400);
+      if (details.titleInput && title) {
+        setNativeInputValue(details.titleInput, title.slice(0, 90));
+      }
     }
 
-    if (details.descEditor && (description || hashtags.length > 0)) {
-      await typeTikTokDescriptionWithHashtags(details.descEditor, description, hashtags);
-    }
-
-    showToast(`TikTok filled (${attachedCount} photos + details)`, 'success');
-    return { success: true, platform: 'tiktok', attachedCount, textFilled: true };
+    showToast(
+      skipTextFill
+        ? `Added ${attachedCount} photo(s) (kept existing text)`
+        : `TikTok filled (${attachedCount} photos + title)`,
+      'success'
+    );
+    return { success: true, platform: 'tiktok', attachedCount, textFilled: !skipTextFill, skipTextFill };
   }
 
   // ── Pull / Input from Current Site ─────────────────────────────────────────
