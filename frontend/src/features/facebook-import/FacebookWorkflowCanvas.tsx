@@ -15559,7 +15559,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                 maxWidth: 'calc(100vw - 24px)',
                 backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
                 borderLeft: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
-                boxShadow: isDark
+                boxShadow: showGoogleSheetDataViewer
+                  ? 'none'
+                  : isDark
                   ? '-8px 0 28px rgba(0, 0, 0, 0.65)'
                   : '-3px 0 16px rgba(0, 0, 0, 0.06)',
                 zIndex: 170,
@@ -15685,6 +15687,55 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                         {/* Settings Body */}
                         <div style={{ flex: 1, overflowY: 'auto', padding: '1rem 1rem 3rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                          {/* Node Status Toggle Row */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              padding: '0 0 12px 0',
+                              borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                Node Status
+                              </div>
+                              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                {currentModalAIBox.enabled !== false
+                                  ? 'Executing during workflow run'
+                                  : 'Node is bypassed (will skip during workflow run)'}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                              <span
+                                style={{
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  color: currentModalAIBox.enabled !== false ? '#10B981' : 'var(--text-muted)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    width: '6px',
+                                    height: '6px',
+                                    borderRadius: '50%',
+                                    backgroundColor: currentModalAIBox.enabled !== false ? '#10B981' : '#6B7280',
+                                  }}
+                                />
+                                <span>{currentModalAIBox.enabled !== false ? 'Active' : 'Disabled'}</span>
+                              </span>
+                              <ToggleSwitch
+                                checked={currentModalAIBox.enabled !== false}
+                                onChange={() => handleToggleAIBox(currentModalAIBox.id)}
+                                activeColor="#10B981"
+                                size="md"
+                              />
+                            </div>
+                          </div>
                           {/* Base Folder Path + Browse */}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                             <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
@@ -15991,6 +16042,55 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                       {/* Settings Body */}
                       <div style={{ flex: 1, overflowY: 'auto', padding: '1.125rem 1.25rem 3rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '1.125rem' }}>
+                        {/* Node Status Toggle Row */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '0 0 12px 0',
+                            borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              Node Status
+                            </div>
+                            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                              {currentModalAIBox.enabled !== false
+                                ? 'Executing during workflow run'
+                                : 'Node is bypassed (will skip during workflow run)'}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                            <span
+                              style={{
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                color: currentModalAIBox.enabled !== false ? '#10B981' : 'var(--text-muted)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <span
+                                style={{
+                                  width: '6px',
+                                  height: '6px',
+                                  borderRadius: '50%',
+                                  backgroundColor: currentModalAIBox.enabled !== false ? '#10B981' : '#6B7280',
+                                }}
+                              />
+                              <span>{currentModalAIBox.enabled !== false ? 'Active' : 'Disabled'}</span>
+                            </span>
+                            <ToggleSwitch
+                              checked={currentModalAIBox.enabled !== false}
+                              onChange={() => handleToggleAIBox(currentModalAIBox.id)}
+                              activeColor="#10B981"
+                              size="md"
+                            />
+                          </div>
+                        </div>
 
                         {/* Box ID */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
@@ -16417,6 +16517,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                       key={currentModalAIBox.id}
                       isOpen={showFBHeroSettingsSidebox}
                       onClose={() => setShowFBHeroSettingsSidebox(false)}
+                      onToggleEnabled={() => handleToggleAIBox(currentModalAIBox.id)}
                       isDark={isDark}
                       boxConfig={effectiveBoxConfig}
                       onUpdateBoxConfig={(updated) => {
@@ -16495,6 +16596,55 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                       {/* Settings Body */}
                       <div style={{ flex: 1, overflowY: 'auto', padding: '1rem 1.125rem 3rem 1.125rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        {/* Node Status Toggle Row */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '0 0 12px 0',
+                            borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              Node Status
+                            </div>
+                            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                              {currentModalAIBox.enabled !== false
+                                ? 'Executing during workflow run'
+                                : 'Node is bypassed (will skip during workflow run)'}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                            <span
+                              style={{
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                color: currentModalAIBox.enabled !== false ? '#10B981' : 'var(--text-muted)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <span
+                                style={{
+                                  width: '6px',
+                                  height: '6px',
+                                  borderRadius: '50%',
+                                  backgroundColor: currentModalAIBox.enabled !== false ? '#10B981' : '#6B7280',
+                                }}
+                              />
+                              <span>{currentModalAIBox.enabled !== false ? 'Active' : 'Disabled'}</span>
+                            </span>
+                            <ToggleSwitch
+                              checked={currentModalAIBox.enabled !== false}
+                              onChange={() => handleToggleAIBox(currentModalAIBox.id)}
+                              activeColor="#10B981"
+                              size="md"
+                            />
+                          </div>
+                        </div>
                         {/* Select Prompt Template */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -20391,7 +20541,17 @@ export const FacebookWorkflowCanvas = forwardRef<
                 {/* AI PROCESS / AI MODEL SIDEBAR CONTENT (Restored Design) */}
                 {isAIBox && currentModalAIBox && (
                   <>
-                    {/* Node Status Toggle Row */}
+                    {/* Node Status Toggle Row (only shown in main box when node does not have a Settings extra box) */}
+                    {!(
+                      isGoogleSheetBox(currentModalAIBox) ||
+                      isExtensionAutofillBox(currentModalAIBox) ||
+                      isFolderImagesBox(currentModalAIBox) ||
+                      isTextFormatAIBox(currentModalAIBox) ||
+                      isChromeTabGroupAIBox(currentModalAIBox) ||
+                      isExternalBrowserAIBox(currentModalAIBox) ||
+                      currentModalAIBox.title?.toLowerCase().includes('hero') ||
+                      currentModalAIBox.title?.toLowerCase().includes('fb')
+                    ) && (
                     <div
                       style={{
                         display: 'flex',
@@ -20440,6 +20600,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         />
                       </div>
                     </div>
+                    )}
 
                     {currentModalAIBox.enabled === false && (
                       <div
@@ -21448,9 +21609,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                               placeholder="e.g. Sheet1 or Listings"
                               style={{
                                 width: '100%',
-                                height: '34px',
-                                padding: '0 0.625rem',
-                                borderRadius: '6px',
+                                height: '36px',
+                                minHeight: '36px',
+                                maxHeight: '36px',
+                                padding: '0 0.75rem',
+                                borderRadius: '8px',
                                 border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                                 backgroundColor: isDark ? '#181A1D' : '#FFFFFF',
                                 color: 'var(--text-primary)',
@@ -21465,9 +21628,12 @@ export const FacebookWorkflowCanvas = forwardRef<
                             disabled={loadingSheetHeaders}
                             onClick={() => handleLoadGoogleSheetHeaders(currentModalAIBox)}
                             style={{
-                              height: '34px',
+                              height: '36px',
+                              minHeight: '36px',
+                              maxHeight: '36px',
+                              boxSizing: 'border-box',
                               padding: '0 0.85rem',
-                              borderRadius: '6px',
+                              borderRadius: '8px',
                               border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                               backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
                               color: 'var(--text-primary)',
@@ -23095,7 +23261,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                 maxWidth: 'calc(100vw - 24px)',
                 backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
                 borderLeft: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
-                boxShadow: isDark
+                boxShadow: showGoogleSheetDataViewer
+                  ? 'none'
+                  : isDark
                   ? '-8px 0 28px rgba(0, 0, 0, 0.65)'
                   : '-3px 0 16px rgba(0, 0, 0, 0.06)',
                 zIndex: 170,
@@ -23290,56 +23458,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                     gap: '1rem',
                   }}
                 >
-                  {/* Node Status Toggle Row */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '0 0 12px 0',
-                      borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        Node Status
-                      </div>
-                      <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                        {currentModalAIBox.enabled !== false
-                          ? 'Executing during workflow run'
-                          : 'Node is bypassed (will skip during workflow run)'}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                      <span
-                        style={{
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          color: currentModalAIBox.enabled !== false ? '#10B981' : 'var(--text-muted)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}
-                      >
-                        <span
-                          style={{
-                            width: '6px',
-                            height: '6px',
-                            borderRadius: '50%',
-                            backgroundColor: currentModalAIBox.enabled !== false ? '#10B981' : '#6B7280',
-                          }}
-                        />
-                        <span>{currentModalAIBox.enabled !== false ? 'Active' : 'Disabled'}</span>
-                      </span>
-                      <ToggleSwitch
-                        checked={currentModalAIBox.enabled !== false}
-                        onChange={() => handleToggleAIBox(currentModalAIBox.id)}
-                        activeColor="#10B981"
-                        size="md"
-                      />
-                    </div>
-                  </div>
-
                   {currentModalAIBox.enabled === false && (
                     <div
                       style={{

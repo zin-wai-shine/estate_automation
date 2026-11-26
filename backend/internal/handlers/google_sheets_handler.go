@@ -93,6 +93,7 @@ func FetchGoogleSheetRows(c *fiber.Ctx) error {
 		"headers":           result.Headers,
 		"rows":              result.Rows,
 		"total_rows":        result.TotalRows,
+		"start_index":       result.StartIndex,
 		"service_account":   result.ServiceAccount,
 	})
 }

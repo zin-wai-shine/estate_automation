@@ -1,6 +1,6 @@
 {
   "has_saved_config": true,
-  "timestamp": 1795709351972,
+  "timestamp": 1795711563574,
   "workflow_formats": [
     {
       "config": {
@@ -390,29 +390,6 @@
             "referenceImage": "",
             "referenceImageData": "",
             "referenceImageMode": "custom_upload",
-            "selectedImageIndices": [
-              1,
-              2,
-              3,
-              4,
-              5,
-              6,
-              7,
-              8,
-              9,
-              10,
-              11,
-              12,
-              13,
-              14,
-              15,
-              16,
-              17,
-              18,
-              19,
-              20,
-              21
-            ],
             "subtitle": "1080×1350 (4:5)",
             "targetHeight": 1350,
             "targetWidth": 1080,
@@ -706,29 +683,6 @@
             "provider": "watermark",
             "referenceImage": "",
             "referenceImageData": "",
-            "selectedImageIndices": [
-              1,
-              2,
-              3,
-              4,
-              5,
-              6,
-              7,
-              8,
-              9,
-              10,
-              11,
-              12,
-              13,
-              14,
-              15,
-              16,
-              17,
-              18,
-              19,
-              20,
-              21
-            ],
             "subtitle": "1080×1350 (4:5)",
             "targetHeight": 1350,
             "targetWidth": 1080,
@@ -1587,7 +1541,7 @@
       "id": "format-1792648980268",
       "isPinned": true,
       "name": "General Post",
-      "updatedAt": 1795709351546
+      "updatedAt": 1795710111310
     },
     {
       "config": {

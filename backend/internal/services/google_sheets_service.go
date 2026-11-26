@@ -1390,6 +1390,7 @@ type FetchSheetDataResult struct {
 	Headers          []string   `json:"headers"`
 	Rows             [][]string `json:"rows"`
 	TotalRows        int        `json:"total_rows"`
+	StartIndex       int        `json:"start_index"`
 	ServiceAccount   string     `json:"service_account"`
 }
 
@@ -1468,9 +1469,6 @@ func (s *GoogleSheetsService) FetchAllRows(ctx context.Context, spreadsheetInput
 
 		// Subsequent rows are data
 		for idx := 1; idx < len(valuesResp.Values); idx++ {
-			if maxRows > 0 && len(rows) >= maxRows {
-				break
-			}
 			rawRow := valuesResp.Values[idx]
 			strRow := make([]string, len(headers))
 			hasContent := false
@@ -1491,13 +1489,21 @@ func (s *GoogleSheetsService) FetchAllRows(ctx context.Context, spreadsheetInput
 		}
 	}
 
+	totalRows := len(rows)
+	startIndex := 0
+	if maxRows > 0 && totalRows > maxRows {
+		startIndex = totalRows - maxRows
+		rows = rows[startIndex:]
+	}
+
 	return &FetchSheetDataResult{
 		SpreadsheetID:    meta.SpreadsheetID,
 		SpreadsheetTitle: meta.SpreadsheetTitle,
 		SheetName:        meta.SheetName,
 		Headers:          headers,
 		Rows:             rows,
-		TotalRows:        len(rows),
+		TotalRows:        totalRows,
+		StartIndex:       startIndex,
 		ServiceAccount:   serviceEmail,
 	}, nil
 }

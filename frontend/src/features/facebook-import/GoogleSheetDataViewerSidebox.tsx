@@ -26,6 +26,7 @@ import {
 import { SiGooglesheets } from 'react-icons/si';
 import { type DynamicAIBoxConfig } from './FacebookWorkflowCanvas';
 import { apiUrl } from '../../services/apiClient';
+import { Select } from '../../components/ui/Select';
 
 export interface SheetRowItem {
   originalIndex: number;
@@ -77,9 +78,12 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [defaultOrder, setDefaultOrder] = useState<'latestFirst' | 'oldestFirst'>('latestFirst');
 
-  // Pagination
-  const [pageSize, setPageSize] = useState<number>(50);
+  // Pagination & incremental loading (default 25 rows for fast, lightweight load)
+  const [pageSize, setPageSize] = useState<number>(25);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [fetchLimit, setFetchLimit] = useState<number>(25);
+  const [totalSheetRows, setTotalSheetRows] = useState<number>(0);
+  const [rowStartIndex, setRowStartIndex] = useState<number>(0);
 
   // Fullscreen expansion
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
@@ -88,7 +92,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
   const [copiedCellKey, setCopiedCellKey] = useState<string | null>(null);
 
   // Fetch sheet data from API
-  const fetchSheetData = async () => {
+  const fetchSheetData = async (limitOverride?: number) => {
+    const activeLimit = limitOverride !== undefined ? limitOverride : fetchLimit;
     setLoading(true);
     setError(null);
     try {
@@ -99,7 +104,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
           spreadsheet_url: boxConfig.googleSpreadsheetUrl || '',
           sheet_name: boxConfig.googleSheetName || '',
           credentials_json: boxConfig.googleServiceAccountJson || '',
-          limit: 0, // 0 = all rows
+          limit: activeLimit, // 0 = all rows
         }),
       });
 
@@ -114,8 +119,11 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
         throw new Error(data.error || 'Failed to load Google Sheet rows');
       }
 
+      const loadedRows = data.rows || [];
       setHeaders(data.headers || []);
-      setRows(data.rows || []);
+      setRows(loadedRows);
+      setTotalSheetRows(typeof data.total_rows === 'number' ? data.total_rows : loadedRows.length);
+      setRowStartIndex(typeof data.start_index === 'number' ? data.start_index : 0);
       setSpreadsheetTitle(data.spreadsheet_title || '');
       setSheetName(data.sheet_name || boxConfig.googleSheetName || 'Sheet');
       setSpreadsheetId(data.spreadsheet_id || '');
@@ -129,8 +137,10 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
 
   useEffect(() => {
     if (isOpen) {
-      fetchSheetData();
+      setFetchLimit(25);
+      setPageSize(25);
       setCurrentPage(1);
+      fetchSheetData(25);
     }
   }, [isOpen, boxConfig.googleSpreadsheetUrl, boxConfig.googleSheetName, boxConfig.googleServiceAccountJson]);
 
@@ -220,8 +230,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
   // Filtering & Sorting with true original sheet row indices
   const filteredRowItems = useMemo<SheetRowItem[]>(() => {
     let result: SheetRowItem[] = rows.map((r, idx) => ({
-      originalIndex: idx,
-      sheetRowNum: idx + 2,
+      originalIndex: rowStartIndex + idx,
+      sheetRowNum: rowStartIndex + idx + 2,
       values: r,
     }));
 
@@ -271,12 +281,28 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
   }, [rows, globalSearch, columnFilters, sortColIdx, sortDirection, defaultOrder]);
 
   // Pagination calculation
-  const totalPages = Math.max(1, Math.ceil(filteredRowItems.length / pageSize));
+  const hasFiltersActive = globalSearch.trim().length > 0 || Object.keys(columnFilters).length > 0 || sortColIdx !== null;
+  const effectiveTotalRows = hasFiltersActive
+    ? filteredRowItems.length
+    : Math.max(filteredRowItems.length, totalSheetRows);
+  const totalPages = pageSize === 0 ? 1 : Math.max(1, Math.ceil(effectiveTotalRows / pageSize));
   const paginatedRowItems = useMemo(() => {
     if (pageSize === 0) return filteredRowItems;
     const start = (currentPage - 1) * pageSize;
     return filteredRowItems.slice(start, start + pageSize);
   }, [filteredRowItems, currentPage, pageSize]);
+
+  const goToPage = (nextPage: number) => {
+    const clamped = Math.max(1, Math.min(totalPages, nextPage));
+    setCurrentPage(clamped);
+    if (!hasFiltersActive && pageSize > 0 && totalSheetRows > rows.length) {
+      const needed = clamped === totalPages ? 0 : Math.min(totalSheetRows, clamped * pageSize);
+      if (needed === 0 || needed > rows.length) {
+        setFetchLimit(needed);
+        fetchSheetData(needed);
+      }
+    }
+  };
 
   const handleSort = (colIdx: number) => {
     if (sortColIdx === colIdx) {
@@ -363,12 +389,12 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
         top: 0,
         bottom: 0,
         left: 0,
-        right: isExpanded ? 0 : isSidebarOpen ? '380px' : 0,
-        width: isExpanded ? '100vw' : isSidebarOpen ? 'calc(100vw - 380px)' : '100vw',
+        right: isExpanded ? 0 : isSidebarOpen ? '440px' : 0,
+        width: isExpanded ? '100vw' : isSidebarOpen ? 'calc(100vw - 440px)' : '100vw',
         maxWidth: 'none',
-        backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+        backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
         borderLeft: 'none',
-        borderRight: isExpanded ? 'none' : isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+        borderRight: isExpanded ? 'none' : isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
         boxShadow: 'none',
         zIndex: isExpanded ? 220 : 168,
         display: 'flex',
@@ -387,8 +413,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
           padding: '0.875rem 1.25rem',
           height: '62px',
           boxSizing: 'border-box',
-          borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-          backgroundColor: isDark ? '#161B22' : '#F6F8FA',
+          borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
+          backgroundColor: isDark ? '#25282B' : '#F6F8FA',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, flex: 1 }}>
@@ -456,7 +482,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
           {/* Refresh Button */}
           <button
             type="button"
-            onClick={fetchSheetData}
+            onClick={() => fetchSheetData()}
             disabled={loading}
             title="Refresh rows from Google Sheets"
             style={{
@@ -468,7 +494,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
               fontSize: '0.75rem',
               fontWeight: 500,
               backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
-              border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
               color: 'var(--text-primary)',
               cursor: loading ? 'not-allowed' : 'pointer',
               transition: 'all 0.15s ease',
@@ -493,7 +519,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
               fontSize: '0.75rem',
               fontWeight: 500,
               backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
-              border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
               color: 'var(--text-primary)',
               cursor: rows.length === 0 ? 'not-allowed' : 'pointer',
               transition: 'all 0.15s ease',
@@ -519,7 +545,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                 fontSize: '0.75rem',
                 fontWeight: 500,
                 backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
-                border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
                 color: 'var(--text-primary)',
                 textDecoration: 'none',
                 transition: 'all 0.15s ease',
@@ -543,7 +569,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
               height: '28px',
               borderRadius: '6px',
               backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
-              border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
               color: 'var(--text-secondary)',
               cursor: 'pointer',
             }}
@@ -564,7 +590,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
               height: '28px',
               borderRadius: '6px',
               backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
-              border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
               color: 'var(--text-secondary)',
               cursor: 'pointer',
             }}
@@ -612,8 +638,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
           justifyContent: 'space-between',
           gap: '12px',
           padding: '0.625rem 1.25rem',
-          borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-          backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+          borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
+          backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
         }}
       >
         {/* Global Search Bar */}
@@ -643,8 +669,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
               paddingRight: globalSearch ? '28px' : '10px',
               borderRadius: '6px',
               fontSize: '0.75rem',
-              backgroundColor: isDark ? '#161B22' : '#F6F8FA',
-              border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+              backgroundColor: isDark ? '#25282B' : '#F6F8FA',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
               color: 'var(--text-primary)',
               outline: 'none',
               boxSizing: 'border-box',
@@ -688,17 +714,24 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
               display: 'flex',
               alignItems: 'center',
               gap: '5px',
-              padding: '4px 8px',
-              borderRadius: '5px',
-              fontSize: '0.6875rem',
+              padding: '5px 10px',
+              borderRadius: '7px',
+              fontSize: '0.72rem',
               fontWeight: 500,
-              backgroundColor: defaultOrder === 'latestFirst' ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
-              border: defaultOrder === 'latestFirst' ? '1px solid rgba(59, 130, 246, 0.4)' : isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
-              color: defaultOrder === 'latestFirst' ? '#3B82F6' : 'var(--text-secondary)',
+              backgroundColor: defaultOrder === 'latestFirst'
+                ? (isDark ? '#2A2D32' : '#EFF6FF')
+                : (isDark ? '#25282B' : '#FFFFFF'),
+              border: defaultOrder === 'latestFirst'
+                ? (isDark ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid #3B82F6')
+                : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE'),
+              color: defaultOrder === 'latestFirst'
+                ? (isDark ? '#ECEEF0' : '#2563EB')
+                : (isDark ? '#9BA1A8' : 'var(--text-secondary)'),
               cursor: 'pointer',
+              transition: 'all 0.15s ease',
             }}
           >
-            <FiClock size={11} />
+            <FiClock size={12} />
             <span>{defaultOrder === 'latestFirst' ? 'Last First (Newest)' : 'First First (Oldest)'}</span>
           </button>
 
@@ -710,17 +743,24 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
               display: 'flex',
               alignItems: 'center',
               gap: '5px',
-              padding: '4px 8px',
-              borderRadius: '5px',
-              fontSize: '0.6875rem',
+              padding: '5px 10px',
+              borderRadius: '7px',
+              fontSize: '0.72rem',
               fontWeight: 500,
-              backgroundColor: showColumnFilterRow ? 'rgba(15, 157, 88, 0.1)' : 'transparent',
-              border: showColumnFilterRow ? '1px solid rgba(15, 157, 88, 0.4)' : isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
-              color: showColumnFilterRow ? '#0F9D58' : 'var(--text-secondary)',
+              backgroundColor: showColumnFilterRow
+                ? (isDark ? '#2A2D32' : '#EFF6FF')
+                : (isDark ? '#25282B' : '#FFFFFF'),
+              border: showColumnFilterRow
+                ? (isDark ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid #3B82F6')
+                : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE'),
+              color: showColumnFilterRow
+                ? (isDark ? '#ECEEF0' : '#2563EB')
+                : (isDark ? '#9BA1A8' : 'var(--text-secondary)'),
               cursor: 'pointer',
+              transition: 'all 0.15s ease',
             }}
           >
-            <FiFilter size={11} />
+            <FiFilter size={12} />
             <span>Column Search</span>
           </button>
 
@@ -733,17 +773,18 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                 display: 'flex',
                 alignItems: 'center',
                 gap: '4px',
-                padding: '4px 8px',
-                borderRadius: '5px',
-                fontSize: '0.6875rem',
-                fontWeight: 600,
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                color: '#EF4444',
+                padding: '5px 10px',
+                borderRadius: '7px',
+                fontSize: '0.72rem',
+                fontWeight: 500,
+                backgroundColor: isDark ? '#25282B' : '#FFFFFF',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #D0D7DE',
+                color: isDark ? '#ECEEF0' : '#0F172A',
                 cursor: 'pointer',
+                transition: 'all 0.15s ease',
               }}
             >
-              <FiX size={11} />
+              <FiX size={12} />
               <span>Clear Filters</span>
             </button>
           )}
@@ -755,8 +796,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
               color: 'var(--text-muted)',
               padding: '3px 8px',
               borderRadius: '5px',
-              backgroundColor: isDark ? '#161B22' : '#F6F8FA',
-              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              backgroundColor: isDark ? '#25282B' : '#F6F8FA',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
             }}
           >
             Showing <strong style={{ color: 'var(--text-primary)' }}>{filteredRowItems.length.toLocaleString()}</strong> of {rows.length.toLocaleString()} rows
@@ -769,7 +810,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
         style={{
           flex: 1,
           overflow: 'auto',
-          backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+          backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
           position: 'relative',
         }}
       >
@@ -849,22 +890,27 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
           <table
             style={{
               width: '100%',
-              borderCollapse: 'collapse',
+              borderCollapse: 'separate',
+              borderSpacing: 0,
               fontSize: '0.75rem',
               textAlign: 'left',
               tableLayout: 'auto',
             }}
           >
             {/* Table Header */}
-            <thead>
+            <thead
+              style={{
+                position: 'sticky',
+                top: 0,
+                zIndex: 25,
+                backgroundColor: isDark ? '#25282B' : '#F6F8FA',
+              }}
+            >
               {/* Row 1: Column Names & Sorting */}
               <tr
                 style={{
-                  position: 'sticky',
-                  top: 0,
-                  backgroundColor: isDark ? '#161B22' : '#F6F8FA',
-                  borderBottom: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
-                  zIndex: 20,
+                  backgroundColor: isDark ? '#25282B' : '#F6F8FA',
+                  borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
                 }}
               >
                 {/* Row # Header (Click to toggle Last First / First First) */}
@@ -880,11 +926,11 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                     minWidth: '56px',
                     fontWeight: 600,
                     color: sortColIdx === null ? '#3B82F6' : 'var(--text-muted)',
-                    borderRight: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                    borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
                     textAlign: 'center',
                     position: 'sticky',
                     left: 0,
-                    backgroundColor: isDark ? '#161B22' : '#F6F8FA',
+                    backgroundColor: isDark ? '#25282B' : '#F6F8FA',
                     zIndex: 25,
                     cursor: 'pointer',
                     userSelect: 'none',
@@ -909,11 +955,11 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                     fontWeight: 600,
                     fontSize: '0.6875rem',
                     color: 'var(--text-muted)',
-                    borderRight: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                    borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
                     textAlign: 'center',
                     position: 'sticky',
                     left: '52px',
-                    backgroundColor: isDark ? '#161B22' : '#F6F8FA',
+                    backgroundColor: isDark ? '#25282B' : '#F6F8FA',
                     zIndex: 25,
                     userSelect: 'none',
                   }}
@@ -931,8 +977,10 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                       style={{
                         padding: '8px 12px',
                         fontWeight: 600,
+                        backgroundColor: isDark ? '#25282B' : '#F6F8FA',
                         color: isSorted ? '#0F9D58' : 'var(--text-primary)',
-                        borderRight: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                        borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
+                        borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
                         cursor: 'pointer',
                         whiteSpace: 'nowrap',
                         userSelect: 'none',
@@ -941,10 +989,10 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                         transition: 'background-color 0.15s ease',
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#EAEFF5';
+                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#EAEFF5';
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = isDark ? '#161B22' : '#F6F8FA';
+                        e.currentTarget.style.backgroundColor = isDark ? '#25282B' : '#F6F8FA';
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
@@ -984,21 +1032,19 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
               {showColumnFilterRow && (
                 <tr
                   style={{
-                    position: 'sticky',
-                    top: '37px',
-                    backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-                    borderBottom: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                    backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
+                    borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
                     zIndex: 19,
                   }}
                 >
                   <th
                     style={{
                       padding: '4px 6px',
-                      borderRight: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                      borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
                       textAlign: 'center',
                       position: 'sticky',
                       left: 0,
-                      backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                      backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
                       zIndex: 24,
                     }}
                   >
@@ -1009,11 +1055,11 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                   <th
                     style={{
                       padding: '4px 6px',
-                      borderRight: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                      borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
                       textAlign: 'center',
                       position: 'sticky',
                       left: '52px',
-                      backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                      backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
                       zIndex: 24,
                       width: '76px',
                       minWidth: '76px',
@@ -1027,7 +1073,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                       key={`filter-${colIdx}`}
                       style={{
                         padding: '4px 6px',
-                        borderRight: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                        borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
                       }}
                     >
                       <input
@@ -1041,10 +1087,10 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                           padding: '2px 6px',
                           borderRadius: '4px',
                           fontSize: '0.6875rem',
-                          backgroundColor: isDark ? '#161B22' : '#F6F8FA',
+                          backgroundColor: isDark ? '#25282B' : '#F6F8FA',
                           border: columnFilters[colIdx]
                             ? '1px solid #0F9D58'
-                            : isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                            : isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
                           color: 'var(--text-primary)',
                           outline: 'none',
                           boxSizing: 'border-box',
@@ -1078,8 +1124,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                           marginTop: '4px',
                           padding: '4px 10px',
                           borderRadius: '4px',
-                          backgroundColor: isDark ? '#21262D' : '#EAEFF5',
-                          border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#EAEFF5',
+                          border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
                           color: 'var(--text-primary)',
                           fontSize: '0.75rem',
                           cursor: 'pointer',
@@ -1103,7 +1149,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                         backgroundColor: isEven
                           ? (isDark ? 'transparent' : '#FFFFFF')
                           : (isDark ? 'rgba(255, 255, 255, 0.015)' : '#F9FAFB'),
-                        borderBottom: isDark ? '1px solid #21262D' : '1px solid #E5E7EB',
+                        borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E5E7EB',
                         transition: 'background-color 0.1s ease',
                       }}
                       onMouseEnter={(e) => {
@@ -1123,10 +1169,10 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                           color: 'var(--text-muted)',
                           fontSize: '0.6875rem',
                           fontWeight: 600,
-                          borderRight: isDark ? '1px solid #21262D' : '1px solid #E5E7EB',
+                          borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E5E7EB',
                           position: 'sticky',
                           left: 0,
-                          backgroundColor: isDark ? '#161B22' : '#F6F8FA',
+                          backgroundColor: isDark ? '#25282B' : '#F6F8FA',
                           zIndex: 10,
                           userSelect: 'none',
                         }}
@@ -1140,10 +1186,10 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                         style={{
                           padding: '6px 8px',
                           textAlign: 'center',
-                          borderRight: isDark ? '1px solid #21262D' : '1px solid #E5E7EB',
+                          borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E5E7EB',
                           position: 'sticky',
                           left: '52px',
-                          backgroundColor: isDark ? '#161B22' : '#F6F8FA',
+                          backgroundColor: isDark ? '#25282B' : '#F6F8FA',
                           zIndex: 10,
                           userSelect: 'none',
                           width: '76px',
@@ -1169,7 +1215,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                               width: '24px',
                               height: '24px',
                               borderRadius: '4px',
-                              border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
                               backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
                               color: '#3B82F6',
                               cursor: 'pointer',
@@ -1200,7 +1246,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                               width: '24px',
                               height: '24px',
                               borderRadius: '4px',
-                              border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
                               backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.08)',
                               color: '#EF4444',
                               cursor: 'pointer',
@@ -1231,7 +1277,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                             title={`Click to copy: "${cellValue}"`}
                             style={{
                               padding: '6px 12px',
-                              borderRight: isDark ? '1px solid #21262D' : '1px solid #E5E7EB',
+                              borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E5E7EB',
                               maxWidth: '320px',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
@@ -1303,44 +1349,46 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: '12px',
-          padding: '0.5rem 1.25rem',
-          height: '46px',
+          padding: '0 1.25rem',
+          height: '60px',
+          minHeight: '60px',
+          maxHeight: '60px',
           boxSizing: 'border-box',
-          borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-          backgroundColor: isDark ? '#161B22' : '#F6F8FA',
+          flexShrink: 0,
+          borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+          backgroundColor: isDark ? '#25282B' : '#F6F8FA',
           fontSize: '0.75rem',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-muted)' }}>
           <span>
-            Page <strong style={{ color: 'var(--text-primary)' }}>{currentPage}</strong> of {totalPages}
+            Loaded <strong style={{ color: 'var(--text-primary)' }}>{rows.length}</strong> of {totalSheetRows || rows.length}
           </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>Rows per page:</span>
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
+            <Select
+              value={String(pageSize)}
+              onChange={(val) => {
+                const nextSize = Number(val);
+                setPageSize(nextSize);
                 setCurrentPage(1);
+                if (nextSize === 0 || (totalSheetRows > rows.length && nextSize > rows.length)) {
+                  const nextLimit = nextSize === 0 ? 0 : nextSize;
+                  setFetchLimit(nextLimit);
+                  fetchSheetData(nextLimit);
+                }
               }}
-              style={{
-                height: '26px',
-                padding: '0 6px',
-                borderRadius: '4px',
-                backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-                border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
-                color: 'var(--text-primary)',
-                fontSize: '0.75rem',
-                outline: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-              <option value={250}>250</option>
-              <option value={0}>All</option>
-            </select>
+              options={[
+                { value: '25', label: '25' },
+                { value: '50', label: '50' },
+                { value: '100', label: '100' },
+                { value: '250', label: '250' },
+                { value: '0', label: 'All' },
+              ]}
+              width="76px"
+              height="28px"
+              isSearchable={false}
+            />
           </div>
         </div>
 
@@ -1349,7 +1397,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <button
               type="button"
-              onClick={() => setCurrentPage(1)}
+              onClick={() => goToPage(1)}
               disabled={currentPage === 1}
               title="First Page"
               style={{
@@ -1360,7 +1408,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                 height: '26px',
                 borderRadius: '4px',
                 backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
-                border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
                 color: 'var(--text-primary)',
                 cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
                 opacity: currentPage === 1 ? 0.4 : 1,
@@ -1370,7 +1418,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
             </button>
             <button
               type="button"
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              onClick={() => goToPage(currentPage - 1)}
               disabled={currentPage === 1}
               title="Previous Page"
               style={{
@@ -1381,7 +1429,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                 height: '26px',
                 borderRadius: '4px',
                 backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
-                border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
                 color: 'var(--text-primary)',
                 cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
                 opacity: currentPage === 1 ? 0.4 : 1,
@@ -1396,8 +1444,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
 
             <button
               type="button"
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
+              onClick={() => goToPage(currentPage + 1)}
+              disabled={currentPage === totalPages || loading}
               title="Next Page"
               style={{
                 display: 'flex',
@@ -1407,7 +1455,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                 height: '26px',
                 borderRadius: '4px',
                 backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
-                border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
                 color: 'var(--text-primary)',
                 cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
                 opacity: currentPage === totalPages ? 0.4 : 1,
@@ -1417,8 +1465,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
             </button>
             <button
               type="button"
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages}
+              onClick={() => goToPage(totalPages)}
+              disabled={currentPage === totalPages || loading}
               title="Last Page"
               style={{
                 display: 'flex',
@@ -1428,7 +1476,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                 height: '26px',
                 borderRadius: '4px',
                 backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
-                border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
                 color: 'var(--text-primary)',
                 cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
                 opacity: currentPage === totalPages ? 0.4 : 1,
@@ -1460,8 +1508,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
             style={{
               width: '460px',
               maxWidth: '100%',
-              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              backgroundColor: isDark ? '#25282B' : '#FFFFFF',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
               borderRadius: '10px',
               boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
               padding: '1.25rem',
@@ -1503,7 +1551,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                 padding: '0.75rem',
                 borderRadius: '6px',
                 backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F6F8FA',
-                border: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
                 fontSize: '0.75rem',
                 display: 'flex',
                 flexDirection: 'column',
@@ -1535,7 +1583,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                   borderRadius: '6px',
                   fontSize: '0.75rem',
                   fontWeight: 500,
-                  border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
                   backgroundColor: 'transparent',
                   color: 'var(--text-primary)',
                   cursor: isDeleting ? 'not-allowed' : 'pointer',
@@ -1590,8 +1638,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
               width: '640px',
               maxWidth: '100%',
               maxHeight: '85vh',
-              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              backgroundColor: isDark ? '#25282B' : '#FFFFFF',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
               borderRadius: '10px',
               boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
               display: 'flex',
@@ -1607,8 +1655,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: '1rem 1.25rem',
-                borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-                backgroundColor: isDark ? '#0D1117' : '#F6F8FA',
+                borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? '#1D1F22' : '#F6F8FA',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1693,7 +1741,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                           fontSize: '0.5625rem',
                           padding: '1px 3px',
                           borderRadius: '2px',
-                          backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#E2E8F0',
                           color: 'var(--text-muted)',
                         }}
                       >
@@ -1715,8 +1763,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                           padding: '6px 8px',
                           borderRadius: '6px',
                           fontSize: '0.75rem',
-                          backgroundColor: isDark ? '#0D1117' : '#F6F8FA',
-                          border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                          backgroundColor: isDark ? '#1D1F22' : '#F6F8FA',
+                          border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
                           color: 'var(--text-primary)',
                           outline: 'none',
                           boxSizing: 'border-box',
@@ -1739,8 +1787,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                           padding: '0 8px',
                           borderRadius: '6px',
                           fontSize: '0.75rem',
-                          backgroundColor: isDark ? '#0D1117' : '#F6F8FA',
-                          border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                          backgroundColor: isDark ? '#1D1F22' : '#F6F8FA',
+                          border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
                           color: 'var(--text-primary)',
                           outline: 'none',
                           boxSizing: 'border-box',
@@ -1775,8 +1823,8 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                 justifyContent: 'flex-end',
                 gap: '8px',
                 padding: '0.875rem 1.25rem',
-                borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-                backgroundColor: isDark ? '#0D1117' : '#F6F8FA',
+                borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
+                backgroundColor: isDark ? '#1D1F22' : '#F6F8FA',
               }}
             >
               <button
@@ -1788,7 +1836,7 @@ export const GoogleSheetDataViewerSidebox: React.FC<GoogleSheetDataViewerSidebox
                   borderRadius: '6px',
                   fontSize: '0.75rem',
                   fontWeight: 500,
-                  border: isDark ? '1px solid #30363D' : '1px solid #D0D7DE',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #D0D7DE',
                   backgroundColor: 'transparent',
                   color: 'var(--text-primary)',
                   cursor: isSavingEdit ? 'not-allowed' : 'pointer',

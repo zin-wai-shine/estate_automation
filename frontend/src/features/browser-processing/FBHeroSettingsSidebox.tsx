@@ -56,6 +56,7 @@ interface FBHeroSettingsSideboxProps {
   availablePrompts?: Array<{ id: string | number; name: string; category?: string; instructions?: string; templateText?: string }>;
   workflowImageSources?: WorkflowImageSource[];
   embedded?: boolean;
+  onToggleEnabled?: () => void;
 }
 
 export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
@@ -68,6 +69,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
   availablePrompts = [],
   workflowImageSources = [],
   embedded = false,
+  onToggleEnabled,
 }) => {
   // ── 1. Execution Mode (Direct to Tab 2 vs Two-Stage Browser) ───────────────
   const [stagingMode, setStagingMode] = useState<'direct_tab2' | 'two_stage_tabs'>(() => {
@@ -850,6 +852,58 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
           gap: '0.75rem',
         }}
       >
+        {/* Node Status Toggle Row */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '0 0 12px 0',
+            borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              Node Status
+            </div>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              {boxConfig.enabled !== false
+                ? 'Executing during workflow run'
+                : 'Node is bypassed (will skip during workflow run)'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+            <span
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                color: boxConfig.enabled !== false ? '#10B981' : 'var(--text-muted)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <span
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: boxConfig.enabled !== false ? '#10B981' : '#6B7280',
+                }}
+              />
+              <span>{boxConfig.enabled !== false ? 'Active' : 'Disabled'}</span>
+            </span>
+            <ToggleSwitch
+              checked={boxConfig.enabled !== false}
+              onChange={() => {
+                if (onToggleEnabled) onToggleEnabled();
+                else onUpdateBoxConfig({ enabled: !(boxConfig.enabled !== false) });
+              }}
+              activeColor="#10B981"
+              size="md"
+            />
+          </div>
+        </div>
         {/* ── ACTION MODE SWITCHER ── */}
         <div
           style={{

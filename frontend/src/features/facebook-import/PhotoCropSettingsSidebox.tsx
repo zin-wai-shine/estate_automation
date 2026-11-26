@@ -20,6 +20,7 @@ import {
 import type { DynamicAIBoxConfig, WorkflowWireConnection } from './FacebookWorkflowCanvas';
 import { Select, type SelectOption } from '../../components/ui/Select';
 import { Button } from '../../components/ui/Button';
+import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 
 export interface PhotoCropSettingsSideboxProps {
   isOpen: boolean;
@@ -959,6 +960,55 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
           gap: '1rem',
         }}
       >
+        {/* Node Status Toggle Row */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '0 0 12px 0',
+            borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              Node Status
+            </div>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              {box.enabled !== false
+                ? 'Executing during workflow run'
+                : 'Node is bypassed (will skip during workflow run)'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+            <span
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                color: box.enabled !== false ? '#10B981' : 'var(--text-muted)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <span
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: box.enabled !== false ? '#10B981' : '#6B7280',
+                }}
+              />
+              <span>{box.enabled !== false ? 'Active' : 'Disabled'}</span>
+            </span>
+            <ToggleSwitch
+              checked={box.enabled !== false}
+              onChange={() => onUpdateBox(box.id, { enabled: !(box.enabled !== false) })}
+              activeColor="#10B981"
+              size="md"
+            />
+          </div>
+        </div>
         {/* ── 1. Select Crop & Frame Format (User's 3rd Image) ──────────────────── */}
         <div
           style={{

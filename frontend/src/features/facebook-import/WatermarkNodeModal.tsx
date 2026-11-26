@@ -2586,50 +2586,9 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       ) : ((isEnhanceSource || imageSource === 'enhance') && imageSource !== 'upload' && uploadedImages.length === 0) ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginTop: '0.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                Processed Photos Preview
-              </label>
-              <span
-                style={{
-                  fontSize: '0.625rem',
-                  fontWeight: 600,
-                  color: '#F59E0B',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  border: '1px solid rgba(245, 158, 11, 0.3)',
-                }}
-              >
-                ⏳ Waiting for {enhanceLabel}
-              </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              title="Upload photos manually to skip waiting"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '3px 8px',
-                borderRadius: '5px',
-                backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
-                border: isDark ? '1px solid rgba(59, 130, 246, 0.35)' : '1px solid rgba(59, 130, 246, 0.3)',
-                color: '#3B82F6',
-                fontSize: '0.6875rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'background-color 0.15s ease',
-              }}
-            >
-              <FiUpload size={11} />
-              <span>Upload Manual</span>
-            </button>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              Processed Photos Preview
+            </label>
           </div>
 
           <div
@@ -2651,68 +2610,43 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               alignItems: 'center',
               justifyContent: 'center',
               padding: '2.5rem 1.25rem',
-              borderRadius: '10px',
+              borderRadius: '8px',
               border: isDraggingOver
-                ? '2px dashed #3B82F6'
+                ? '1.5px dashed #326EE6'
                 : isDark
-                ? '1px solid #30363D'
+                ? '1px solid rgba(255, 255, 255, 0.08)'
                 : '1px solid #E2E8F0',
               backgroundColor: isDraggingOver
-                ? (isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.06)')
-                : (isDark ? 'rgba(245, 158, 11, 0.04)' : 'rgba(245, 158, 11, 0.03)'),
-              gap: '12px',
+                ? (isDark ? 'rgba(50, 110, 230, 0.12)' : 'rgba(50, 110, 230, 0.06)')
+                : (isDark ? '#25282B' : '#F8FAFC'),
+              gap: '14px',
               textAlign: 'center',
               transition: 'all 0.2s ease',
             }}
           >
             <div
               style={{
-                width: '46px',
-                height: '46px',
-                borderRadius: '50%',
-                backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                border: '1px solid rgba(245, 158, 11, 0.35)',
+                width: '42px',
+                height: '42px',
+                borderRadius: '10px',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.04)',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#F59E0B',
+                color: 'var(--text-secondary)',
               }}
             >
-              <FiClock size={22} />
+              <FiClock size={20} />
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              <span style={{ fontSize: '0.84375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Waiting for {enhanceLabel} Photos
               </span>
-              <span style={{ fontSize: '0.71875rem', color: 'var(--text-muted)', maxWidth: '340px', lineHeight: 1.5 }}>
-                The upstream {enhanceLabel} node has not enhanced photos yet for this canvas run. Once {enhanceLabel} processes and downloads the enhanced photos, this studio will automatically set up the crop tiles.
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', maxWidth: '320px', lineHeight: 1.5 }}>
+                Once {enhanceLabel} finishes enhancing photos, crop tiles will appear here automatically.
               </span>
-            </div>
-
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '4px 10px',
-                borderRadius: '6px',
-                backgroundColor: 'rgba(245, 158, 11, 0.12)',
-                border: '1px solid rgba(245, 158, 11, 0.25)',
-                color: '#F59E0B',
-                fontSize: '0.6875rem',
-                fontWeight: 500,
-              }}
-            >
-              <span
-                style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  backgroundColor: '#F59E0B',
-                }}
-              />
-              <span>Awaiting image enhancement</span>
             </div>
 
             <div
@@ -2723,14 +2657,11 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                 gap: '8px',
                 marginTop: '4px',
                 width: '100%',
-                maxWidth: '340px',
+                maxWidth: '320px',
                 paddingTop: '14px',
-                borderTop: isDark ? '1px dashed #30363D' : '1px dashed #E2E8F0',
+                borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
               }}
             >
-              <span style={{ fontSize: '0.71875rem', color: 'var(--text-muted)' }}>
-                Don't want to wait? You can upload manually:
-              </span>
               <button
                 type="button"
                 onClick={(e) => {
@@ -2742,25 +2673,29 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '6px',
-                  padding: '7px 16px',
-                  borderRadius: '6px',
-                  backgroundColor: 'var(--accent-primary, #3B82F6)',
+                  height: '34px',
+                  padding: '0 16px',
+                  borderRadius: '7px',
+                  backgroundColor: isDark ? '#326EE6' : '#0F172A',
                   color: '#FFFFFF',
                   fontSize: '0.75rem',
                   fontWeight: 600,
                   border: 'none',
                   cursor: isProcessingCrop ? 'not-allowed' : 'pointer',
-                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)',
-                  transition: 'opacity 0.15s ease',
+                  transition: 'background-color 0.15s ease',
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
-                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? '#295EC9' : '#1E293B';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = isDark ? '#326EE6' : '#0F172A';
+                }}
               >
-                <FiUploadCloud size={15} />
-                <span>{isProcessingCrop ? 'Uploading...' : 'Upload Photos Manually'}</span>
+                <FiUploadCloud size={14} />
+                <span>{isProcessingCrop ? 'Uploading...' : 'Upload Photos'}</span>
               </button>
-              <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                or drag & drop your photos here
+              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                or drag & drop photos here
               </span>
             </div>
           </div>
