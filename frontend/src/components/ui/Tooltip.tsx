@@ -265,6 +265,14 @@ export const GlobalTooltip: React.FC = () => {
         target.removeAttribute('title');
       }
 
+      // Skip tooltip on buttons that already display visible text
+      if (
+        (target.tagName === 'BUTTON' || target.getAttribute('role') === 'button') &&
+        (target.textContent || '').trim().length > 0
+      ) {
+        return;
+      }
+
       const text = target.getAttribute('data-tooltip')?.trim();
       if (!text) return;
 

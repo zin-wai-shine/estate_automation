@@ -816,6 +816,24 @@
         </div>
       </div>
 
+      <div id="tiktok-batch-bar" class="sidebar-section" style="display: flex; flex-direction: column;">
+        <div class="sidebar-label-row">
+          <span class="sidebar-label">Batch Upload</span>
+          <button id="reset-batch-btn" class="link-btn" type="button" title="Restart from photo #1" style="font-size: 10px;">Reset</button>
+        </div>
+        <div class="select-wrapper">
+          <select id="batch-size-select" class="sidebar-select" title="Images per Fill click">
+            <option value="5" selected>5 / click</option>
+            <option value="10">10 / click</option>
+            <option value="35">All (35 max)</option>
+          </select>
+          <div class="select-arrow">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </div>
+        </div>
+        <div id="batch-progress-text" style="font-size: 11px; color: var(--text-secondary); font-weight: 500; margin-top: 3px;">Ready</div>
+      </div>
+
       <!-- Clean Stats -->
       <div class="sidebar-stats">
         <div class="stat-row">
@@ -906,20 +924,6 @@
           <!-- Image Selection Strip -->
           <div id="image-grid" class="image-grid">
             <div class="empty-state" style="width: 100%;">Text-only post (no photos attached). Click <strong>Sync Queue</strong> below to load.</div>
-          </div>
-
-          <!-- Batch Control (TikTok Safe Mode) -->
-          <div id="tiktok-batch-bar" class="batch-bar">
-            <div class="batch-left">
-              <span>Batch:</span>
-              <select id="batch-size-select" class="batch-select" title="Images per Fill click">
-                <option value="5" selected>5 / click</option>
-                <option value="10">10 / click</option>
-                <option value="35">All (35 max)</option>
-              </select>
-              <span id="batch-progress-text" style="color: var(--text-primary); font-weight: 600;">Ready</span>
-            </div>
-            <button id="reset-batch-btn" class="link-btn" type="button" title="Restart from photo #1">Reset</button>
           </div>
 
           <!-- Title (TikTok) -->

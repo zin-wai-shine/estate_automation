@@ -883,7 +883,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
       style={embedded ? {
         width: '100%',
         height: '100%',
-        backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+        backgroundColor: isDark ? '#25282B' : '#FFFFFF',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
@@ -894,12 +894,12 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
         top: 0,
         bottom: 0,
         right: '380px', // sits smoothly alongside the 380px main sidebar inspector
-        width: '440px',
+        width: '320px',
         maxWidth: 'calc(100vw - 420px)',
-        backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-        borderLeft: '1px solid var(--border-color)',
-        borderRight: '1px solid var(--border-color)',
-        boxShadow: isDark ? '-12px 0 35px rgba(0, 0, 0, 0.75)' : '-6px 0 24px rgba(0, 0, 0, 0.08)',
+        backgroundColor: isDark ? '#25282B' : '#FFFFFF',
+        borderLeft: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+        borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+        boxShadow: isDark ? '-12px 0 35px rgba(0, 0, 0, 0.65)' : '-6px 0 24px rgba(0, 0, 0, 0.08)',
         zIndex: 169,
         display: 'flex',
         flexDirection: 'column',
@@ -912,9 +912,14 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '0.875rem 1.125rem',
-          borderBottom: 'none',
-          backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+          padding: '0 1.125rem',
+          height: '62px',
+          minHeight: '62px',
+          maxHeight: '62px',
+          boxSizing: 'border-box',
+          flexShrink: 0,
+          borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #F1F5F9',
+          backgroundColor: isDark ? '#25282B' : '#FFFFFF',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
@@ -941,33 +946,6 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
             </div>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            handleDoneAndApply();
-          }}
-          title="Close Settings"
-          style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '8px',
-            border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-            color: 'var(--text-secondary)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            pointerEvents: 'auto',
-            userSelect: 'none',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <FiX size={14} style={{ pointerEvents: 'none' }} />
-        </button>
       </div>
 
       {/* ── Scrollable Body ───────────────────────────────────────────────────── */}
@@ -975,7 +953,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
         style={{
           flex: 1,
           overflowY: 'auto',
-          padding: '1rem',
+          padding: '1rem 1rem 3rem 1rem',
           display: 'flex',
           flexDirection: 'column',
           gap: '1rem',
@@ -1371,7 +1349,6 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
                     <div
                       key={photo.id}
                       onClick={() => toggleSelectPhoto(photo.index)}
-                      title={`${photo.label} — click to toggle`}
                       style={{
                         position: 'relative',
                         height: '56px',
@@ -1586,47 +1563,6 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
             </div>
           </div>
         </div>
-      </div>
-
-      {/* ── Footer ────────────────────────────────────────────────────────────── */}
-      <div
-        style={{
-          padding: '0.875rem 1.125rem',
-          borderTop: 'none',
-          backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-        }}
-      >
-        <button
-          type="button"
-          onClick={handleDoneAndApply}
-          style={{
-            height: '34px',
-            padding: '0 16px',
-            borderRadius: '8px',
-            border: '1px solid transparent',
-            backgroundColor: isDark ? 'var(--accent-primary, #2563EB)' : '#0F172A',
-            color: '#FFFFFF',
-            fontSize: '0.78125rem',
-            fontWeight: 600,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = isDark ? 'var(--accent-primary-hover, #1D4ED8)' : '#1E293B';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = isDark ? 'var(--accent-primary, #2563EB)' : '#0F172A';
-          }}
-        >
-          <FiCheckCircle size={13} />
-          <span>Done & Apply Settings</span>
-        </button>
       </div>
     </div>
   );

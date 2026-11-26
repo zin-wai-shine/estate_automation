@@ -91,6 +91,10 @@ export const Select: React.FC<SelectProps> = ({
     return null;
   }, [options, value]);
 
+  const isLightMode =
+    typeof document !== 'undefined' &&
+    document.documentElement.getAttribute('data-theme') === 'light';
+
   const customStyles: StylesConfig<SelectOption, false, GroupBase<SelectOption>> = {
     container: (provided) => ({
       ...provided,
@@ -100,19 +104,23 @@ export const Select: React.FC<SelectProps> = ({
       ...provided,
       minHeight: height,
       height,
-      backgroundColor: 'var(--bg-main)',
-      borderColor: state.isFocused ? 'var(--accent-primary)' : 'var(--border-color)',
-      borderRadius: '0.375rem',
-      boxShadow: state.isFocused ? '0 0 0 1px var(--accent-primary)' : 'none',
-      fontSize: '0.8125rem',
-      color: 'var(--text-primary)',
+      backgroundColor: isLightMode ? '#FFFFFF' : '#1D1F22',
+      borderColor: state.isFocused
+        ? (isLightMode ? '#2563EB' : 'rgba(255, 255, 255, 0.24)')
+        : (isLightMode ? '#CBD5E1' : 'rgba(255, 255, 255, 0.1)'),
+      borderRadius: '8px',
+      boxShadow: 'none',
+      fontSize: '0.84375rem',
+      color: isLightMode ? '#0F172A' : '#ECEEF0',
       cursor: 'pointer',
       boxSizing: 'border-box',
       display: 'flex',
       alignItems: 'center',
       overflow: 'hidden',
       '&:hover': {
-        borderColor: state.isFocused ? 'var(--accent-primary)' : 'var(--border-hover, #4B5563)',
+        borderColor: state.isFocused
+          ? (isLightMode ? '#2563EB' : 'rgba(255, 255, 255, 0.24)')
+          : (isLightMode ? '#94A3B8' : 'rgba(255, 255, 255, 0.18)'),
       },
     }),
     valueContainer: (provided) => ({
@@ -185,13 +193,18 @@ export const Select: React.FC<SelectProps> = ({
     }),
     menu: (provided) => ({
       ...provided,
-      backgroundColor: 'var(--bg-surface)',
-      border: '1px solid var(--border-color)',
-      borderRadius: '0.5rem',
-      boxShadow: 'var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.08))',
+      backgroundColor: isLightMode ? '#FFFFFF' : '#25282B',
+      border: isLightMode ? '1px solid #E2E8F0' : '1px solid rgba(255, 255, 255, 0.1)',
+      borderRadius: '8px',
+      boxShadow: isLightMode ? '0 8px 24px rgba(0, 0, 0, 0.12)' : '0 10px 28px rgba(0, 0, 0, 0.55)',
       overflow: 'hidden',
-      zIndex: 9999,
+      zIndex: 99999,
       marginTop: '4px',
+      marginBottom: '4px',
+    }),
+    menuPortal: (provided) => ({
+      ...provided,
+      zIndex: 99999,
     }),
     menuList: (provided) => ({
       ...provided,
@@ -201,15 +214,15 @@ export const Select: React.FC<SelectProps> = ({
     option: (provided, state) => ({
       ...provided,
       backgroundColor: state.isSelected
-        ? 'var(--accent-primary)'
+        ? (isLightMode ? '#2563EB' : '#326EE6')
         : state.isFocused
-        ? 'var(--bg-surface-hover)'
+        ? (isLightMode ? '#F1F5F9' : '#2A2D32')
         : 'transparent',
-      color: state.isSelected ? '#ffffff' : 'var(--text-primary)',
+      color: state.isSelected ? '#ffffff' : (isLightMode ? '#0F172A' : '#ECEEF0'),
       fontSize: '0.8125rem',
       fontWeight: 400,
       padding: '0.5rem 0.75rem',
-      borderRadius: '0.375rem',
+      borderRadius: '6px',
       cursor: 'pointer',
       margin: '0.125rem 0',
       transition: 'background-color 0.15s ease',
@@ -217,7 +230,7 @@ export const Select: React.FC<SelectProps> = ({
       overflow: 'hidden',
       textOverflow: 'ellipsis',
       '&:active': {
-        backgroundColor: 'var(--accent-primary)',
+        backgroundColor: isLightMode ? '#2563EB' : '#326EE6',
       },
     }),
     groupHeading: (provided) => ({
@@ -253,6 +266,9 @@ export const Select: React.FC<SelectProps> = ({
       placeholder={placeholder}
       isSearchable={isSearchable}
       isDisabled={isDisabled}
+      menuPlacement="auto"
+      menuPosition="fixed"
+      menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}
     />
   );
 };

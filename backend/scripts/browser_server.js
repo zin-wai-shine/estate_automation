@@ -1768,11 +1768,32 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
       break;
     }
 
-    // Advance to next photo: click Next button AND press ArrowRight
+    // Advance to next photo: hover viewer stage to reveal Next arrow, click via real mouse, and press ArrowRight
     const prevPhotoId = currentPhotoId;
     const prevUrlBase = currentUrlBase;
 
-    await page.evaluate(() => {
+    const stageHover = await page.evaluate(() => {
+      const imgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+        const s = img.src || '';
+        const r = img.getBoundingClientRect();
+        return (s.includes('scontent') || s.includes('fbcdn')) && r.width > 250 && r.height > 200;
+      });
+      imgs.sort((a, b) => {
+        const ra = a.getBoundingClientRect();
+        const rb = b.getBoundingClientRect();
+        return rb.width * rb.height - ra.width * ra.height;
+      });
+      if (imgs[0]) {
+        const r = imgs[0].getBoundingClientRect();
+        return { x: Math.round(r.left + r.width * 0.85), y: Math.round(r.top + r.height * 0.5), cx: Math.round(r.left + r.width * 0.5), cy: Math.round(r.top + r.height * 0.5) };
+      }
+      return { x: Math.round(window.innerWidth * 0.58), y: Math.round(window.innerHeight * 0.5), cx: Math.round(window.innerWidth * 0.4), cy: Math.round(window.innerHeight * 0.5) };
+    }).catch(() => ({ x: 600, y: 400, cx: 400, cy: 400 }));
+
+    await page.mouse.move(stageHover.x, stageHover.y).catch(() => {});
+    await page.waitForTimeout(180);
+
+    const nextBtnCoords = await page.evaluate(() => {
       const nextSelectors = [
         '[aria-label="Next photo"]',
         '[aria-label="Next image"]',
@@ -1791,29 +1812,58 @@ async function extractGalleryFromTargetPost(page, targetPostContext, maxImages =
       for (const sel of nextSelectors) {
         const btns = Array.from(document.querySelectorAll(sel));
         for (const btn of btns) {
+          if (btn.getAttribute('aria-disabled') === 'true') continue;
           const rect = btn.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0 && rect.left > window.innerWidth * 0.45) {
-            btn.click();
-            return;
+          if (
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.top > window.innerHeight * 0.15 &&
+            rect.bottom < window.innerHeight * 0.85 &&
+            rect.left > window.innerWidth * 0.45
+          ) {
+            return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), sel };
           }
         }
       }
-      // Floating right arrow button inside viewer
-      const dialog = document.querySelector('[role="dialog"]');
-      if (dialog) {
-        const btns = Array.from(dialog.querySelectorAll('button, div[role="button"]')).filter((b) => {
+      // Fallback: floating right arrow button vertically centered on the photo viewer (including far-right edge)
+      const roots = Array.from(document.querySelectorAll('[role="dialog"], main, body'));
+      for (const root of roots) {
+        const btns = Array.from(root.querySelectorAll('button, div[role="button"]')).filter((b) => {
+          if (b.getAttribute('aria-disabled') === 'true') return false;
+          const label = ((b.getAttribute('aria-label') || '') + ' ' + (b.textContent || '')).toLowerCase();
+          if (/close|prev|previous|back|tag|zoom|like|share|comment|more|download|fullscreen|profile|account|ก่อนหน้า|ปิด|ถูกใจ|แชร์/.test(label)) return false;
           const r = b.getBoundingClientRect();
-          return r.width >= 24 && r.height >= 24 && r.left > window.innerWidth * 0.55 && Boolean(b.querySelector('svg'));
+          return (
+            r.width >= 24 &&
+            r.width <= 96 &&
+            r.height >= 24 &&
+            r.height <= 96 &&
+            r.top > window.innerHeight * 0.30 &&
+            r.bottom < window.innerHeight * 0.70 &&
+            r.left > window.innerWidth * 0.50 &&
+            r.right <= window.innerWidth + 2 &&
+            Boolean(b.querySelector('svg, i, span'))
+          );
         });
         if (btns.length > 0) {
-          btns[0].click();
-          return;
+          btns.sort((a, b) => b.getBoundingClientRect().left - a.getBoundingClientRect().left);
+          const r = btns[0].getBoundingClientRect();
+          return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), sel: 'stage-arrow-fallback' };
         }
       }
-    }).catch(() => {});
+      return null;
+    }).catch(() => null);
 
-    await page.keyboard.press('ArrowRight').catch(() => {});
-    await page.waitForTimeout(600);
+    if (nextBtnCoords) {
+      console.log(`[TARGET_POST] Clicking Next (${nextBtnCoords.sel}) at (${nextBtnCoords.x}, ${nextBtnCoords.y})`);
+      await page.mouse.click(nextBtnCoords.x, nextBtnCoords.y).catch(() => {});
+    } else {
+      // Focus the stage and press ArrowRight
+      await page.mouse.click(stageHover.cx, stageHover.cy).catch(() => {});
+      await page.waitForTimeout(100);
+      await page.keyboard.press('ArrowRight').catch(() => {});
+    }
+    await page.waitForTimeout(650);
 
     // Wait for the viewer to show a DIFFERENT image
     let transitioned = false;

@@ -4,6 +4,7 @@ import type { DynamicAIBoxConfig, CanvasPromptOption } from './FacebookWorkflowC
 import { RunwareIcon, LaoZhangIcon, OpenAIIcon, ModelSelectorMenu } from './AITrainingChatbot';
 import { Select } from '../../components/ui/Select';
 import { GlobalTooltip } from '../../components/ui/Tooltip';
+import { showMacNotification } from '../../components/ui/MacNotification';
 import { useTheme } from '../../context/ThemeContext';
 import { getAIModelDisplayName, isImagePrompt } from './aiModelUtils';
 import { HiSparkles } from 'react-icons/hi2';
@@ -726,7 +727,13 @@ export const AIImageStudio: React.FC<AIImageStudioProps> = ({
   }, [toastMessage]);
 
   const showToast = (msg: string) => {
-    setToastMessage(msg);
+    const lower = msg.toLowerCase();
+    const isErr = lower.includes('fail') || lower.includes('error') || msg.includes('⚠️') || msg.includes('❌');
+    showMacNotification({
+      title: isErr ? 'Notice' : 'Image Studio',
+      message: msg,
+      type: isErr ? 'danger' : 'success',
+    });
   };
 
   const formatMessageTime = (timestamp: number) => {

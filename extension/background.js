@@ -3027,6 +3027,13 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
           }
 
           const target = { tabId: activeTab.id };
+          if (globalThis.__bolthavenMetaFillLock && globalThis.__bolthavenMetaFillLock.has(activeTab.id)) {
+            return sendResponse({ success: false, error: 'Meta fill already in progress on this tab' });
+          }
+          if (!globalThis.__bolthavenMetaFillLock) {
+            globalThis.__bolthavenMetaFillLock = new Set();
+          }
+          globalThis.__bolthavenMetaFillLock.add(activeTab.id);
           const cdp = (method, params = {}) => chrome.debugger.sendCommand(target, method, params);
           const cdpClick = async (x, y) => {
             await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
@@ -3315,39 +3322,47 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 
               let mediaStrategy = 'none';
               let filesAssigned = false;
+              let uploadedSuccessCount = 0;
               const beforeSnap = await countMediaThumbnails();
               const beforeMediaCount = beforeSnap.mediaEls;
 
-              try {
-                // Strategy A: Direct <input type="file"> inside active Media surface
-                const inputEval = await cdp('Runtime.evaluate', {
+              const findMountedMediaInput = async () => {
+                const res = await cdp('Runtime.evaluate', {
                   expression: `(() => {
                     const s = document.querySelector('[data-surface*="lib:bizweb_create_post:media"]');
                     if (s) {
                       const inp = s.querySelector('input[type="file"]');
-                      if (inp) return inp;
+                      if (inp && inp.isConnected) return inp;
                     }
                     return null;
                   })()`,
                   returnByValue: false,
-                });
+                }).catch(() => null);
+                return res?.result?.objectId || null;
+              };
 
-                if (inputEval?.result?.objectId) {
-                  mediaStrategy = 'direct-media-input';
-                  await cdp('DOM.setFileInputFiles', {
-                    objectId: inputEval.result.objectId,
-                    files: localPaths,
-                  });
-                  await cdp('Runtime.callFunctionOn', {
-                    objectId: inputEval.result.objectId,
-                    functionDeclaration: `function() {
-                      this.dispatchEvent(new Event("input", { bubbles: true }));
-                      this.dispatchEvent(new Event("change", { bubbles: true }));
-                    }`,
-                  }).catch(() => {});
-                  filesAssigned = true;
+              const assignFileToObjectId = async (objId, filePath) => {
+                // DOM.setFileInputFiles natively dispatches input/change events in Chromium;
+                // dispatching synthetic events afterward can cause Meta's listener to upload twice.
+                await cdp('DOM.setFileInputFiles', {
+                  objectId: objId,
+                  files: [filePath],
+                });
+              };
+
+              const uploadSingleFileToMeta = async (singleFile, idx) => {
+                chooserParams = null;
+                let assignedThis = false;
+                let strategyThis = 'none';
+
+                // Strategy A: Direct <input type="file"> inside active Media surface
+                const directObjId = await findMountedMediaInput();
+                if (directObjId) {
+                  strategyThis = idx === 0 ? 'direct-media-input-serial' : 'direct-media-input-next';
+                  await assignFileToObjectId(directObjId, singleFile);
+                  assignedThis = true;
                 } else {
-                  // Strategy B: Recalculate Add photo/video button, snapshot DOM, click via CDP, and poll
+                  // Strategy B: Click Add photo/video button, then handle fileChooser, mounted input, or upload menu
                   const addBtnInfo = await evalPage(`(() => {
                     const composer =
                       document.querySelector('[data-pagelet="BusinessComposerLayoutContainer"]') ||
@@ -3364,7 +3379,6 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
                     const r = btn.getBoundingClientRect();
                     if (r.width <= 0 || r.height <= 0) return null;
 
-                    // Snapshot existing clickable labels & file input count before clicking
                     const existingTexts = Array.from(document.querySelectorAll('[role="menuitem"], [role="menu"] [role="button"], [role="dialog"] [role="button"], div[role="button"], button'))
                       .map(n => (n.textContent || '').trim())
                       .filter(Boolean);
@@ -3378,164 +3392,167 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
                   })()`);
 
                   if (!addBtnInfo) {
-                    debugNote += 'no-add-btn ';
-                  } else {
-                    await cdpClick(addBtnInfo.x, addBtnInfo.y);
+                    debugNote += `no-add-btn(#${idx + 1}) `;
+                    return { assigned: false, strategy: 'no-add-btn' };
+                  }
 
-                    // Bounded polling (up to 2200ms) for: (1) fileChooserIntercepted, (2) new <input type="file">, or (3) newly opened upload control anywhere in document
-                    const pollStart = Date.now();
-                    let uploadActionCoords = null;
-                    let mountedInputObjId = null;
+                  await cdpClick(addBtnInfo.x, addBtnInfo.y);
 
-                    while (Date.now() - pollStart < 2200) {
-                      if (chooserParams && chooserParams.backendNodeId) {
-                        mediaStrategy = `file-chooser-opened(${chooserParams.mode || 'select'})`;
-                        break;
+                  const pollStart = Date.now();
+                  let uploadActionCoords = null;
+                  let mountedInputObjId = null;
+
+                  while (Date.now() - pollStart < 2500) {
+                    if (chooserParams && chooserParams.backendNodeId) {
+                      strategyThis = `file-chooser-opened(${chooserParams.mode || 'select'})`;
+                      break;
+                    }
+
+                    const mountedCheck = await cdp('Runtime.evaluate', {
+                      expression: `(() => {
+                        const s = document.querySelector('[data-surface*="lib:bizweb_create_post:media"]');
+                        if (s) { const inp = s.querySelector('input[type="file"]'); if (inp && inp.isConnected) return inp; }
+                        const all = Array.from(document.querySelectorAll('input[type="file"]'));
+                        if (all.length > ${addBtnInfo.beforeInputCount}) {
+                          const newer = all.find(el => (el.getAttribute('accept') || '').toLowerCase().includes('image')) || all[all.length - 1];
+                          if (newer) return newer;
+                        }
+                        return null;
+                      })()`,
+                      returnByValue: false,
+                    }).catch(() => null);
+
+                    if (mountedCheck?.result?.objectId) {
+                      mountedInputObjId = mountedCheck.result.objectId;
+                      strategyThis = 'mounted-file-input';
+                      break;
+                    }
+
+                    uploadActionCoords = await evalPage(`(() => {
+                      const prevSet = new Set(${JSON.stringify(addBtnInfo.existingTexts || [])});
+                      const nodes = Array.from(document.querySelectorAll('[role="menuitem"], [role="option"], div[role="button"], button, a[role="button"]'));
+                      const scored = [];
+
+                      for (const n of nodes) {
+                        const r = n.getBoundingClientRect();
+                        if (r.width <= 0 || r.height <= 0) continue;
+                        if (n.closest('[aria-hidden="true"]')) continue;
+                        const label = (n.getAttribute('aria-label') || n.textContent || '').trim();
+                        if (!label || label.length > 80) continue;
+                        const lower = label.toLowerCase();
+
+                        if (/video|reel|template|story|cancel|close|help|learn|settings|publish|boost|finish later/.test(lower)) continue;
+
+                        const isNew = !prevSet.has(label);
+                        const inOverlay = Boolean(n.closest('[role="menu"], [role="dialog"], [role="listbox"], [data-visualcompletion]'));
+                        const dist = Math.hypot((r.left + r.width / 2) - ${addBtnInfo.x}, (r.top + r.height / 2) - ${addBtnInfo.y});
+
+                        let score = 0;
+                        if (/^(add photo|add photos|upload from desktop|upload photo|upload photos|from computer|from device)$/i.test(label)) score += 70;
+                        else if (/(upload from desktop|upload photo|from computer|from device|select from computer|choose file|add photo)/i.test(lower)) score += 40;
+                        else if (isNew && inOverlay && /photo|image|upload/i.test(lower)) score += 30;
+                        else continue;
+
+                        if (isNew) score += 25;
+                        if (inOverlay) score += 20;
+                        if (dist < 320) score += 15;
+
+                        scored.push({ x: r.left + r.width / 2, y: r.top + r.height / 2, label, score, isNew, inOverlay });
                       }
 
-                      const mountedCheck = await cdp('Runtime.evaluate', {
+                      scored.sort((a, b) => b.score - a.score);
+                      return scored[0] || null;
+                    })()`);
+
+                    if (uploadActionCoords) {
+                      strategyThis = `menu-click(${uploadActionCoords.label})`;
+                      break;
+                    }
+
+                    await delay(150);
+                  }
+
+                  if (mountedInputObjId) {
+                    await assignFileToObjectId(mountedInputObjId, singleFile);
+                    assignedThis = true;
+                  } else if (uploadActionCoords && !chooserParams) {
+                    await cdpClick(uploadActionCoords.x, uploadActionCoords.y);
+
+                    const waitStart = Date.now();
+                    while (Date.now() - waitStart < 2500) {
+                      if (chooserParams && chooserParams.backendNodeId) break;
+                      const postClickInput = await cdp('Runtime.evaluate', {
                         expression: `(() => {
                           const s = document.querySelector('[data-surface*="lib:bizweb_create_post:media"]');
-                          if (s) { const inp = s.querySelector('input[type="file"]'); if (inp) return inp; }
+                          if (s) { const inp = s.querySelector('input[type="file"]'); if (inp && inp.isConnected) return inp; }
+                          const menuInp = document.querySelector('[role="menu"] input[type="file"], [role="dialog"] input[type="file"]');
+                          if (menuInp) return menuInp;
                           const all = Array.from(document.querySelectorAll('input[type="file"]'));
-                          if (all.length > ${addBtnInfo.beforeInputCount}) {
-                            const newer = all.find(el => (el.getAttribute('accept') || '').toLowerCase().includes('image')) || all[all.length - 1];
-                            if (newer) return newer;
-                          }
-                          return null;
+                          return all.find(el => (el.getAttribute('accept') || '').toLowerCase().includes('image') && el.multiple) || null;
                         })()`,
                         returnByValue: false,
-                      });
-
-                      if (mountedCheck?.result?.objectId) {
-                        mountedInputObjId = mountedCheck.result.objectId;
-                        mediaStrategy = 'mounted-file-input';
+                      }).catch(() => null);
+                      if (postClickInput?.result?.objectId) {
+                        mountedInputObjId = postClickInput.result.objectId;
+                        strategyThis = 'post-menu-file-input-serial';
+                        await assignFileToObjectId(mountedInputObjId, singleFile);
+                        assignedThis = true;
                         break;
                       }
-
-                      // Search entire document for newly rendered popover/menu upload controls (not limited to role="menu")
-                      uploadActionCoords = await evalPage(`(() => {
-                        const prevSet = new Set(${JSON.stringify(addBtnInfo.existingTexts || [])});
-                        const nodes = Array.from(document.querySelectorAll('[role="menuitem"], [role="option"], div[role="button"], button, a[role="button"]'));
-                        const scored = [];
-
-                        for (const n of nodes) {
-                          const r = n.getBoundingClientRect();
-                          if (r.width <= 0 || r.height <= 0) continue;
-                          if (n.closest('[aria-hidden="true"]')) continue;
-                          const label = (n.getAttribute('aria-label') || n.textContent || '').trim();
-                          if (!label || label.length > 80) continue;
-                          const lower = label.toLowerCase();
-
-                          if (/video|reel|template|story|cancel|close|help|learn|settings|publish|boost|finish later/.test(lower)) continue;
-
-                          const isNew = !prevSet.has(label);
-                          const inOverlay = Boolean(n.closest('[role="menu"], [role="dialog"], [role="listbox"], [data-visualcompletion]'));
-                          const dist = Math.hypot((r.left + r.width / 2) - ${addBtnInfo.x}, (r.top + r.height / 2) - ${addBtnInfo.y});
-
-                          let score = 0;
-                          if (/^(add photo|add photos|upload from desktop|upload photo|upload photos|from computer|from device)$/i.test(label)) score += 70;
-                          else if (/(upload from desktop|upload photo|from computer|from device|select from computer|choose file|add photo)/i.test(lower)) score += 40;
-                          else if (isNew && inOverlay && /photo|image|upload/i.test(lower)) score += 30;
-                          else continue;
-
-                          if (isNew) score += 25;
-                          if (inOverlay) score += 20;
-                          if (dist < 320) score += 15;
-
-                          scored.push({ x: r.left + r.width / 2, y: r.top + r.height / 2, label, score, isNew, inOverlay });
-                        }
-
-                        scored.sort((a, b) => b.score - a.score);
-                        return scored[0] || null;
-                      })()`);
-
-                      if (uploadActionCoords) {
-                        mediaStrategy = `menu-click(${uploadActionCoords.label})`;
-                        break;
-                      }
-
                       await delay(150);
                     }
+                  }
 
-                    if (mountedInputObjId) {
-                      await cdp('DOM.setFileInputFiles', {
-                        objectId: mountedInputObjId,
-                        files: localPaths,
-                      });
-                      await cdp('Runtime.callFunctionOn', {
-                        objectId: mountedInputObjId,
-                        functionDeclaration: `function() {
-                          this.dispatchEvent(new Event("input", { bubbles: true }));
-                          this.dispatchEvent(new Event("change", { bubbles: true }));
-                        }`,
-                      }).catch(() => {});
-                      filesAssigned = true;
-                    } else if (uploadActionCoords && !chooserParams) {
-                      await cdpClick(uploadActionCoords.x, uploadActionCoords.y);
-
-                      // Poll up to 2500ms for fileChooserIntercepted OR a newly mounted <input type="file">
-                      const waitStart = Date.now();
-                      while (Date.now() - waitStart < 2500) {
-                        if (chooserParams && chooserParams.backendNodeId) break;
-                        const postClickInput = await cdp('Runtime.evaluate', {
-                          expression: `(() => {
-                            const s = document.querySelector('[data-surface*="lib:bizweb_create_post:media"]');
-                            if (s) { const inp = s.querySelector('input[type="file"]'); if (inp) return inp; }
-                            const menuInp = document.querySelector('[role="menu"] input[type="file"], [role="dialog"] input[type="file"]');
-                            if (menuInp) return menuInp;
-                            const all = Array.from(document.querySelectorAll('input[type="file"]'));
-                            return all.find(el => (el.getAttribute('accept') || '').toLowerCase().includes('image') && el.multiple) || null;
-                          })()`,
-                          returnByValue: false,
-                        });
-                        if (postClickInput?.result?.objectId) {
-                          mountedInputObjId = postClickInput.result.objectId;
-                          mediaStrategy = 'post-menu-file-input';
-                          await cdp('DOM.setFileInputFiles', {
-                            objectId: mountedInputObjId,
-                            files: localPaths,
-                          });
-                          await cdp('Runtime.callFunctionOn', {
-                            objectId: mountedInputObjId,
-                            functionDeclaration: `function() {
-                              this.dispatchEvent(new Event("input", { bubbles: true }));
-                              this.dispatchEvent(new Event("change", { bubbles: true }));
-                            }`,
-                          }).catch(() => {});
-                          filesAssigned = true;
-                          break;
-                        }
-                        await delay(150);
-                      }
-                    }
-
-                    if (!filesAssigned && chooserParams && chooserParams.backendNodeId) {
-                      mediaStrategy = `file-chooser-opened(${chooserParams.mode || 'select'})`;
-                      await cdp('DOM.setFileInputFiles', {
-                        backendNodeId: chooserParams.backendNodeId,
-                        files: localPaths,
-                      });
-                      filesAssigned = true;
-                    } else if (!filesAssigned) {
-                      await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
-                      await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
-                      await delay(150);
-                      debugNote += uploadActionCoords ? `file-chooser-timeout(${uploadActionCoords.label}) ` : 'no-upload-control-detected ';
-                    }
+                  if (!assignedThis && chooserParams && chooserParams.backendNodeId) {
+                    strategyThis = `file-chooser-opened-serial(${chooserParams.mode || 'select'})`;
+                    await cdp('DOM.setFileInputFiles', {
+                      backendNodeId: chooserParams.backendNodeId,
+                      files: [singleFile],
+                    });
+                    assignedThis = true;
+                  } else if (!assignedThis) {
+                    await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+                    await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+                    await delay(150);
+                    debugNote += uploadActionCoords ? `file-chooser-timeout(${uploadActionCoords.label}) ` : `no-upload-control(#${idx + 1}) `;
                   }
                 }
 
-                // Wait for Meta to process and render uploaded photo thumbnails
+                return { assigned: assignedThis, strategy: strategyThis };
+              };
+
+              try {
+                for (let idx = 0; idx < localPaths.length; idx++) {
+                  const singleFile = localPaths[idx];
+                  const curSnap = await countMediaThumbnails();
+                  const countBeforeThis = curSnap.mediaEls;
+
+                  const stepRes = await uploadSingleFileToMeta(singleFile, idx);
+                  if (idx === 0) mediaStrategy = stepRes.strategy;
+                  if (!stepRes.assigned) {
+                    break;
+                  }
+                  filesAssigned = true;
+
+                  const renderSnap = await waitForMediaThumbnails(countBeforeThis, 12000, 25000);
+                  if (renderSnap.afterCount > countBeforeThis || renderSnap.sawProgress) {
+                    uploadedSuccessCount++;
+                  }
+                  if (idx < localPaths.length - 1) {
+                    await delay(180);
+                  }
+                }
+
+                // Wait for Meta to settle final thumbnails
                 let afterMediaCount = beforeMediaCount;
                 let sawProgress = false;
                 if (filesAssigned) {
-                  const baseWaitMs = Math.min(25000, Math.max(12000, localPaths.length * 2000));
-                  const maxProgressMs = Math.min(60000, Math.max(30000, localPaths.length * 4000));
-                  const resSnap = await waitForMediaThumbnails(beforeMediaCount, baseWaitMs, maxProgressMs);
+                  const resSnap = await waitForMediaThumbnails(beforeMediaCount, 5000, 15000);
                   afterMediaCount = resSnap.afterCount;
                   sawProgress = resSnap.sawProgress;
-                  if (afterMediaCount > beforeMediaCount || sawProgress) {
+                  if (uploadedSuccessCount > 0) {
+                    attachedCount = uploadedSuccessCount;
+                  } else if (afterMediaCount > beforeMediaCount || sawProgress) {
                     attachedCount = localPaths.length;
                   } else {
                     debugNote += `media-not-rendered(${mediaStrategy}) `;
@@ -3565,6 +3582,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
               }
             }
           } finally {
+            globalThis.__bolthavenMetaFillLock?.delete(activeTab.id);
             await chrome.debugger.detach(target).catch(() => {});
           }
 
@@ -3643,6 +3661,13 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         const tiktokHashtags = Array.isArray(payload.hashtags) ? payload.hashtags.filter(Boolean) : [];
         if (tabUrl.includes('tiktok.com') && !result?.skipTextFill && (tiktokDesc || tiktokHashtags.length > 0)) {
           const target = { tabId: activeTab.id };
+          if (globalThis.__bolthavenMetaFillLock && globalThis.__bolthavenMetaFillLock.has(activeTab.id)) {
+            return sendResponse({ success: false, error: 'Meta fill already in progress on this tab' });
+          }
+          if (!globalThis.__bolthavenMetaFillLock) {
+            globalThis.__bolthavenMetaFillLock = new Set();
+          }
+          globalThis.__bolthavenMetaFillLock.add(activeTab.id);
           const cdp = (method, params = {}) => chrome.debugger.sendCommand(target, method, params);
           const evalPage = async (expression) => {
             const r = await cdp('Runtime.evaluate', { expression, returnByValue: true });
@@ -3800,6 +3825,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
           } catch (cdpErr) {
             console.warn('[BOLTHAVEN EXT] TikTok CDP description failed:', cdpErr.message);
           } finally {
+            globalThis.__bolthavenMetaFillLock?.delete(activeTab.id);
             await chrome.debugger.detach(target).catch(() => {});
           }
         }

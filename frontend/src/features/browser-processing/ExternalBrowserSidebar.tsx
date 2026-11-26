@@ -835,6 +835,15 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     })() || '').trim();
   }, [propertyContext?.listingCode]);
 
+  const heroPreviewId = useMemo(() => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return `${code}_${Date.now()}`;
+  }, [boxConfig.id, effectiveListingCode, condoName]);
+
   const [copiedHeroPath, setCopiedHeroPath] = useState(false);
   const [previewModalImage, setPreviewModalImage] = useState<{
     url: string;
@@ -913,7 +922,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     setLatestHeroImage(img);
     try {
       if (img) {
-        const payload = { ...img, nodeId: boxConfig.id, groupName: targetGroupName };
+        const safeUrl =
+          typeof img.url === 'string' && img.url.startsWith('data:') && img.url.length > 200000 && img.fileName
+            ? `http://127.0.0.1:9224/hero-downloaded-image?file=${encodeURIComponent(img.fileName)}`
+            : img.url;
+        const payload = { ...img, url: safeUrl, nodeId: boxConfig.id, groupName: targetGroupName };
         localStorage.setItem(`bolthaven_hero_image_${boxConfig.id}`, JSON.stringify(payload));
         // Only update global bolthaven_last_hero_image if relevant to FB Hero
         if (isImageRelevantToThisNode(img, { title: 'Facebook Hero IMG', browserGroupName: 'FB Hero' } as any, 'FB Hero')) {
@@ -949,6 +962,15 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           const data = await resp.json();
           if (data?.state) {
             setTwoStageStatus(data.state);
+            const activeRunning =
+              Boolean(data.state.is_running) &&
+              data.state.step !== 'completed' &&
+              data.state.step !== 'stopped' &&
+              data.state.step !== 'error';
+            setIsRunningTwoStage(activeRunning);
+            if (activeRunning && data.state.message) {
+              setTwoStageMessage(data.state.message);
+            }
             if (data.state.downloaded_image_url || data.state.downloaded_file) {
               const file = data.state.downloaded_file || '';
               const fileLower = file.toLowerCase();
@@ -959,10 +981,13 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 return; // Belong to another listing code
               }
               // STRICTLY verify relevance to THIS specific node!
+              const stateGroupLow = (data.state.group_name || '').toLowerCase();
+              const targetGroupLow = (targetGroupName || '').toLowerCase();
+              const sameGroup = Boolean(stateGroupLow && targetGroupLow && (stateGroupLow === targetGroupLow || stateGroupLow.includes(targetGroupLow) || targetGroupLow.includes(stateGroupLow)));
               const candidate = {
                 fileName: file,
                 condoName: data.state.condo_name,
-                nodeId: data.state.node_id,
+                nodeId: sameGroup ? boxConfig.id : data.state.node_id,
                 groupName: data.state.group_name,
               };
               if (!isImageRelevantToThisNode(candidate, boxConfig, targetGroupName)) {
@@ -981,6 +1006,14 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
 
               if (condoMatches) {
                 const imgUrl = data.state.downloaded_image_url || `http://127.0.0.1:9224/hero-downloaded-image?file=${encodeURIComponent(file)}`;
+                try {
+                  if (!localStorage.getItem('bolthaven_active_session_listing_code')) {
+                    const codeMatch = file.match(/^([A-Z]{2,5}-\d{4,8}-[A-Z]{2})_/i);
+                    if (codeMatch?.[1]) {
+                      localStorage.setItem('bolthaven_active_session_listing_code', codeMatch[1].toUpperCase());
+                    }
+                  }
+                } catch {}
                 updateLatestHeroImage({
                   url: imgUrl,
                   fileName: file,
@@ -1385,6 +1418,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
       setMatchedCondoInfo(null);
       lastScannedKeyRef.current = '';
       setEnhancedImages([]);
+      setShowOrderModal(false);
+      setOrderDraft([]);
       setQueueJobs([]);
       setAutomationStatus(null);
       setIsAutomating(false);
@@ -1410,6 +1445,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         browserCondoImagesCount: 0,
         condoImages: [],
         imageAttachmentSteps: [],
+        enhancedImagesOrder: undefined,
       });
     };
     window.addEventListener('ea_workflow_cleared', handleWorkflowCleared);
@@ -2008,7 +2044,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
           if (stSig !== lastStatusSigRef.current) {
             lastStatusSigRef.current = stSig;
             setAutomationStatus(status);
-            if (!status.is_running) {
+            if (status.is_running) {
+              setIsAutomating(true);
+            } else {
               setIsAutomating(false);
               if (status.completed !== undefined && status.completed > 0) {
                 setAutomationMessage(`✓ All tabs finished! ${status.completed} images enhanced.`);
@@ -2073,9 +2111,17 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     };
   }, [isAutomating, propertyContext?.id, propertyContext?.listingCode, receivedImages.length]);
 
-  // Notify parent of running state changes (never report running if this step is disabled)
+  // Notify parent of running state changes (only emit false when this node itself transitions from running -> stopped)
+  const wasReportingRunningRef = useRef(false);
   useEffect(() => {
-    onRunningChange?.(boxConfig.enabled !== false && (isAutomating || isRunningTwoStage));
+    const isNowRunning = boxConfig.enabled !== false && (isAutomating || isRunningTwoStage);
+    if (isNowRunning) {
+      wasReportingRunningRef.current = true;
+      onRunningChange?.(true);
+    } else if (wasReportingRunningRef.current) {
+      wasReportingRunningRef.current = false;
+      onRunningChange?.(false);
+    }
   }, [boxConfig.enabled, isAutomating, isRunningTwoStage, onRunningChange]);
 
   // Handler: Start Multi-Tab Automated Queue across all tabs in selected group (supports optional targetPositions for missing photos)
@@ -2282,7 +2328,11 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
     setAutoRunCountdown(null);
     setIsAutomating(false);
     setIsRunningTwoStage(false);
+    onRunningChange?.(false);
     setTwoStageMessage('Automation stopped.');
+    try {
+      window.dispatchEvent(new CustomEvent('ea_workflow_stop_all'));
+    } catch {}
     await stopAutomation();
     setAutomationMessage('Automation stopped.');
     loadQueue();
@@ -2772,7 +2822,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         flexDirection: 'column',
         gap: '8px',
         paddingBottom: '0.75rem',
-        borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9',
+        borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #F1F5F9',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2792,7 +2842,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               height: '56px',
               borderRadius: '6px',
               objectFit: 'cover',
-              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
               boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
               flexShrink: 0,
             }}
@@ -2820,7 +2870,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             style={{
               maxWidth: '92vw',
               maxHeight: '92vh',
-              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+              backgroundColor: isDark ? '#25282B' : '#FFFFFF',
               border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid #CBD5E1',
               borderRadius: '12px',
               boxShadow: '0 24px 48px rgba(0, 0, 0, 0.5), 0 8px 16px rgba(0, 0, 0, 0.25)',
@@ -2839,7 +2889,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 justifyContent: 'space-between',
                 padding: '10px 16px',
                 borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
-                backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                backgroundColor: isDark ? '#181A1D' : '#F8FAFC',
                 gap: '12px',
               }}
             >
@@ -2999,7 +3049,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 style={{
                   padding: '8px 14px',
                   borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
-                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                  backgroundColor: isDark ? '#181A1D' : '#F8FAFC',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
@@ -3228,7 +3278,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   flexShrink: 0,
                   userSelect: 'none',
                 }}
-                title={`Photo #${photoNum} — Click to ${isChecked ? 'unselect' : 'select'}`}
               >
                 <img
                   src={img.url}
@@ -3337,7 +3386,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             style={{
               maxWidth: '92vw',
               maxHeight: '92vh',
-              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+              backgroundColor: isDark ? '#25282B' : '#FFFFFF',
               border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid #CBD5E1',
               borderRadius: '12px',
               boxShadow: '0 24px 48px rgba(0, 0, 0, 0.5), 0 8px 16px rgba(0, 0, 0, 0.25)',
@@ -3356,7 +3405,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 justifyContent: 'space-between',
                 padding: '10px 16px',
                 borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
-                backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                backgroundColor: isDark ? '#181A1D' : '#F8FAFC',
                 gap: '12px',
               }}
             >
@@ -3516,7 +3565,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 style={{
                   padding: '8px 14px',
                   borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
-                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                  backgroundColor: isDark ? '#181A1D' : '#F8FAFC',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
@@ -4591,10 +4640,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 flexDirection: 'column',
                 gap: '0.65rem',
                 padding: '0.875rem 1rem',
-                borderRadius: '12px',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-                border: '1px solid var(--border-color)',
-                boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+                borderRadius: '8px',
+                backgroundColor: isDark ? '#25282B' : '#FFFFFF',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+                boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.05)',
               }}
             >
               {/* Condo / Property Name */}
@@ -4698,16 +4747,14 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      padding: '0.6rem 0.875rem',
-                      borderRadius: '8px',
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
-                      border: '1px solid var(--border-color)',
+                      padding: '0 0 12px 0',
+                      borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #F1F5F9',
                     }}
                   >
-                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 500, color: isDark ? '#7D828A' : '#64748B' }}>
                       Condo Name
                     </span>
-                    <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
+                    <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#ECEEF0' : '#0F172A' }}>
                       {condoName || condoSearchQuery || boxConfig.browserCondoName || boxConfig.title || 'Aspire Erawan Prime'}
                     </span>
                   </div>
@@ -4716,8 +4763,65 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 {/* ── NEW FLOW MODULES FOR HERO NODE ── */}
                 {isHeroNode && (
                   <>
+                    {/* Output File Name Preview */}
+                    {(() => {
+                      const effGrp = (boxConfig.title && boxConfig.title !== 'Tab Group' ? boxConfig.title : (boxConfig.browserGroupName || currentGroup?.name || targetGroupName || 'FB Hero'));
+                      const isTk = (boxConfig.title || '').toLowerCase().includes('tiktok') || effGrp.toLowerCase().includes('tiktok');
+                      const isBh = (boxConfig.title || '').toLowerCase().includes('bolthaven') || effGrp.toLowerCase().includes('bolthaven');
+                      const isDt = (boxConfig.title || '').toLowerCase().includes('dot') || effGrp.toLowerCase().includes('dot');
+                      const pfx = isTk ? (isBh ? 'bolthaven_tiktok_hero' : (isDt ? 'dot_tiktok_hero' : 'tiktok_hero')) : 'fb_hero';
+                      const rawCondo = (matchedCondoInfo?.matched_folder || aiExtractedCondoName || condoSearchQuery || condoName || boxConfig.browserCondoName || 'Property').trim();
+                      const cleanCondo = rawCondo.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 20) || 'Property';
+                      const codePfx = effectiveListingCode ? `${effectiveListingCode}_` : '';
+                      const previewFileName = latestHeroImage?.fileName || `${codePfx}${pfx}_${cleanCondo}_${heroPreviewId}.png`;
+                      const isDownloaded = Boolean(latestHeroImage?.fileName);
+
+                      return (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                            padding: '0 0 12px 0',
+                            borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #F1F5F9',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                            <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
+                              {isDownloaded ? 'Downloaded File Name' : 'Output Name Preview'}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '0.625rem',
+                                fontWeight: 600,
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                backgroundColor: isDownloaded ? 'rgba(63, 185, 80, 0.14)' : (isDark ? '#25282B' : '#E2E8F0'),
+                                color: isDownloaded ? '#3FB950' : (isDark ? '#8B949E' : '#475569'),
+                              }}
+                            >
+                              {isDownloaded ? 'Ready' : 'Preview'}
+                            </span>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 500,
+                              fontFamily: 'monospace',
+                              color: isDark ? '#E6EDF3' : '#0F172A',
+                              overflowWrap: 'anywhere',
+                              wordBreak: 'break-word',
+                              lineHeight: 1.4,
+                            }}
+                          >
+                            {previewFileName}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
                     {/* 1. Prompt Section (Boxless) */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #F1F5F9' }}>
                       <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
                         Prompt
                       </label>
@@ -4775,8 +4879,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                               padding: '6px 8px',
                               fontSize: '0.6875rem',
                               borderRadius: '6px',
-                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+                              backgroundColor: isDark ? '#25282B' : '#FFFFFF',
                               color: isDark ? '#F0F6FC' : '#0F172A',
                               resize: 'vertical',
                               boxSizing: 'border-box',
@@ -5033,7 +5137,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                             condoName: latestHeroImage.condoName || condoName,
                           });
                         }}
-                        title="Click to view full image in modal"
                       >
                         <img
                           src={latestHeroImage.url}
@@ -5465,76 +5568,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               </div>
             )}
 
-            {/* Two-Stage Hero Feedback Banner (when running or status message present) */}
-            {isHeroNode && twoStageMessage && (
-              <div
-                style={{
-                  fontSize: '0.6875rem',
-                  fontWeight: 500,
-                  padding: '7px 11px',
-                  borderRadius: '8px',
-                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.08)',
-                  border: '1px solid rgba(59, 130, 246, 0.25)',
-                  color: isDark ? '#93C5FD' : '#2563EB',
-                  lineHeight: 1.35,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '8px',
-                }}
-              >
-                <span>{twoStageMessage}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        setTwoStageMessage('⬇️ Syncing generated Hero image from browser tab...');
-                        await fetch('http://127.0.0.1:9224/recover-hero-image', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ condo_name: condoName || aiExtractedCondoName || 'hero' }),
-                        });
-                      } catch (e) { }
-                    }}
-                    title="Download the completed Hero image from the active browser tab"
-                    style={{
-                      background: isDark ? '#238636' : '#16A34A',
-                      border: 'none',
-                      color: '#FFFFFF',
-                      cursor: 'pointer',
-                      fontSize: '0.625rem',
-                      fontWeight: 600,
-                      padding: '3px 7px',
-                      borderRadius: '4px',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    Download Now
-                  </button>
-                  {isRunningTwoStage && (
-                    <button
-                      type="button"
-                      onClick={handleStopGroupAutomation}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#EF4444',
-                        cursor: 'pointer',
-                        fontSize: '0.625rem',
-                        fontWeight: 700,
-                        textDecoration: 'underline',
-                        padding: 0,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
             {/* If missing photos exist from previous run, provide 1-click clean "Resume Missing Photos" button */}
             {missingPositions.length > 0 && enhancedImages.length > 0 && !isAutomating && !isRunningTwoStage && !isHeroNode && (
               <button
@@ -5641,8 +5674,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 displayGroups.map((group, groupIdx) => {
                   const isEnhance = group.name.toLowerCase().includes('enhance');
                   const isHero = isHeroNode || group.name.toLowerCase().includes('hero') || group.name.toLowerCase().includes('fb');
-                  const groupBg = isDark ? 'var(--bg-surface)' : '#F8FAFC';
-                  const groupBorder = '1px solid var(--border-color)';
+                  const groupBg = isDark ? '#25282B' : '#F8FAFC';
+                  const groupBorder = isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)';
                   const allGroupTabs = group.tabs || [];
                   // FB Hero pipeline: Direct mode uses exactly 1 tab, 2-Stage uses 2. Show only the tabs actually used.
                   const isDirectHeroPipeline = boxConfig.stagingMode === 'direct_tab2' || boxConfig.skipTab1 === true;
@@ -5826,10 +5859,12 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
+                    maxWidth: '100%',
+                    boxSizing: 'border-box',
                   }}
                 >
                   <FiCheckCircle size={12} style={{ color: '#10B981', flexShrink: 0 }} />
-                  <span>{automationMessage || twoStageMessage}</span>
+                  <span style={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{automationMessage || twoStageMessage}</span>
                 </div>
               )}
             </div>
@@ -6852,7 +6887,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
         }
 
         const runButtonContent = (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', minHeight: '36px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', minHeight: '34px' }}>
             {/* Preview Button */}
             <button
               type="button"
@@ -6862,10 +6897,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 setShowPromptViewSidebox(true);
               }}
               style={{
-                height: '36px',
-                width: '36px',
-                minWidth: '36px',
-                borderRadius: '8px',
+                height: '34px',
+                width: '34px',
+                minWidth: '34px',
+                borderRadius: '7px',
                 border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
                 backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
                 color: 'var(--text-secondary)',
@@ -6921,9 +6956,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   title="Stop active automation"
                   onClick={handleStopGroupAutomation}
                   style={{
-                    height: '36px',
+                    height: '34px',
                     padding: '0 14px',
-                    borderRadius: '8px',
+                    borderRadius: '7px',
                     backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
                     border: isDark ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid #FECACA',
                     color: isDark ? '#F87171' : '#DC2626',
@@ -6964,11 +6999,12 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   }
                 }}
                 style={{
-                  flex: 1,
-                  height: '36px',
-                  borderRadius: '8px',
+                  flex: 'none',
+                  padding: '0 20px',
+                  height: '34px',
+                  borderRadius: '7px',
                   border: '1px solid transparent',
-                  backgroundColor: isDark ? 'var(--accent-primary, #2563EB)' : '#0F172A',
+                  backgroundColor: isDark ? '#326EE6' : '#0F172A',
                   color: '#FFFFFF',
                   fontSize: '0.8125rem',
                   fontWeight: 600,
@@ -6981,10 +7017,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   transition: 'all 0.15s ease',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark ? 'var(--accent-primary-hover, #1D4ED8)' : '#1E293B';
+                  e.currentTarget.style.backgroundColor = isDark ? '#295EC9' : '#1E293B';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark ? 'var(--accent-primary, #2563EB)' : '#0F172A';
+                  e.currentTarget.style.backgroundColor = isDark ? '#326EE6' : '#0F172A';
                 }}
               >
                 <FiPlay size={12} style={{ fill: 'currentColor' }} />
@@ -7193,10 +7229,10 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                             width: '80px',
                             height: '66px',
                             borderRadius: '6px',
-                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                            border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                             overflow: 'hidden',
                             position: 'relative',
-                            backgroundColor: isDark ? '#161B22' : '#F1F5F9',
+                            backgroundColor: isDark ? '#25282B' : '#F1F5F9',
                           }}
                         >
                           {photo.url ? (
@@ -7248,7 +7284,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     style={{
                       padding: '12px',
                       borderRadius: '6px',
-                      border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                      border: isDark ? '1px dashed rgba(255, 255, 255, 0.08)' : '1px dashed #CBD5E1',
                       fontSize: '0.6875rem',
                       color: 'var(--text-muted)',
                       fontStyle: 'italic',
@@ -7292,8 +7328,8 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 <div
                   style={{
                     borderRadius: '6px',
-                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                    backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                    backgroundColor: isDark ? '#181A1D' : '#F8FAFC',
                     padding: '10px 12px',
                     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
                     fontSize: '0.75rem',
@@ -7390,7 +7426,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             style={{
               maxWidth: '92vw',
               maxHeight: '92vh',
-              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+              backgroundColor: isDark ? '#25282B' : '#FFFFFF',
               border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid #CBD5E1',
               borderRadius: '12px',
               boxShadow: '0 24px 48px rgba(0, 0, 0, 0.5), 0 8px 16px rgba(0, 0, 0, 0.25)',
@@ -7409,7 +7445,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 justifyContent: 'space-between',
                 padding: '10px 16px',
                 borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
-                backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                backgroundColor: isDark ? '#181A1D' : '#F8FAFC',
                 gap: '12px',
               }}
             >
@@ -7569,7 +7605,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 style={{
                   padding: '8px 14px',
                   borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
-                  backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                  backgroundColor: isDark ? '#181A1D' : '#F8FAFC',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
@@ -7644,9 +7680,9 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
               width: '100%',
               maxWidth: '520px',
               maxHeight: '85vh',
-              backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+              backgroundColor: isDark ? '#181A1D' : '#FFFFFF',
               borderRadius: '12px',
-              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
               boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65)',
               display: 'flex',
               flexDirection: 'column',
@@ -7660,7 +7696,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: '12px 16px',
-                borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
               }}
             >
               <div>
@@ -7735,14 +7771,14 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                       overflow: 'hidden',
                       border: dragOrderIdx === idx
                         ? '2px solid #3B82F6'
-                        : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
-                      backgroundColor: isDark ? '#161B22' : '#F8FAFC',
+                        : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1'),
+                      backgroundColor: isDark ? '#25282B' : '#F8FAFC',
                       cursor: 'grab',
                       userSelect: 'none',
                       opacity: dragOrderIdx === idx ? 0.6 : 1,
                     }}
                   >
-                    <div style={{ width: '100%', height: '86px', position: 'relative', backgroundColor: '#0D1117' }}>
+                    <div style={{ width: '100%', height: '86px', position: 'relative', backgroundColor: '#181A1D' }}>
                       <img
                         src={imgSrc}
                         alt={img.filename}
@@ -7777,7 +7813,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                           fontSize: '0.58rem',
                           fontWeight: 600,
                         }}
-                        title={`Original file: ${img.filename}`}
                       >
                         #{img.position || idx + 1}
                       </span>
@@ -7815,7 +7850,6 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                         }}
-                        title={img.filename}
                       >
                         {img.filename}
                       </span>
@@ -7848,7 +7882,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: '10px 16px',
-                borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
                 gap: '8px',
               }}
             >
@@ -7862,7 +7896,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                   height: '32px',
                   padding: '0 10px',
                   borderRadius: '6px',
-                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                   backgroundColor: 'transparent',
                   color: isDark ? '#8B949E' : '#64748B',
                   fontSize: '0.72rem',
@@ -7880,7 +7914,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     height: '32px',
                     padding: '0 12px',
                     borderRadius: '6px',
-                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                     backgroundColor: 'transparent',
                     color: isDark ? '#E2E8F0' : '#334155',
                     fontSize: '0.72rem',

@@ -73,6 +73,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let activeItem = null;
   let batchStart = 0;
   let selectedBoxId = '';
+  let batchProgressMap = {};
 
   // 1. Load saved profile, box assignment, sidebar state, and cached dispatch items
   const stored = await chrome.storage.local.get([
@@ -81,7 +82,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     'bolthavenDispatchItems',
     'bolthavenBatchSize',
     'bolthavenSidebarOpen',
+    'bolthavenBatchProgress',
   ]);
+  if (stored.bolthavenBatchProgress && typeof stored.bolthavenBatchProgress === 'object') {
+    batchProgressMap = stored.bolthavenBatchProgress;
+  }
+  const getSavedBatchStart = (item) => {
+    if (!item?.id) return 0;
+    const entry = batchProgressMap[item.id];
+    if (!entry) return item.nextBatchStart || 0;
+    if (entry.updatedAt && item.updatedAt && entry.updatedAt !== item.updatedAt) {
+      return 0;
+    }
+    return Number(entry.start) || 0;
+  };
+  const saveBatchProgress = (item, start) => {
+    if (!item?.id) return;
+    batchProgressMap[item.id] = { start, updatedAt: item.updatedAt || '' };
+    chrome.storage.local.set({ bolthavenBatchProgress: batchProgressMap }).catch(() => {});
+  };
   const setSidebarOpen = (open) => {
     document.documentElement.classList.toggle('sidebar-open', open);
     document.body.classList.toggle('sidebar-open', open);
@@ -230,7 +249,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       platformBadge.textContent = 'Meta Business';
       if (tiktokTitleWrap) tiktokTitleWrap.style.display = 'none';
       if (tiktokHashtagsWrap) tiktokHashtagsWrap.style.display = 'none';
-      if (tiktokBatchBar) tiktokBatchBar.style.display = 'none';
+      if (tiktokBatchBar) tiktokBatchBar.style.display = 'flex';
       if (descLabelText) descLabelText.textContent = 'Description';
     } else if (p === 'tiktok') {
       platformBadge.classList.add('tiktok');
@@ -270,10 +289,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    const effectivePlatform = detectedTabPlatform !== 'auto' ? detectedTabPlatform : (activeItem?.platform || 'auto');
     const size = Number(batchSizeSelect.value) || 5;
 
-    if (effectivePlatform !== 'meta' && batchStart >= total) {
+    if (batchStart >= total) {
       batchStart = total;
       batchProgressText.textContent = `All ${total}/${total} uploaded ✓`;
       if (fillBtn && !isFilling) {
@@ -460,12 +478,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   resetBatchBtn?.addEventListener('click', () => {
     batchStart = 0;
+    saveBatchProgress(activeItem, 0);
     updateBatchSummary();
   });
 
   // Sync Queue from Mac Companion
-  async function syncDispatchQueue() {
-    if (syncDispatchLabel) syncDispatchLabel.textContent = 'Syncing...';
+  async function syncDispatchQueue(isBackground = false) {
+    if (!isBackground && syncDispatchLabel) syncDispatchLabel.textContent = 'Syncing...';
     chrome.runtime.sendMessage(
       {
         action: 'SYNC_DISPATCH',
@@ -475,35 +494,48 @@ document.addEventListener('DOMContentLoaded', async () => {
       },
       (res) => {
         if (res && res.success) {
+          const prevItem = activeItem;
           dispatchItems = (res.items || []).slice().sort((a, b) => Number(hasItemContent(b)) - Number(hasItemContent(a)));
           populateBoxSelector();
           const matching = selectedBoxId
             ? dispatchItems.filter((x) => (x.boxId || x.id) === selectedBoxId)
             : dispatchItems;
-          activeItem = matching.find(hasItemContent) || matching[0] || dispatchItems.find(hasItemContent) || dispatchItems[0] || null;
-          batchStart = activeItem?.nextBatchStart || 0;
-          renderQueueSelector(matching);
-          if (syncDispatchLabel) syncDispatchLabel.textContent = `Synced (${dispatchItems.length})`;
-        } else {
+          const nextItem = matching.find(hasItemContent) || matching[0] || dispatchItems.find(hasItemContent) || dispatchItems[0] || null;
+          const isSameUnchangedItem =
+            prevItem &&
+            nextItem &&
+            prevItem.id === nextItem.id &&
+            (prevItem.updatedAt || '') === (nextItem.updatedAt || '') &&
+            (prevItem.images?.length || 0) === (nextItem.images?.length || 0);
+
+          if (!isBackground || !isSameUnchangedItem) {
+            activeItem = nextItem;
+            batchStart = isSameUnchangedItem ? batchStart : getSavedBatchStart(nextItem);
+            renderQueueSelector(matching);
+          }
+          if (!isBackground && syncDispatchLabel) syncDispatchLabel.textContent = `Synced (${dispatchItems.length})`;
+        } else if (!isBackground) {
           if (syncDispatchLabel) syncDispatchLabel.textContent = 'Sync Failed';
         }
-        setTimeout(() => {
-          if (syncDispatchLabel) syncDispatchLabel.textContent = 'Sync Queue';
-        }, 1800);
+        if (!isBackground) {
+          setTimeout(() => {
+            if (syncDispatchLabel) syncDispatchLabel.textContent = 'Sync Queue';
+          }, 1800);
+        }
       }
     );
   }
 
-  syncDispatchBtn?.addEventListener('click', syncDispatchQueue);
+  syncDispatchBtn?.addEventListener('click', () => syncDispatchQueue(false));
 
   // Auto-sync on popup open and periodically while popup stays open
-  syncDispatchQueue();
+  syncDispatchQueue(false);
   setInterval(() => {
     const focused = document.activeElement;
     const isEditingField =
       focused === previewTitle || focused === previewDesc || focused === previewHashtags;
     if (!isFilling && !isEditingField) {
-      syncDispatchQueue();
+      syncDispatchQueue(true);
     }
   }, 5000);
 
@@ -550,16 +582,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let batchImages = [];
     if (selectedImages.length > 0) {
-      if (effectivePlatform === 'meta') {
-        // Meta Business Suite accepts all selected photos in one fill
-        batchImages = selectedImages;
-      } else {
-        if (batchStart >= selectedImages.length) {
-          updateBatchSummary();
-          return;
-        }
-        batchImages = selectedImages.slice(batchStart, batchStart + batchSize);
+      if (batchStart >= selectedImages.length) {
+        updateBatchSummary();
+        return;
       }
+      batchImages = selectedImages.slice(batchStart, batchStart + batchSize);
     }
 
     if (!titleVal && !descVal && batchImages.length === 0) {
@@ -590,8 +617,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         setFillLoading(false);
         const lastErr = chrome.runtime.lastError?.message;
         if (res && res.success) {
-          if (selectedImages.length > 0 && effectivePlatform !== 'meta') {
+          if (selectedImages.length > 0) {
             batchStart += batchImages.length;
+            saveBatchProgress(activeItem, batchStart);
             updateBatchSummary();
             if (batchStart >= selectedImages.length) {
               fillBtn.disabled = true;

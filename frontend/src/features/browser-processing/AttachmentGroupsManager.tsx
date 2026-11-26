@@ -585,18 +585,16 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
               </span>
               <span
                 style={{
-                  fontSize: '0.59375rem',
+                  fontSize: '0.625rem',
                   fontWeight: 600,
-                  padding: '1px 6px',
-                  borderRadius: '10px',
-                  backgroundColor: totalCondoImagesCount > 0
-                    ? (isDark ? 'rgba(88, 166, 255, 0.1)' : '#EFF6FF')
-                    : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
-                  color: totalCondoImagesCount > 0 ? (isDark ? '#58A6FF' : '#2563EB') : 'var(--text-muted)',
-                  border: isDark ? '1px solid rgba(88, 166, 255, 0.3)' : '1px solid #CBD5E1',
+                  padding: '2px 7px',
+                  borderRadius: '5px',
+                  backgroundColor: isDark ? '#2A2D32' : '#F1F5F9',
+                  color: isDark ? '#B4B8BE' : '#475569',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #CBD5E1',
                 }}
               >
-                {totalCondoImagesCount}/10 Total
+                {totalCondoImagesCount}/10
               </span>
             </div>
             <div style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>
@@ -622,10 +620,9 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
               <div
                 key={step.id}
                 style={{
-                  borderRadius: '6px',
-                  border: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.025)' : '#F8FAFC',
-                  padding: '10px 12px',
+                  borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                  backgroundColor: 'transparent',
+                  padding: '8px 0 12px 0',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '8px',
@@ -715,20 +712,20 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                         <div
                           style={{
                             flex: 1,
-                            height: '26px',
-                            padding: '0 8px',
-                            borderRadius: '4px',
-                            border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
-                            backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-                            color: isDark ? '#F0F6FC' : '#0F172A',
-                            fontSize: '0.65625rem',
+                            height: '30px',
+                            padding: '0 10px',
+                            borderRadius: '6px',
+                            border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #CBD5E1',
+                            backgroundColor: isDark ? '#25282B' : '#FFFFFF',
+                            color: isDark ? '#ECEEF0' : '#0F172A',
+                            fontSize: '0.72rem',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '6px',
                             overflow: 'hidden',
                           }}
                         >
-                          <FiFolder size={11} style={{ color: '#58A6FF', flexShrink: 0 }} />
+                          <FiFolder size={12} style={{ color: isDark ? '#9BA1A8' : '#64748B', flexShrink: 0 }} />
                           <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', fontWeight: 500 }}>
                             {condoName || step.folderName || 'Condo Building'}
                           </span>
@@ -740,13 +737,13 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                             onClick={() => setActiveFolderDropdownStepId(activeFolderDropdownStepId === step.id ? null : step.id)}
                             style={{
                               width: '100%',
-                              height: '26px',
-                              padding: '0 8px',
-                              borderRadius: '4px',
-                              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                              backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-                              color: isDark ? '#F0F6FC' : '#0F172A',
-                              fontSize: '0.65625rem',
+                              height: '30px',
+                              padding: '0 10px',
+                              borderRadius: '6px',
+                              border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #CBD5E1',
+                              backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
+                              color: isDark ? '#ECEEF0' : '#0F172A',
+                              fontSize: '0.72rem',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'space-between',
@@ -914,23 +911,19 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                         display: 'inline-flex',
                                         alignItems: 'center',
                                         gap: '4px',
-                                        fontSize: '0.5625rem',
-                                        fontWeight: 700,
-                                        padding: '1.5px 6px',
-                                        borderRadius: '4px',
-                                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7',
-                                        color: isDark ? '#34D399' : '#15803D',
-                                        border: isDark ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid #BBF7D0',
+                                        fontSize: '0.625rem',
+                                        fontWeight: 600,
+                                        color: isDark ? '#9BA1A8' : '#475569',
                                         flexShrink: 0,
                                       }}
                                       title="Folder photos loaded and ready"
                                     >
-                                      <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: isDark ? '#34D399' : '#15803D' }} />
-                                      Loaded
+                                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }} />
+                                      Ready
                                     </span>
                                   )}
-                                  <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {`Found ${effectiveFolderImages.length} photos in ${condoName || step.folderName || 'folder'}`}
+                                  <span style={{ fontSize: '0.625rem', color: isDark ? '#7D828A' : '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {`${effectiveFolderImages.length} photos in ${condoName || step.folderName || 'folder'}`}
                                   </span>
                                 </div>
                               )}
@@ -946,18 +939,18 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                                     style={{
                                       height: '26px',
                                       padding: '0 10px',
-                                      borderRadius: '8px',
+                                      borderRadius: '6px',
                                       fontSize: '0.6875rem',
                                       fontWeight: 500,
                                       border: isManuallyChosen
-                                        ? (isDark ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid #93C5FD')
+                                        ? (isDark ? '1px solid rgba(255, 255, 255, 0.18)' : '1px solid #94A3B8')
                                         : (isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)'),
                                       backgroundColor: isManuallyChosen
-                                        ? (isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF')
-                                        : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
+                                        ? (isDark ? '#2A2D32' : '#E2E8F0')
+                                        : (isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9'),
                                       color: isManuallyChosen
-                                        ? (isDark ? '#93C5FD' : '#1D4ED8')
-                                        : 'var(--text-secondary)',
+                                        ? (isDark ? '#ECEEF0' : '#0F172A')
+                                        : (isDark ? '#9BA1A8' : 'var(--text-secondary)'),
                                       boxShadow: 'none',
                                       cursor: 'pointer',
                                       display: 'inline-flex',
@@ -1187,13 +1180,13 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                       <div
                         style={{
                           width: '100%',
-                          height: '26px',
-                          padding: '0 8px',
-                          borderRadius: '4px',
-                          border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
-                          backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-                          color: isDark ? '#F0F6FC' : '#0F172A',
-                          fontSize: '0.65625rem',
+                          height: '30px',
+                          padding: '0 10px',
+                          borderRadius: '6px',
+                          border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #CBD5E1',
+                          backgroundColor: isDark ? '#25282B' : '#FFFFFF',
+                          color: isDark ? '#ECEEF0' : '#0F172A',
+                          fontSize: '0.72rem',
                           fontWeight: 500,
                           display: 'flex',
                           alignItems: 'center',
@@ -1201,19 +1194,19 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
-                          <FiLayers size={11} style={{ color: '#58A6FF', flexShrink: 0 }} />
+                          <FiLayers size={12} style={{ color: isDark ? '#9BA1A8' : '#64748B', flexShrink: 0 }} />
                           <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {selectedSource?.title || 'Select workflow source...'}
                           </span>
                         </div>
                         <span
                           style={{
-                            fontSize: '0.5625rem',
-                            padding: '1px 5px',
-                            borderRadius: '8px',
-                            backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                            color: isDark ? '#8B949E' : '#64748B',
-                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                            fontSize: '0.625rem',
+                            padding: '1px 6px',
+                            borderRadius: '5px',
+                            backgroundColor: isDark ? '#2A2D32' : '#F1F5F9',
+                            color: isDark ? '#9BA1A8' : '#64748B',
+                            border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
                           }}
                         >
                           {sourceImages.length} photo{sourceImages.length !== 1 ? 's' : ''}
@@ -1226,13 +1219,13 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                           onClick={() => setActiveWorkflowDropdownStepId(activeWorkflowDropdownStepId === step.id ? null : step.id)}
                           style={{
                             width: '100%',
-                            height: '26px',
-                            padding: '0 8px',
-                            borderRadius: '4px',
-                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                            backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-                            color: isDark ? '#F0F6FC' : '#0F172A',
-                            fontSize: '0.65625rem',
+                            height: '30px',
+                            padding: '0 10px',
+                            borderRadius: '6px',
+                            border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #CBD5E1',
+                            backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
+                            color: isDark ? '#ECEEF0' : '#0F172A',
+                            fontSize: '0.72rem',
                             fontWeight: 500,
                             display: 'flex',
                             alignItems: 'center',
@@ -1241,7 +1234,7 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
-                            <FiLayers size={11} style={{ color: '#58A6FF', flexShrink: 0 }} />
+                            <FiLayers size={12} style={{ color: isDark ? '#9BA1A8' : '#64748B', flexShrink: 0 }} />
                             <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {selectedSource?.title || 'Select workflow source...'}
                             </span>
@@ -1586,12 +1579,12 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
               }}
               style={{
                 height: '32px',
-                borderRadius: '6px',
-                border: isDark ? '1px dashed #388BFD' : '1px dashed #3B82F6',
-                backgroundColor: isDark ? 'rgba(56, 139, 253, 0.04)' : 'rgba(59, 130, 246, 0.04)',
+                borderRadius: '7px',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid #CBD5E1',
+                backgroundColor: 'transparent',
                 color: totalCondoImagesCount >= 10
                   ? (isDark ? '#484F58' : '#94A3B8')
-                  : (isDark ? '#58A6FF' : '#2563EB'),
+                  : (isDark ? '#ECEEF0' : '#0F172A'),
                 fontSize: '0.6875rem',
                 fontWeight: 600,
                 cursor: totalCondoImagesCount >= 10 ? 'not-allowed' : 'pointer',
@@ -1603,14 +1596,14 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
               }}
               onMouseEnter={(e) => {
                 if (totalCondoImagesCount < 10) {
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(56, 139, 253, 0.12)' : 'rgba(59, 130, 246, 0.1)';
-                  e.currentTarget.style.borderColor = isDark ? '#58A6FF' : '#1D4ED8';
+                  e.currentTarget.style.backgroundColor = isDark ? '#2A2D32' : '#F1F5F9';
+                  e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.2)' : '#94A3B8';
                 }
               }}
               onMouseLeave={(e) => {
                 if (totalCondoImagesCount < 10) {
-                  e.currentTarget.style.backgroundColor = isDark ? 'rgba(56, 139, 253, 0.04)' : 'rgba(59, 130, 246, 0.04)';
-                  e.currentTarget.style.borderColor = isDark ? '#388BFD' : '#3B82F6';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#CBD5E1';
                 }
               }}
             >

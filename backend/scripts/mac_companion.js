@@ -2793,13 +2793,25 @@ function mergeTabGroups(scannedGroups, liveGroups) {
       is_running: false,
       updated_at: new Date().toISOString(),
     };
+    const stoppedAt = new Date().toISOString();
     twoStageState = {
       ...twoStageState,
       is_running: false,
       step: 'stopped',
       error: 'Stopped by user',
-      updated_at: new Date().toISOString(),
+      updated_at: stoppedAt,
     };
+    for (const key of Object.keys(twoStageStates)) {
+      if (twoStageStates[key]) {
+        twoStageStates[key] = {
+          ...twoStageStates[key],
+          is_running: false,
+          step: 'stopped',
+          error: 'Stopped by user',
+          updated_at: stoppedAt,
+        };
+      }
+    }
     // Broadcast STOP_AUTOMATION to EVERY known profile so all browser windows/extensions halt immediately!
     const activeProfiles = new Set([
       ...Object.keys(lastPollTimeByProfile),
@@ -3586,7 +3598,11 @@ function mergeTabGroups(scannedGroups, liveGroups) {
                 // Strictly exclude ancient files from previous days/sessions (max 2 hours old)
                 if (Date.now() - stat.mtimeMs > 2 * 60 * 60 * 1000) continue;
                 const sanitized = lower.replace(/[^a-z0-9]/g, '');
-                const matchesCondo = !reqCondo || sanitized.includes(reqCondo);
+                const matchesCondo =
+                  !reqCondo ||
+                  sanitized.includes(reqCondo) ||
+                  (reqCondo.length >= 12 && sanitized.includes(reqCondo.slice(0, 12))) ||
+                  Boolean(reqListingCode && lower.includes(reqListingCode));
                 if (matchesCondo) {
                   candidateFiles.push({ name: f, path: fullP, mtime: stat.mtimeMs });
                 }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { showMacNotification } from '../../components/ui/MacNotification';
 import {
   FiSearch,
   FiPlus,
@@ -140,8 +141,13 @@ export const FacebookPropertyFinderView: React.FC<FacebookPropertyFinderViewProp
   const [isTestingTelegram, setIsTestingTelegram] = useState(false);
 
   const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
+    const lower = msg.toLowerCase();
+    const isErr = lower.includes('fail') || lower.includes('error') || msg.includes('⚠️') || msg.includes('❌');
+    showMacNotification({
+      title: isErr ? 'Action Failed' : 'Notification',
+      message: msg,
+      type: isErr ? 'danger' : 'success',
+    });
   };
 
   const loadAllData = async () => {

@@ -835,10 +835,15 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       e.stopPropagation();
       e.preventDefault();
     }
-    const next = uploadedImages.filter((img) => img.id !== idToRemove);
+    const next = uploadedImages.filter(
+      (img) => img.id !== idToRemove && !String(idToRemove || '').startsWith(`${img.id}_`)
+    );
     setUploadedImages(next);
-    const nextSource = next.length > 0 ? 'upload' : (isHeroCropNode ? 'generate' : 'get_images');
+    const nextSource = next.length > 0 ? 'upload' : imageSource;
     setImageSource(nextSource);
+    clearCropSlicesCache();
+    setFormattedPreviewItems([]);
+    setLiveFormattedPhotos({});
     onUpdateBox(box.id, {
       uploadedImages: next,
       imageSource: nextSource,
@@ -1213,7 +1218,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       return rawList;
     }
 
-    // When upstream is an Enhance node (or custom-ordered enhanced photos exist), show enhanced photos in order
+    // When upstream or selected source is an Enhance node, show ONLY enhanced photos (do not fall back to raw Get Images)
     if (isEnhanceSource || (hasEnhancedPhotos && customOrder.length > 0)) {
       const enhancedIndices = Object.keys(mergedEnhancedPhotos).map(Number).filter((n) => !isNaN(n));
       const maxEnhanced = enhancedIndices.length > 0 ? Math.max(...enhancedIndices) + 1 : 0;
@@ -1227,12 +1232,16 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           (mergedEnhancedPhotos as any)[String(idx)] ||
           (mergedEnhancedPhotos as any)[String(photoNum)];
 
-        const rawImg = effectiveImageList?.[idx];
-        const rawUrl = rawImg
-          ? (watermarkedPhotos?.[idx] || (typeof rawImg.index === 'number' ? watermarkedPhotos?.[rawImg.index] : undefined) || (rawImg.stored_url ? (rawImg.stored_url.startsWith('http') ? rawImg.stored_url : `http://localhost:8085${rawImg.stored_url}`) : rawImg.source_url))
-          : '';
+        const effectiveUrl = isEnhanceSource
+          ? enhancedUrl
+          : enhancedUrl ||
+            (() => {
+              const rawImg = effectiveImageList?.[idx];
+              return rawImg
+                ? (watermarkedPhotos?.[idx] || (typeof rawImg.index === 'number' ? watermarkedPhotos?.[rawImg.index] : undefined) || (rawImg.stored_url ? (rawImg.stored_url.startsWith('http') ? rawImg.stored_url : `http://localhost:8085${rawImg.stored_url}`) : rawImg.source_url))
+                : '';
+            })();
 
-        const effectiveUrl = enhancedUrl || rawUrl;
         if (!effectiveUrl) {
           continue;
         }
@@ -1248,7 +1257,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         });
       }
 
-      if (rawList.length > 0) return rawList;
+      if (isEnhanceSource || rawList.length > 0) return rawList;
     }
 
     // 1. Get Images (Raw extracted or fallback studio images)
@@ -1780,8 +1789,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                 ? `Uploaded Files (${activePhotosToFormat.length} Photos)`
                 : imageSource === 'generate'
                 ? `${heroLabel} (${effectiveHeroImage && effectiveHeroImage.url ? '1 Photo' : '0 Photos'})`
-                : imageSource === 'enhance' || isUpstreamEnhance
-                ? `${enhanceLabel} (${activePhotosToFormat.length > 0 ? `${activePhotosToFormat.length} Photos` : 'Waiting for Enhance IMG'})`
+                : isEnhanceSource || imageSource === 'enhance' || isUpstreamEnhance
+                ? `${enhanceLabel} (${activePhotosToFormat.length > 0 ? `${activePhotosToFormat.length} Photos` : 'Waiting for Enhanced Photos'})`
                 : `Get Images (${activePhotosToFormat.length} Photos)`}
             </div>
           </div>
@@ -1801,47 +1810,6 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             }
           }}
         />
-
-        {onOpenSettingsSidebox && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onOpenSettingsSidebox();
-            }}
-            title="Configure Crop Format & Source in Settings"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
-              height: '28px',
-              padding: '0 10px',
-              borderRadius: '8px',
-              border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-              color: 'var(--text-secondary)',
-              fontSize: '0.6875rem',
-              fontWeight: 500,
-              cursor: 'pointer',
-              flexShrink: 0,
-              pointerEvents: 'auto',
-              userSelect: 'none',
-              transition: 'all 0.15s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0';
-              e.currentTarget.style.color = 'var(--text-primary)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9';
-              e.currentTarget.style.color = 'var(--text-secondary)';
-            }}
-          >
-            <FiSettings size={12} style={{ pointerEvents: 'none' }} />
-            <span style={{ pointerEvents: 'none' }}>Settings</span>
-          </button>
-        )}
       </div>
 
       {/* Processed Photos Live Preview */}
@@ -1912,13 +1880,13 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                   alignItems: 'center',
                   gap: '5px',
                   padding: '0 10px',
-                  height: '26px',
+                  height: '28px',
                   borderRadius: '8px',
                   fontSize: '0.6875rem',
                   fontWeight: 500,
-                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF',
-                  border: isDark ? '1px solid rgba(59, 130, 246, 0.35)' : '1px solid #BFDBFE',
-                  color: isDark ? '#93C5FD' : '#2563EB',
+                  backgroundColor: isDark ? '#25282B' : '#FFFFFF',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #CBD5E1',
+                  color: isDark ? '#ECEEF0' : '#0F172A',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
                 }}
@@ -1937,13 +1905,13 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                   alignItems: 'center',
                   gap: '5px',
                   padding: '0 10px',
-                  height: '26px',
+                  height: '28px',
                   borderRadius: '8px',
                   fontSize: '0.6875rem',
                   fontWeight: 500,
-                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5',
-                  border: isDark ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid #A7F3D0',
-                  color: isDark ? '#6EE7B7' : '#059669',
+                  backgroundColor: isDark ? '#25282B' : '#FFFFFF',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #CBD5E1',
+                  color: isDark ? '#ECEEF0' : '#0F172A',
                   cursor: isProcessingCrop ? 'not-allowed' : 'pointer',
                   transition: 'all 0.15s ease',
                 }}
@@ -1976,13 +1944,13 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                   alignItems: 'center',
                   gap: '5px',
                   padding: '0 10px',
-                  height: '26px',
+                  height: '28px',
                   borderRadius: '8px',
                   fontSize: '0.6875rem',
                   fontWeight: 500,
-                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
-                  border: isDark ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid #FECACA',
-                  color: isDark ? '#F87171' : '#DC2626',
+                  backgroundColor: isDark ? '#25282B' : '#FFFFFF',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #CBD5E1',
+                  color: isDark ? '#ECEEF0' : '#0F172A',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
                 }}
@@ -1998,12 +1966,12 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               display: 'grid',
               gridTemplateColumns: displayPreviewItems.length === 2 ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
               gap: '8px',
-              maxHeight: '340px',
+              maxHeight: '520px',
               overflowY: 'auto',
-              padding: '6px',
+              padding: '8px',
               borderRadius: '8px',
-              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-              backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+              backgroundColor: isDark ? '#25282B' : '#F8FAFC',
               opacity: box.enabled === false ? 0.45 : 1,
               filter: box.enabled === false ? 'grayscale(0.85)' : 'none',
               transition: 'all 0.2s ease',
@@ -2046,7 +2014,6 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                     boxShadow: isSelected ? '0 0 10px rgba(59, 130, 246, 0.4)' : 'none',
                     transition: 'all 0.15s ease',
                   }}
-                  title={`Click to view ${item.label} full size`}
                 >
                   <div
                     style={{
@@ -2155,17 +2122,24 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                           alignItems: 'center',
                           justifyContent: 'center',
                         }}
-                        title="Click to view full size"
                       >
                         <FiMaximize2 size={13} />
                       </div>
 
                       {/* Delete button if photo is an uploaded file */}
-                      {uploadedImages.some((u) => u.id === item.sourcePhotoId || item.id?.startsWith('up-') || item.sourcePhotoId?.startsWith('up-')) && (
-                        <button
-                          type="button"
-                          onClick={(e) => handleRemoveUploadedImage(item.sourcePhotoId, e)}
-                          title="Remove uploaded image"
+                      {(() => {
+                        const matchedUpload = uploadedImages.find(
+                          (u) => u.id === item.sourcePhotoId || u.id === item.id || String(item.id || '').startsWith(`${u.id}_`)
+                        );
+                        if (!matchedUpload && !item.id?.startsWith('up-') && !item.sourcePhotoId?.startsWith('up-')) {
+                          return null;
+                        }
+                        const removeId = matchedUpload?.id || item.sourcePhotoId || item.id;
+                        return (
+                          <button
+                            type="button"
+                            onClick={(e) => handleRemoveUploadedImage(removeId, e)}
+                            title="Remove uploaded image"
                           style={{
                             width: '28px',
                             height: '28px',
@@ -2181,10 +2155,11 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                           }}
                           onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#DC2626')}
                           onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.85)')}
-                        >
-                          <FiTrash2 size={12} />
-                        </button>
-                      )}
+                          >
+                            <FiTrash2 size={12} />
+                          </button>
+                        );
+                      })()}
                     </div>
 
                     {/* Photo or Tile Number Badge */}

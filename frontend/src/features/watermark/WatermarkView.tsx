@@ -2074,7 +2074,9 @@ export const WatermarkView: React.FC = () => {
           cropZoom
         );
         const base64Data = dataUrl.split(',')[1];
-        const filename = `${img.name.replace(/\.[^/.]+$/, '')}-${targetWidth}x${targetHeight}.${ext}`;
+        const cleanBase = img.name.replace(/\.[^/.]+$/, '');
+        const dimSuffix = activePresetId === 'original' ? 'original' : `${targetWidth}x${targetHeight}`;
+        const filename = `${String(i + 1).padStart(2, '0')}_${cleanBase}-${dimSuffix}.${ext}`;
         zip.file(filename, base64Data, { base64: true });
       }
 
@@ -7527,6 +7529,81 @@ export const WatermarkView: React.FC = () => {
             </div>
           </div>
         )}
+          </div>
+
+          {/* Sticky Sidebar Download Footer */}
+          <div
+            style={{
+              padding: '0.75rem 1rem',
+              borderTop: isDark ? '1px solid #30363D' : '1px solid var(--border-color)',
+              backgroundColor: isDark ? '#161B22' : 'var(--bg-surface)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              flexShrink: 0,
+            }}
+          >
+            <button
+              type="button"
+              onClick={handleDownloadSingle}
+              disabled={!activeImage || isExporting || isSlicing || isDownloadingAllDirect}
+              style={{
+                flex: 1,
+                height: '34px',
+                padding: '0 0.75rem',
+                borderRadius: '7px',
+                border: isDark ? '1px solid #30363D' : '1px solid var(--border-color)',
+                backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+                color: isDark ? '#E6EDF3' : 'var(--text-primary)',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                cursor: !activeImage || isExporting || isSlicing || isDownloadingAllDirect ? 'not-allowed' : 'pointer',
+                opacity: !activeImage ? 0.5 : 1,
+                whiteSpace: 'nowrap',
+              }}
+              title="Download active image"
+            >
+              <FiDownload size={13} />
+              <span>{images.length > 1 ? 'Download Current' : 'Download Image'}</span>
+            </button>
+
+            {images.length > 1 && (
+              <button
+                type="button"
+                onClick={handleDownloadAllZip}
+                disabled={isExporting || isSlicing || isDownloadingAllDirect}
+                style={{
+                  flex: 1,
+                  height: '34px',
+                  padding: '0 0.75rem',
+                  borderRadius: '7px',
+                  border: isDark ? '1px solid #30363D' : '1px solid #0F172A',
+                  backgroundColor: isDark ? '#21262D' : '#0F172A',
+                  color: '#F0F6FC',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  cursor: isExporting || isSlicing || isDownloadingAllDirect ? 'not-allowed' : 'pointer',
+                  opacity: isExporting || isSlicing || isDownloadingAllDirect ? 0.65 : 1,
+                  whiteSpace: 'nowrap',
+                }}
+                title="Download all batch images as a single ZIP"
+              >
+                {isExporting ? (
+                  <FiRefreshCw className="animate-spin" size={13} />
+                ) : (
+                  <FiDownload size={13} />
+                )}
+                <span>{isExporting ? 'Zipping...' : `Download All (${images.length})`}</span>
+              </button>
+            )}
           </div>
         </aside>
       </div>

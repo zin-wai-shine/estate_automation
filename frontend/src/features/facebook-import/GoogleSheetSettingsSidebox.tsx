@@ -14,6 +14,7 @@ import {
 } from 'react-icons/fi';
 import { SiGooglesheets } from 'react-icons/si';
 import { Select } from '../../components/ui/Select';
+import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { type DynamicAIBoxConfig } from './FacebookWorkflowCanvas';
 
 const DEFAULT_SERVICE_ACCOUNT_EMAIL = 'bolthaven-sheets@super-realestate-488219.iam.gserviceaccount.com';
@@ -112,7 +113,7 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
       style={embedded ? {
         width: '100%',
         height: '100%',
-        backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+        backgroundColor: isDark ? '#25282B' : '#FFFFFF',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
@@ -125,8 +126,8 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
         right: '380px', // sits right alongside the 380px main sidebar inspector
         width: '440px',
         maxWidth: 'calc(100vw - 420px)',
-        backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-        borderLeft: '1px solid var(--border-color)',
+        backgroundColor: isDark ? '#25282B' : '#FFFFFF',
+        borderLeft: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
         borderRight: 'none',
         boxShadow: isDark
           ? '-16px 0 20px -6px rgba(0, 0, 0, 0.75)'
@@ -144,11 +145,14 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: '1rem',
-          padding: '0.875rem 1rem',
+          padding: '0 1.125rem',
           height: '62px',
+          minHeight: '62px',
+          maxHeight: '62px',
           boxSizing: 'border-box',
-          borderBottom: 'none',
-          backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+          flexShrink: 0,
+          borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+          backgroundColor: isDark ? '#25282B' : '#FFFFFF',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0, flex: 1 }}>
@@ -182,41 +186,10 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
             >
               Google Sheet Connection & Credentials
             </div>
-            <div style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B', marginTop: '2px', fontWeight: 500 }}>
+            <div style={{ fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B', marginTop: '2px', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               Spreadsheet destination and Google Cloud service account key
             </div>
           </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onClose();
-            }}
-            title="Close Settings (Esc)"
-            aria-label="Close"
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-              color: 'var(--text-secondary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              flexShrink: 0,
-              pointerEvents: 'auto',
-              userSelect: 'none',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <FiX size={14} style={{ pointerEvents: 'none' }} />
-          </button>
         </div>
       </div>
 
@@ -278,8 +251,8 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
               height: '34px',
               padding: '0 0.625rem',
               borderRadius: '6px',
-              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-              backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+              backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
               color: 'var(--text-primary)',
               fontSize: '0.75rem',
               boxSizing: 'border-box',
@@ -303,8 +276,8 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
                 height: '34px',
                 padding: '0 0.625rem',
                 borderRadius: '6px',
-                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+                backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
                 color: 'var(--text-primary)',
                 fontSize: '0.75rem',
                 boxSizing: 'border-box',
@@ -321,8 +294,8 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
                 height: '34px',
                 padding: '0 0.85rem',
                 borderRadius: '6px',
-                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
                 color: 'var(--text-primary)',
                 fontSize: '0.75rem',
                 fontWeight: 600,
@@ -360,8 +333,8 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
                 gap: '4px',
                 padding: '6px',
                 borderRadius: '6px',
-                backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
-                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                backgroundColor: isDark ? '#1D1F22' : '#F1F5F9',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                 maxHeight: '90px',
                 overflowY: 'auto',
               }}
@@ -374,8 +347,8 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
                     fontWeight: 600,
                     padding: '2px 7px',
                     borderRadius: '12px',
-                    backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
-                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
                     color: 'var(--text-primary)',
                   }}
                 >
@@ -407,8 +380,8 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
             style={{
               padding: '0.55rem 0.65rem',
               borderRadius: '6px',
-              backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+              backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -436,7 +409,7 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
                 padding: '4px 8px',
                 borderRadius: '4px',
                 border: '1px solid var(--border-color)',
-                backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
                 color: copiedEmail ? '#10B981' : 'var(--text-primary)',
                 fontSize: '0.625rem',
                 fontWeight: 600,
@@ -516,8 +489,8 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
                   height: '32px',
                   padding: '0 0.75rem',
                   borderRadius: '6px',
-                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                  backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
                   color: isDark ? '#FCA5A5' : '#DC2626',
                   fontSize: '0.6875rem',
                   fontWeight: 600,
@@ -574,39 +547,40 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
           style={{
             padding: '0.875rem',
             borderRadius: '8px',
-            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+            border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
             display: 'flex',
             flexDirection: 'column',
             gap: '0.625rem',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <FiTag size={14} style={{ color: 'var(--accent-primary, #3B82F6)' }} />
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              <FiTag size={14} style={{ color: '#326EE6' }} />
+              <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Listing Code Generator
               </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={boxConfig.useGeneratedCode ?? true}
-                  onChange={(e) => onUpdateBoxConfig({ useGeneratedCode: e.target.checked })}
-                  style={{ cursor: 'pointer' }}
-                />
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>Use in Prompts</span>
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={boxConfig.autoGenerateCode ?? true}
-                  onChange={(e) => onUpdateBoxConfig({ autoGenerateCode: e.target.checked })}
-                  style={{ cursor: 'pointer' }}
-                />
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>Auto-generate</span>
-              </label>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', paddingTop: '2px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Use in Prompts</span>
+              <ToggleSwitch
+                checked={boxConfig.useGeneratedCode ?? true}
+                onChange={(checked) => onUpdateBoxConfig({ useGeneratedCode: checked })}
+                size="sm"
+                activeColor="#326EE6"
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Auto-generate</span>
+              <ToggleSwitch
+                checked={boxConfig.autoGenerateCode ?? true}
+                onChange={(checked) => onUpdateBoxConfig({ autoGenerateCode: checked })}
+                size="sm"
+                activeColor="#326EE6"
+              />
             </div>
           </div>
 
@@ -657,22 +631,21 @@ export const GoogleSheetSettingsSidebox: React.FC<GoogleSheetSettingsSideboxProp
               placeholder="e.g. AAA-######-AA"
               style={{
                 width: '100%',
-                height: '34px',
+                height: '36px',
                 padding: '0 10px',
                 fontSize: '0.75rem',
                 fontFamily: 'monospace',
                 fontWeight: 600,
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                backgroundColor: isDark ? '#1D1F22' : '#F8FAFC',
                 color: 'var(--text-primary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+                borderRadius: '8px',
+                boxSizing: 'border-box',
                 outline: 'none',
               }}
             />
           </div>
         </div>
-
-        <div style={{ height: '2.5rem' }} />
       </div>
     </div>
   );

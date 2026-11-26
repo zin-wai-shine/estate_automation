@@ -113,10 +113,10 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
     boxConfig.tabGroupMode === 'generate'
       ? 'generate'
       : boxConfig.tabGroupMode === 'enhance'
-      ? 'enhance'
-      : nodeTitle.includes('enhance')
-      ? 'enhance'
-      : 'generate';
+        ? 'enhance'
+        : nodeTitle.includes('enhance')
+          ? 'enhance'
+          : 'generate';
 
   const [tabGroupMode, setTabGroupMode] = useState<'generate' | 'enhance'>(initialMode);
   const isEnhance = tabGroupMode === 'enhance';
@@ -201,7 +201,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
             }))
           );
         }
-      } catch (_) {}
+      } catch (_) { }
     };
     loadEnhanced();
     return () => {
@@ -644,7 +644,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
           setIndexedCondoFolders(data.folders);
         }
       }
-    } catch (e) {}
+    } catch (e) { }
   };
 
   // Listen for global workflow cleared event (Clear Canvas Data & Results)
@@ -729,42 +729,38 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
     setTimeout(() => setCopiedPrompt(false), 2000);
   };
 
-  // Apple HIG Segmented Control Styles
+  // Clean Matte Segmented Control Styles
   const appleTrackStyle: React.CSSProperties = {
     display: 'inline-flex',
     alignItems: 'center',
     padding: '2px',
-    borderRadius: '8px',
-    backgroundColor: isDark ? 'rgba(118, 118, 128, 0.24)' : 'rgba(118, 118, 128, 0.12)',
-    border: isDark ? '0.5px solid rgba(255, 255, 255, 0.08)' : '0.5px solid rgba(0, 0, 0, 0.08)',
-    boxShadow: isDark ? 'inset 0 1px 2px rgba(0, 0, 0, 0.35)' : 'inset 0 1px 2px rgba(0, 0, 0, 0.06)',
+    borderRadius: '7px',
+    backgroundColor: isDark ? '#1D1F22' : 'rgba(118, 118, 128, 0.12)',
+    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '0.5px solid rgba(0, 0, 0, 0.08)',
+    boxShadow: 'none',
     gap: '2px',
   };
 
   const getAppleSegmentStyle = (isActive: boolean): React.CSSProperties => ({
-    padding: '3px 10px',
-    borderRadius: '6px',
-    border: 'none',
+    padding: '4px 10px',
+    borderRadius: '5px',
+    border: isActive
+      ? (isDark ? '1px solid rgba(255, 255, 255, 0.16)' : '1px solid rgba(0, 0, 0, 0.08)')
+      : '1px solid transparent',
     fontSize: '0.625rem',
     fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, sans-serif',
     fontWeight: isActive ? 600 : 500,
     letterSpacing: '-0.01em',
     cursor: 'pointer',
     background: isActive
-      ? (isDark
-          ? 'linear-gradient(180deg, #1C8BFF 0%, #0071E3 100%)'
-          : 'linear-gradient(180deg, #0077ED 0%, #0066CC 100%)')
+      ? (isDark ? '#2A2D32' : '#FFFFFF')
       : 'transparent',
     color: isActive
-      ? '#FFFFFF'
-      : (isDark ? 'rgba(255, 255, 255, 0.72)' : 'rgba(0, 0, 0, 0.65)'),
-    boxShadow: isActive
-      ? (isDark
-          ? '0 1px 3px rgba(0, 0, 0, 0.4), inset 0 0.5px 0.5px rgba(255, 255, 255, 0.4)'
-          : '0 1px 2px rgba(0, 102, 204, 0.25), inset 0 0.5px 0.5px rgba(255, 255, 255, 0.45)')
-      : 'none',
-    textShadow: isActive ? '0 0.5px 1px rgba(0, 0, 0, 0.25)' : 'none',
-    transition: 'all 0.16s cubic-bezier(0.16, 1, 0.3, 1)',
+      ? (isDark ? '#ECEEF0' : '#0F172A')
+      : (isDark ? '#7D828A' : 'rgba(0, 0, 0, 0.65)'),
+    boxShadow: 'none',
+    textShadow: 'none',
+    transition: 'all 0.15s ease',
     whiteSpace: 'nowrap',
     outline: 'none',
     userSelect: 'none',
@@ -778,7 +774,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
       style={embedded ? {
         width: '100%',
         height: '100%',
-        backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+        backgroundColor: isDark ? '#25282B' : '#FFFFFF',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
@@ -789,12 +785,12 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
         top: 0,
         bottom: 0,
         right: '380px', // sits smoothly right alongside the 380px main sidebar inspector
-        width: '420px',
+        width: '320px',
         maxWidth: 'calc(100vw - 420px)',
-        backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-        borderLeft: '1px solid var(--border-color)',
-        borderRight: '1px solid var(--border-color)',
-        boxShadow: isDark ? '-12px 0 35px rgba(0, 0, 0, 0.75)' : '-6px 0 24px rgba(0, 0, 0, 0.08)',
+        backgroundColor: isDark ? '#25282B' : '#FFFFFF',
+        borderLeft: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+        borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+        boxShadow: isDark ? '-12px 0 35px rgba(0, 0, 0, 0.65)' : '-6px 0 24px rgba(0, 0, 0, 0.08)',
         zIndex: 169,
         display: 'flex',
         flexDirection: 'column',
@@ -807,9 +803,14 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '0.875rem 1.125rem',
-          borderBottom: 'none',
-          backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+          padding: '0 1.125rem',
+          height: '62px',
+          minHeight: '62px',
+          maxHeight: '62px',
+          boxSizing: 'border-box',
+          flexShrink: 0,
+          borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+          backgroundColor: isDark ? '#25282B' : '#FFFFFF',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
@@ -836,33 +837,6 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
             </div>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onClose();
-          }}
-          title="Close Settings Sidebox"
-          style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '8px',
-            border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-            color: 'var(--text-secondary)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            pointerEvents: 'auto',
-            userSelect: 'none',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <FiX size={14} style={{ pointerEvents: 'none' }} />
-        </button>
       </div>
 
       {/* ── Scrollable Body ───────────────────────────────────────────────────── */}
@@ -870,7 +844,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
         style={{
           flex: 1,
           overflowY: 'auto',
-          padding: '1rem',
+          padding: '1rem 1rem 3rem 1rem',
           display: 'flex',
           flexDirection: 'column',
           gap: '0.75rem',
@@ -883,9 +857,9 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
             alignItems: 'center',
             gap: '4px',
             padding: '3px',
-            borderRadius: '9px',
-            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : 'rgba(0, 0, 0, 0.05)',
-            border: '1px solid var(--border-color)',
+            borderRadius: '8px',
+            backgroundColor: isDark ? '#1D1F22' : 'rgba(0, 0, 0, 0.05)',
+            border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
           }}
         >
           <button
@@ -904,21 +878,19 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
               justifyContent: 'center',
               gap: '6px',
               padding: '6px 10px',
-              borderRadius: '7px',
+              borderRadius: '6px',
               fontSize: '0.6875rem',
-              fontWeight: tabGroupMode === 'generate' ? 700 : 500,
+              fontWeight: tabGroupMode === 'generate' ? 600 : 500,
               backgroundColor: tabGroupMode === 'generate'
-                ? (isDark ? 'rgba(59, 130, 246, 0.22)' : '#FFFFFF')
+                ? (isDark ? '#2A2D32' : '#FFFFFF')
                 : 'transparent',
               color: tabGroupMode === 'generate'
-                ? (isDark ? '#60A5FA' : '#2563EB')
-                : 'var(--text-muted)',
+                ? (isDark ? '#ECEEF0' : '#0F172A')
+                : (isDark ? '#7D828A' : 'var(--text-muted)'),
               border: tabGroupMode === 'generate'
-                ? (isDark ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(0,0,0,0.08)')
+                ? (isDark ? '1px solid rgba(255, 255, 255, 0.16)' : '1px solid rgba(0,0,0,0.08)')
                 : '1px solid transparent',
-              boxShadow: tabGroupMode === 'generate'
-                ? (isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.06)')
-                : 'none',
+              boxShadow: 'none',
               cursor: 'pointer',
               transition: 'all 0.15s ease',
             }}
@@ -943,21 +915,19 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
               justifyContent: 'center',
               gap: '6px',
               padding: '6px 10px',
-              borderRadius: '7px',
+              borderRadius: '6px',
               fontSize: '0.6875rem',
-              fontWeight: tabGroupMode === 'enhance' ? 700 : 500,
+              fontWeight: tabGroupMode === 'enhance' ? 600 : 500,
               backgroundColor: tabGroupMode === 'enhance'
-                ? (isDark ? 'rgba(16, 185, 129, 0.22)' : '#FFFFFF')
+                ? (isDark ? '#2A2D32' : '#FFFFFF')
                 : 'transparent',
               color: tabGroupMode === 'enhance'
-                ? (isDark ? '#34D399' : '#059669')
-                : 'var(--text-muted)',
+                ? (isDark ? '#ECEEF0' : '#0F172A')
+                : (isDark ? '#7D828A' : 'var(--text-muted)'),
               border: tabGroupMode === 'enhance'
-                ? (isDark ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(0,0,0,0.08)')
+                ? (isDark ? '1px solid rgba(255, 255, 255, 0.16)' : '1px solid rgba(0,0,0,0.08)')
                 : '1px solid transparent',
-              boxShadow: tabGroupMode === 'enhance'
-                ? (isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.06)')
-                : 'none',
+              boxShadow: 'none',
               cursor: 'pointer',
               transition: 'all 0.15s ease',
               whiteSpace: 'nowrap',
@@ -972,7 +942,7 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
         {isHero && (
           <>
             {/* Section: Prompt (Boxless) */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #F1F5F9' }}>
               <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
                 Prompt
               </label>
@@ -1051,9 +1021,9 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                     options={
                       effectiveUpstreamPrompts.length > 0
                         ? effectiveUpstreamPrompts.map((p) => ({
-                            label: `${p.title} (AI Model)`,
-                            value: p.id,
-                          }))
+                          label: `${p.title} (AI Model)`,
+                          value: p.id,
+                        }))
                         : [{ label: 'BoltHaven-FB Hero Prompt (AI Model)', value: 'default' }]
                     }
                     height="34px"
@@ -1171,20 +1141,17 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          padding: '6px 10px',
-                          borderRadius: '6px',
-                          backgroundColor: isDark ? '#161B22' : '#F8FAFC',
-                          border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                          padding: '4px 0',
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                           <img
                             src={referenceImageData}
                             alt="Ref preview"
-                            style={{ width: '36px', height: '36px', borderRadius: '4px', objectFit: 'cover' }}
+                            style={{ width: '32px', height: '32px', borderRadius: '5px', objectFit: 'cover' }}
                           />
-                          <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#10B981' }}>
-                            ● Photo Attached
+                          <div style={{ fontSize: '0.6875rem', fontWeight: 500, color: isDark ? '#9BA1A8' : '#475569' }}>
+                            Reference attached
                           </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1568,435 +1535,383 @@ export const FBHeroSettingsSidebox: React.FC<FBHeroSettingsSideboxProps> = ({
           </>
         )}
 
-            {/* ── 6. Tab Groups & Pipelines ── */}
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.5rem',
-                padding: '0.875rem 1rem',
-                borderRadius: '12px',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-                border: '1px solid var(--border-color)',
-                boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+        {/* ── 6. Tab Groups & Pipelines ── */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.5rem',
+            padding: '14px 0 4px 0',
+            borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #F1F5F9',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+              <FiLayers size={15} style={{ color: isDark ? '#7D828A' : '#64748B', flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: isDark ? '#ECEEF0' : 'var(--text-primary)' }}>
+                  Tab Groups &amp; Pipelines
+                </div>
+                <div style={{ fontSize: '0.625rem', color: isDark ? '#7D828A' : 'var(--text-muted)' }}>
+                  Multi-tab browser group orchestration
+                </div>
+              </div>
+            </div>
+
+            <ToggleSwitch
+              checked={showTabGroupsPipelines}
+              onChange={(val) => {
+                setShowTabGroupsPipelines(val);
+                updateSettings({ showTabGroupsPipelines: val });
               }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                  <div
+              size="sm"
+              activeColor="#3B82F6"
+            />
+          </div>
+
+          <div style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+            Display multi-pipeline Chrome tab workers and live group execution controls.
+          </div>
+
+          {showTabGroupsPipelines && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginTop: '4px' }}>
+              {/* Target Group Row */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '4px 0',
+                }}
+              >
+                <span style={{ fontSize: '0.6875rem', color: isDark ? '#7D828A' : 'var(--text-muted)' }}>Target Group</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: isDark ? '#ECEEF0' : 'var(--text-primary)' }}>
+                  {boxConfig.browserGroupName || boxConfig.title || 'Enhance IMG'}
+                </span>
+              </div>
+
+              {/* Worker Tab Mode (Existing Group Tabs vs Fresh New Tabs) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                <div style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                  Worker Tabs Source:
+                </div>
+                <div style={{ ...appleTrackStyle, display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWorkerTabMode('existing_tabs');
+                      updateSettings({ workerTabMode: 'existing_tabs' });
+                    }}
+                    style={{ ...getAppleSegmentStyle(workerTabMode === 'existing_tabs' && !isOpeningFreshTabs), textAlign: 'center', justifyContent: 'center' }}
+                  >
+                    Existing Group Tabs
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isOpeningFreshTabs}
+                    onClick={handleOpenFreshTabs}
                     style={{
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '7px',
-                      backgroundColor: 'rgba(139, 92, 246, 0.12)',
-                      color: '#8B5CF6',
-                      display: 'flex',
-                      alignItems: 'center',
+                      ...getAppleSegmentStyle(workerTabMode === 'new_tabs' || isOpeningFreshTabs),
+                      textAlign: 'center',
                       justifyContent: 'center',
-                      flexShrink: 0,
+                      opacity: isOpeningFreshTabs ? 0.75 : 1,
                     }}
                   >
-                    <FiLayers size={14} />
+                    {isOpeningFreshTabs ? 'Opening Tabs...' : 'Open Fresh Tabs'}
+                  </button>
+                </div>
+                <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', paddingLeft: '2px' }}>
+                  {workerTabMode === 'existing_tabs'
+                    ? 'Uses pre-configured conversation worker URLs.'
+                    : 'Opens clean ChatGPT tabs without past chat history, memorizes them, and switches to existing tabs.'}
+                </div>
+              </div>
+
+              {/* Worker Tab Count Selector (1, 2, 3, 4) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                    Parallel Workers:
+                  </span>
+                  <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#9BA1A8' : '#475569' }}>
+                    {isHero && stagingMode === 'direct_tab2'
+                      ? '1 Tab Worker (Direct Mode)'
+                      : `${workerTabCount} ${workerTabCount === 1 ? 'Tab Worker' : 'Tabs Concurrent'}`}
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '5px' }}>
+                  {[1, 2, 3, 4].map((count) => {
+                    const effectiveCount = isHero && stagingMode === 'direct_tab2' ? 1 : workerTabCount;
+                    const isSelected = effectiveCount === count;
+                    const isDisabledForDirect = isHero && stagingMode === 'direct_tab2' && count > 1;
+                    return (
+                      <button
+                        key={count}
+                        type="button"
+                        disabled={isDisabledForDirect}
+                        onClick={() => {
+                          if (isDisabledForDirect) return;
+                          setWorkerTabCount(count);
+                          if (isHero) {
+                            const nextMode = count === 1 ? 'direct_tab2' : 'two_stage_tabs';
+                            setStagingMode(nextMode);
+                            updateSettings({
+                              workerTabCount: count,
+                              browserWorkerCount: count,
+                              stagingMode: nextMode,
+                              skipTab1: count === 1,
+                              subtitle: `${count} ${count === 1 ? 'Tab' : 'Tabs'}`,
+                            });
+                          } else {
+                            updateSettings({
+                              workerTabCount: count,
+                              browserWorkerCount: count,
+                              subtitle: `${count} ${count === 1 ? 'Tab' : 'Tabs'}`,
+                            });
+                          }
+                        }}
+                        style={{
+                          padding: '6px 0',
+                          fontSize: '0.72rem',
+                          fontWeight: isSelected ? 600 : 500,
+                          borderRadius: '6px',
+                          cursor: isDisabledForDirect ? 'not-allowed' : 'pointer',
+                          opacity: isDisabledForDirect ? 0.4 : 1,
+                          transition: 'all 0.15s ease',
+                          border: isSelected
+                            ? (isDark ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid #94A3B8')
+                            : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)'),
+                          backgroundColor: isSelected
+                            ? (isDark ? '#2A2D32' : '#E2E8F0')
+                            : (isDark ? '#1D1F22' : '#FFFFFF'),
+                          color: isSelected
+                            ? (isDark ? '#ECEEF0' : '#0F172A')
+                            : (isDark ? '#7D828A' : 'var(--text-primary)'),
+                        }}
+                      >
+                        {count} {count === 1 ? 'tab' : 'tabs'}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: '0.625rem', color: isDark ? '#7D828A' : 'var(--text-muted)', paddingLeft: '2px' }}>
+                  {isHero && stagingMode === 'direct_tab2'
+                    ? 'Direct Mode works in 1 tab: attaches Reference Image (1st) + 3 Condo Photos + Prompt -> Generates & Downloads Image.'
+                    : workerTabCount === 1
+                      ? '1 photo processed sequentially (safest from rate limits).'
+                      : `${workerTabCount} photos processed simultaneously in parallel (${workerTabCount}x speed).`}
+                </div>
+              </div>
+
+              {/* Session Re-use Toggle */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 0',
+                  borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #F1F5F9',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: isDark ? '#ECEEF0' : 'var(--text-primary)' }}>
+                    Reuse Tabs on Next Run
                   </div>
-                  <div>
-                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {isHero ? '6. Tab Groups & Pipelines' : '3. Tab Groups & Pipelines'}
-                    </div>
-                    <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                      Multi-tab browser group orchestration
-                    </div>
+                  <div style={{ fontSize: '0.625rem', color: isDark ? '#7D828A' : 'var(--text-muted)' }}>
+                    Re-running targets previously opened tabs without opening new ones
                   </div>
                 </div>
 
                 <ToggleSwitch
-                  checked={showTabGroupsPipelines}
+                  checked={reuseSessionTabs}
                   onChange={(val) => {
-                    setShowTabGroupsPipelines(val);
-                    updateSettings({ showTabGroupsPipelines: val });
+                    setReuseSessionTabs(val);
+                    updateSettings({ reuseSessionTabs: val });
                   }}
                   size="sm"
-                  activeColor="#3B82F6"
+                  activeColor="#326EE6"
                 />
               </div>
 
-              <div style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
-                Display multi-pipeline Chrome tab workers and live group execution controls.
-              </div>
-
-              {showTabGroupsPipelines && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginTop: '4px' }}>
-                  {/* Target Group Row */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '6px 10px',
-                      borderRadius: '8px',
-                      backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : '#F1F5F9',
-                      border: '1px solid var(--border-color)',
-                    }}
-                  >
-                    <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>Target Group:</span>
-                    <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {boxConfig.browserGroupName || boxConfig.title || 'Enhance IMG'}
+              {/* ── Memorized Worker Tabs Pipeline Display ── */}
+              {reuseSessionTabs && (
+                <div
+                  style={{
+                    paddingTop: '10px',
+                    borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #F1F5F9',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <FiLayers size={13} style={{ color: isDark ? '#9BA1A8' : '#64748B' }} />
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: isDark ? '#ECEEF0' : 'var(--text-primary)' }}>
+                        Memorized Worker Tabs
+                      </span>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: '0.625rem',
+                        fontWeight: 600,
+                        color: isDark ? '#9BA1A8' : 'var(--text-muted)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: '6px',
+                          height: '6px',
+                          borderRadius: '50%',
+                          backgroundColor: memorizedTabs.length > 0 ? '#10B981' : '#7D828A',
+                        }}
+                      />
+                      {memorizedTabs.length > 0 ? `${memorizedTabs.length} Tabs Bound` : 'Awaiting First Run'}
                     </span>
                   </div>
 
-                  {/* Worker Tab Mode (Existing Group Tabs vs Fresh New Tabs) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                    <div style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                      Worker Tabs Source:
-                    </div>
-                    <div style={{ ...appleTrackStyle, display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setWorkerTabMode('existing_tabs');
-                          updateSettings({ workerTabMode: 'existing_tabs' });
-                        }}
-                        style={{ ...getAppleSegmentStyle(workerTabMode === 'existing_tabs' && !isOpeningFreshTabs), textAlign: 'center', justifyContent: 'center' }}
-                      >
-                        Existing Group Tabs
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={isOpeningFreshTabs}
-                        onClick={handleOpenFreshTabs}
-                        style={{
-                          ...getAppleSegmentStyle(workerTabMode === 'new_tabs' || isOpeningFreshTabs),
-                          textAlign: 'center',
-                          justifyContent: 'center',
-                          opacity: isOpeningFreshTabs ? 0.75 : 1,
-                        }}
-                      >
-                        {isOpeningFreshTabs ? 'Opening Tabs...' : 'Open Fresh Tabs'}
-                      </button>
-                    </div>
-                    <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', paddingLeft: '2px' }}>
-                      {workerTabMode === 'existing_tabs'
-                        ? 'Uses pre-configured conversation worker URLs.'
-                        : 'Opens clean ChatGPT tabs without past chat history, memorizes them, and switches to existing tabs.'}
-                    </div>
+                  <div style={{ fontSize: '0.625rem', color: isDark ? '#7D828A' : 'var(--text-muted)', lineHeight: 1.4 }}>
+                    Workflow targets and executes exclusively inside these remembered tab links. When browser reopens, these exact URLs are restored automatically.
                   </div>
 
-                  {/* Worker Tab Count Selector (1, 2, 3, 4) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                        Parallel Workers:
-                      </span>
-                      <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#3B82F6' }}>
-                        {isHero && stagingMode === 'direct_tab2'
-                          ? '1 Tab Worker (Direct Mode)'
-                          : `${workerTabCount} ${workerTabCount === 1 ? 'Tab Worker' : 'Tabs Concurrent'}`}
-                      </span>
-                    </div>
+                  {/* Tab Link Rows */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '2px' }}>
+                    {Array.from({ length: workerTabCount }).map((_, idx) => {
+                      const mem = memorizedTabs[idx];
+                      const tabNum = idx + 1;
+                      const displayUrl = mem?.url ? mem.url.replace('https://', '') : 'https://chatgpt.com/ (Will memorize upon processing)';
+                      const isBound = Boolean(mem?.url);
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
-                      {[1, 2, 3, 4].map((count) => {
-                        const effectiveCount = isHero && stagingMode === 'direct_tab2' ? 1 : workerTabCount;
-                        const isSelected = effectiveCount === count;
-                        const isDisabledForDirect = isHero && stagingMode === 'direct_tab2' && count > 1;
-                        return (
-                          <button
-                            key={count}
-                            type="button"
-                            disabled={isDisabledForDirect}
-                            onClick={() => {
-                              if (isDisabledForDirect) return;
-                              setWorkerTabCount(count);
-                              if (isHero) {
-                                const nextMode = count === 1 ? 'direct_tab2' : 'two_stage_tabs';
-                                setStagingMode(nextMode);
-                                updateSettings({
-                                  workerTabCount: count,
-                                  browserWorkerCount: count,
-                                  stagingMode: nextMode,
-                                  skipTab1: count === 1,
-                                  subtitle: `${count} ${count === 1 ? 'Tab' : 'Tabs'}`,
-                                });
-                              } else {
-                                updateSettings({
-                                  workerTabCount: count,
-                                  browserWorkerCount: count,
-                                  subtitle: `${count} ${count === 1 ? 'Tab' : 'Tabs'}`,
-                                });
-                              }
-                            }}
-                            style={{
-                              padding: '5px 0',
-                              fontSize: '0.6875rem',
-                              fontWeight: 700,
-                              borderRadius: '6px',
-                              cursor: isDisabledForDirect ? 'not-allowed' : 'pointer',
-                              opacity: isDisabledForDirect ? 0.4 : 1,
-                              transition: 'all 0.15s ease',
-                              border: isSelected ? '1px solid #3B82F6' : '1px solid var(--border-color)',
-                              backgroundColor: isSelected ? '#3B82F6' : (isDark ? 'rgba(0,0,0,0.15)' : '#FFFFFF'),
-                              color: isSelected ? '#FFFFFF' : 'var(--text-primary)',
-                            }}
-                          >
-                            {count} {count === 1 ? 'tab' : 'tabs'}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', paddingLeft: '2px' }}>
-                      {isHero && stagingMode === 'direct_tab2'
-                        ? 'Direct Mode works in 1 tab: attaches Reference Image (1st) + 3 Condo Photos + Prompt -> Generates & Downloads Image.'
-                        : workerTabCount === 1
-                          ? '1 photo processed sequentially (safest from rate limits).'
-                          : `${workerTabCount} photos processed simultaneously in parallel (${workerTabCount}x speed).`}
-                    </div>
-                  </div>
-
-                  {/* Session Re-use Toggle */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '6px 10px',
-                      borderRadius: '8px',
-                      backgroundColor: isDark ? 'rgba(0,0,0,0.15)' : '#F8FAFC',
-                      border: '1px solid var(--border-color)',
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        Reuse Tabs on Next Run
-                      </div>
-                      <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
-                        Re-running targets previously opened tabs without opening new ones
-                      </div>
-                    </div>
-
-                    <ToggleSwitch
-                      checked={reuseSessionTabs}
-                      onChange={(val) => {
-                        setReuseSessionTabs(val);
-                        updateSettings({ reuseSessionTabs: val });
-                      }}
-                      size="sm"
-                      activeColor="#10B981"
-                    />
-                  </div>
-
-                  {/* ── Memorized Worker Tabs Pipeline Display ── */}
-                  {reuseSessionTabs && (
-                    <div
-                      style={{
-                        marginTop: '8px',
-                        padding: '10px',
-                        borderRadius: '8px',
-                        backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : '#F1F5F9',
-                        border: isDark ? '1px solid rgba(6, 182, 212, 0.25)' : '1px solid #CBD5E1',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <FiLayers size={13} style={{ color: '#06B6D4' }} />
-                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                            Memorized Worker Tabs
-                          </span>
-                        </div>
-                        <span
+                      return (
+                        <div
+                          key={tabNum}
                           style={{
-                            fontSize: '0.5625rem',
-                            fontWeight: 700,
-                            padding: '2px 7px',
-                            borderRadius: '10px',
-                            backgroundColor: memorizedTabs.length > 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(100, 116, 139, 0.15)',
-                            color: memorizedTabs.length > 0 ? '#10B981' : 'var(--text-muted)',
-                            border: memorizedTabs.length > 0 ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(100, 116, 139, 0.3)',
-                          }}
-                        >
-                          {memorizedTabs.length > 0 ? `● ${memorizedTabs.length} Tabs Bound` : '○ Awaiting First Run'}
-                        </span>
-                      </div>
-
-                      <div style={{ fontSize: '0.5625rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>
-                        Workflow targets and executes exclusively inside these remembered tab links. When browser reopens, these exact URLs are restored automatically.
-                      </div>
-
-                      {/* Tab Link Rows */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
-                        {Array.from({ length: workerTabCount }).map((_, idx) => {
-                          const mem = memorizedTabs[idx];
-                          const tabNum = idx + 1;
-                          const displayUrl = mem?.url ? mem.url.replace('https://', '') : 'https://chatgpt.com/ (Will memorize upon processing)';
-                          const isBound = Boolean(mem?.url);
-
-                          return (
-                            <div
-                              key={tabNum}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: '6px',
-                                padding: '5px 8px',
-                                borderRadius: '6px',
-                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-                                border: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #E2E8F0',
-                                fontSize: '0.625rem',
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
-                                <span
-                                  style={{
-                                    fontSize: '0.5625rem',
-                                    fontWeight: 700,
-                                    padding: '1px 5px',
-                                    borderRadius: '3px',
-                                    backgroundColor: isBound ? 'rgba(6, 182, 212, 0.15)' : 'rgba(100, 116, 139, 0.15)',
-                                    color: isBound ? '#06B6D4' : 'var(--text-muted)',
-                                    flexShrink: 0,
-                                  }}
-                                >
-                                  #{tabNum}
-                                </span>
-                                <span
-                                  style={{
-                                    color: isBound ? 'var(--text-primary)' : 'var(--text-muted)',
-                                    fontWeight: isBound ? 600 : 400,
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                  title={mem?.url || 'Awaiting run to memorize tab link'}
-                                >
-                                  {displayUrl}
-                                </span>
-                              </div>
-
-                              {isBound && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (mem?.url) {
-                                        navigator.clipboard.writeText(mem.url);
-                                        setCopiedTabUrlIndex(tabNum);
-                                        setTimeout(() => setCopiedTabUrlIndex(null), 1500);
-                                      }
-                                    }}
-                                    title="Copy chat link"
-                                    style={{
-                                      background: 'none',
-                                      border: 'none',
-                                      padding: '2px',
-                                      cursor: 'pointer',
-                                      color: copiedTabUrlIndex === tabNum ? '#10B981' : 'var(--text-muted)',
-                                    }}
-                                  >
-                                    {copiedTabUrlIndex === tabNum ? <FiCheck size={11} /> : <FiCopy size={11} />}
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Actions: Refresh & Reset */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
-                        <button
-                          type="button"
-                          disabled={isLoadingMemorizedTabs}
-                          onClick={loadLiveMemorizedTabs}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            padding: 0,
-                            color: '#06B6D4',
-                            fontSize: '0.5625rem',
-                            fontWeight: 600,
-                            cursor: isLoadingMemorizedTabs ? 'wait' : 'pointer',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '3px',
+                            justifyContent: 'space-between',
+                            gap: '6px',
+                            padding: '6px 10px',
+                            borderRadius: '6px',
+                            backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
+                            border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                            fontSize: '0.6875rem',
                           }}
                         >
-                          <FiRefreshCw size={10} className={isLoadingMemorizedTabs ? 'animate-spin' : ''} />
-                          <span>{isLoadingMemorizedTabs ? 'Syncing...' : 'Sync Live Tabs'}</span>
-                        </button>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
+                            <span
+                              style={{
+                                fontSize: '0.625rem',
+                                fontWeight: 700,
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                backgroundColor: isDark ? '#2A2D32' : '#F1F5F9',
+                                color: isDark ? '#ECEEF0' : '#475569',
+                                flexShrink: 0,
+                              }}
+                            >
+                              #{tabNum}
+                            </span>
+                            <span
+                              style={{
+                                color: isBound ? 'var(--text-primary)' : 'var(--text-muted)',
+                                fontWeight: isBound ? 600 : 400,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                              title={mem?.url || 'Awaiting run to memorize tab link'}
+                            >
+                              {displayUrl}
+                            </span>
+                          </div>
 
-                        {memorizedTabs.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await clearMemorizedTabs(resolvedGroupName);
-                              setMemorizedTabs([]);
-                            }}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              padding: 0,
-                              color: '#EF4444',
-                              fontSize: '0.5625rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '3px',
-                            }}
-                          >
-                            <FiTrash2 size={10} />
-                            <span>Reset Memory</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                          {isBound && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (mem?.url) {
+                                    navigator.clipboard.writeText(mem.url);
+                                    setCopiedTabUrlIndex(tabNum);
+                                    setTimeout(() => setCopiedTabUrlIndex(null), 1500);
+                                  }
+                                }}
+                                title="Copy chat link"
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  padding: '2px',
+                                  cursor: 'pointer',
+                                  color: copiedTabUrlIndex === tabNum ? '#10B981' : 'var(--text-muted)',
+                                }}
+                              >
+                                {copiedTabUrlIndex === tabNum ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Actions: Refresh & Reset */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                    <button
+                      type="button"
+                      disabled={isLoadingMemorizedTabs}
+                      onClick={loadLiveMemorizedTabs}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        color: '#06B6D4',
+                        fontSize: '0.5625rem',
+                        fontWeight: 600,
+                        cursor: isLoadingMemorizedTabs ? 'wait' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                      }}
+                    >
+                      <FiRefreshCw size={10} className={isLoadingMemorizedTabs ? 'animate-spin' : ''} />
+                      <span>{isLoadingMemorizedTabs ? 'Syncing...' : 'Sync Live Tabs'}</span>
+                    </button>
+
+                    {memorizedTabs.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await clearMemorizedTabs(resolvedGroupName);
+                          setMemorizedTabs([]);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          color: '#EF4444',
+                          fontSize: '0.5625rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                        }}
+                      >
+                        <FiTrash2 size={10} />
+                        <span>Reset Memory</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
-      </div>
-
-      {/* ── Footer ───────────────────────────────────────────────────────────── */}
-      <div
-        style={{
-          padding: '0.75rem 1.125rem',
-          borderTop: 'none',
-          backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-          display: 'flex',
-          justifyContent: 'flex-end',
-        }}
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          style={{
-            height: '34px',
-            padding: '0 16px',
-            borderRadius: '8px',
-            border: '1px solid transparent',
-            backgroundColor: isDark ? 'var(--accent-primary, #2563EB)' : '#0F172A',
-            color: '#FFFFFF',
-            fontSize: '0.78125rem',
-            fontWeight: 600,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = isDark ? 'var(--accent-primary-hover, #1D4ED8)' : '#1E293B';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = isDark ? 'var(--accent-primary, #2563EB)' : '#0F172A';
-          }}
-        >
-          <FiCheckCircle size={13} />
-          <span>Done & Apply Settings</span>
-        </button>
+          )}
+        </div>
       </div>
     </div>
   );

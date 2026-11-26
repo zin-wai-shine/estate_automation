@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
+import { showMacNotification } from '../../components/ui/MacNotification';
 import {
   FacebookWorkflowCanvas,
   DEFAULT_FB_WORKFLOW_CONFIG,
@@ -138,6 +139,55 @@ function applyListingCodeToGeneratedText(
   return res;
 }
 
+// Smooth parallel AI request limiter + retry with backoff (prevents 429/rate-limit spikes when many AI boxes run in parallel)
+const AI_MAX_CONCURRENT = 4;
+let aiActiveCount = 0;
+const aiWaitQueue: Array<() => void> = [];
+
+const acquireAISlot = (signal?: AbortSignal): Promise<void> => {
+  if (signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+  if (aiActiveCount < AI_MAX_CONCURRENT) {
+    aiActiveCount += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      const idx = aiWaitQueue.indexOf(grant);
+      if (idx !== -1) aiWaitQueue.splice(idx, 1);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    const grant = () => {
+      signal?.removeEventListener('abort', onAbort);
+      aiActiveCount += 1;
+      resolve();
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    aiWaitQueue.push(grant);
+  });
+};
+
+const releaseAISlot = () => {
+  aiActiveCount = Math.max(0, aiActiveCount - 1);
+  const next = aiWaitQueue.shift();
+  if (next) {
+    setTimeout(next, 120);
+  }
+};
+
+const sleepWithAbort = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+    const t = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(t);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+
 async function requestAIGeneration(payload: Record<string, any>, signal?: AbortSignal): Promise<string> {
   let resolvedModel = payload.model || 'gemini-flash-lite-latest';
   if (resolvedModel.includes('gemini-2.5') || resolvedModel.includes('gemini-2.0') || resolvedModel.includes('gemini-1.5')) {
@@ -151,82 +201,80 @@ async function requestAIGeneration(payload: Record<string, any>, signal?: AbortS
     'http://localhost:8085/api/facebook-import/generate-ai',
   ];
 
-  for (const ep of endpoints) {
-    try {
-      const resp = await fetch(ep, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cleanPayload),
-        signal,
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.success && data.generated_content && typeof data.generated_content === 'string') {
-          return data.generated_content.trim();
+  await acquireAISlot(signal);
+  try {
+    const backoffDelays = [0, 700, 1600];
+    for (let attempt = 0; attempt < backoffDelays.length; attempt++) {
+      if (signal?.aborted) return '';
+      if (backoffDelays[attempt] > 0) {
+        await sleepWithAbort(backoffDelays[attempt], signal);
+      }
+
+      for (const ep of endpoints) {
+        if (signal?.aborted) return '';
+        try {
+          const resp = await fetch(ep, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cleanPayload),
+            signal,
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.success && data.generated_content && typeof data.generated_content === 'string') {
+              return data.generated_content.trim();
+            }
+          }
+        } catch (err: any) {
+          if (err?.name === 'AbortError' || signal?.aborted) return '';
         }
       }
-    } catch {}
+    }
+    return '';
+  } finally {
+    releaseAISlot();
   }
-  return '';
 }
 
 const getWorkflowRunStorageKey = (formatId?: string) => `ea_workflow_execution_data_${formatId || 'default'}`;
 
+// In-memory cache preserves full run data (including large images) across route navigation
+let cachedWorkflowRunMemory: Record<string, any> = {};
+
+const stripLargeDataUrlsFromRunData = (obj: any) => {
+  const cleanMap = (m: Record<string, any> | undefined) => {
+    if (!m || typeof m !== 'object') return {};
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(m)) {
+      if (typeof v === 'string' && v.startsWith('data:') && v.length > 80000) continue;
+      out[k] = v;
+    }
+    return out;
+  };
+  return {
+    ...obj,
+    extractedImages: Array.isArray(obj.extractedImages)
+      ? obj.extractedImages.map((im: any) => ({
+          ...im,
+          dataUrl: typeof im?.dataUrl === 'string' && im.dataUrl.length > 80000 ? undefined : im?.dataUrl,
+          url: typeof im?.url === 'string' && im.url.startsWith('data:') && im.url.length > 80000 ? '' : im?.url,
+        }))
+      : [],
+    watermarkedPhotos: cleanMap(obj.watermarkedPhotos),
+    enhancedPhotos: cleanMap(obj.enhancedPhotos),
+  };
+};
+
 const getSavedWorkflowRunData = (formatId?: string) => {
   if (typeof window === 'undefined') return null;
+  const targetId = formatId || resolveCurrentFormatId();
+  if (!targetId) return null;
+  if (cachedWorkflowRunMemory[targetId]) return cachedWorkflowRunMemory[targetId];
   try {
-    // 1. Check specified format ID
-    if (formatId && formatId !== 'default') {
-      const raw = localStorage.getItem(getWorkflowRunStorageKey(formatId));
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') return parsed;
-      }
-    }
-    // 2. Check active workflow format ID from storage
-    try {
-      const activeId = getActiveWorkflowFormatId();
-      if (activeId && activeId !== formatId) {
-        const raw = localStorage.getItem(getWorkflowRunStorageKey(activeId));
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed && typeof parsed === 'object') return parsed;
-        }
-      }
-    } catch {}
-    // 3. Check global active execution key
-    const activeRaw = localStorage.getItem('ea_workflow_execution_data_active');
-    if (activeRaw) {
-      const parsed = JSON.parse(activeRaw);
+    const raw = localStorage.getItem(getWorkflowRunStorageKey(targetId));
+    if (raw) {
+      const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') return parsed;
-    }
-    // 4. Check default format key
-    const defRaw = localStorage.getItem(getWorkflowRunStorageKey('default'));
-    if (defRaw) {
-      const parsed = JSON.parse(defRaw);
-      if (parsed && typeof parsed === 'object') return parsed;
-    }
-    // 5. Scan any workflow execution data keys in localStorage
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith('ea_workflow_execution_data_')) {
-        const raw = localStorage.getItem(k);
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            if (
-              parsed &&
-              typeof parsed === 'object' &&
-              (parsed.extractedImages?.length > 0 ||
-                (parsed.extractedContent && parsed.extractedContent.trim().length > 0) ||
-                parsed.executionState ||
-                (parsed.aiGeneratedOutputs && Object.keys(parsed.aiGeneratedOutputs).length > 0))
-            ) {
-              return parsed;
-            }
-          } catch {}
-        }
-      }
     }
   } catch {}
   return null;
@@ -532,6 +580,36 @@ export const CreateWorkflowView: React.FC = () => {
   // Undo & Run States
   const [undoStack, setUndoStack] = useState<FacebookWorkflowConfig[]>([]);
   const [isRunModalOpen, setIsRunModalOpen] = useState(false);
+  const [manualDraftText, setManualDraftText] = useState('');
+  const manualDraftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (isRunModalOpen) {
+      setManualDraftText(editingFormat?.config?.trigger?.manualContent || '');
+    }
+    return () => {
+      if (manualDraftTimerRef.current) {
+        clearTimeout(manualDraftTimerRef.current);
+        manualDraftTimerRef.current = null;
+      }
+    };
+  }, [isRunModalOpen]);
+
+  const flushManualDraftText = (textVal: string) => {
+    if (manualDraftTimerRef.current) {
+      clearTimeout(manualDraftTimerRef.current);
+      manualDraftTimerRef.current = null;
+    }
+    if (!editingFormat?.config) return;
+    if ((editingFormat.config.trigger?.manualContent || '') === textVal) return;
+    handleCanvasConfigChange({
+      ...editingFormat.config,
+      trigger: {
+        ...editingFormat.config.trigger,
+        manualContent: textVal,
+      },
+    });
+  };
   const [runFacebookUrl, setRunFacebookUrl] = useState<string>(() => {
     const formatId = resolveCurrentFormatId();
     const saved = getSavedWorkflowRunData(formatId);
@@ -835,12 +913,32 @@ export const CreateWorkflowView: React.FC = () => {
     }
   }, [searchParams]);
 
-  // Open Canvas as full page for an existing format
+  // Open Canvas as full page for an existing format (isolated per-canvas run data)
   const handleOpenCanvas = (format: WorkflowFormat) => {
     setEditingFormat(format);
+    setActiveId(format.id);
+    setActiveWorkflowFormatId(format.id);
     setModalFormatName(format.name);
     setModalFormatDesc(format.description || '');
     setUndoStack([]);
+
+    const saved = getSavedWorkflowRunData(format.id);
+    setExecutionState(saved?.executionState || undefined);
+    setRunFacebookUrl(saved?.runFacebookUrl || '');
+    setExtractedContent(saved?.extractedContent || '');
+    setExtractedImages(Array.isArray(saved?.extractedImages) ? saved.extractedImages : []);
+    setWatermarkedPhotos(saved?.watermarkedPhotos || {});
+    setEnhancedPhotos(saved?.enhancedPhotos || {});
+    setAiGeneratedOutputs(saved?.aiGeneratedOutputs || {});
+    setAiGeneratedCopy(saved?.aiGeneratedCopy || '');
+    setProjectName(saved?.projectName || '');
+    setPropertyData(saved?.propertyData || null);
+    if (workflowContextRef.current) {
+      workflowContextRef.current.rawCaption = saved?.extractedContent || '';
+      workflowContextRef.current.imageList = Array.isArray(saved?.extractedImages) ? saved.extractedImages : [];
+      workflowContextRef.current.listingCode = saved?.executionState?.listingCode || '';
+    }
+
     setIsCanvasOpen(true);
     navigate(`/create-workflow?id=${encodeURIComponent(format.id)}`, { replace: false });
     try {
@@ -1000,8 +1098,16 @@ export const CreateWorkflowView: React.FC = () => {
         propertyData,
         timestamp: Date.now(),
       };
-      localStorage.setItem(getWorkflowRunStorageKey(targetFormatId), JSON.stringify(toSave));
-      localStorage.setItem('ea_workflow_execution_data_active', JSON.stringify(toSave));
+      cachedWorkflowRunMemory[targetFormatId] = toSave;
+      try {
+        localStorage.setItem(getWorkflowRunStorageKey(targetFormatId), JSON.stringify(toSave));
+      } catch {
+        // Fallback when base64 images exceed 5MB localStorage quota: keep executionState & text outputs
+        try {
+          const compact = stripLargeDataUrlsFromRunData(toSave);
+          localStorage.setItem(getWorkflowRunStorageKey(targetFormatId), JSON.stringify(compact));
+        } catch {}
+      }
 
       // Also keep estate_facebook_import_session_v1 synchronized so navigating to FB import or other views retains everything
       try {
@@ -1086,6 +1192,7 @@ export const CreateWorkflowView: React.FC = () => {
           uploadedImages: [],
           imageSource: b.imageSource === 'upload' ? undefined : b.imageSource,
           selectedImageIndices: undefined,
+          enhancedImagesOrder: undefined,
           browserCondoName: '',
           browserMatchedFolder: '',
           browserCondoImagesCount: 0,
@@ -1099,19 +1206,10 @@ export const CreateWorkflowView: React.FC = () => {
         })),
       });
     }
-    if (editingFormat?.id) {
-      try {
-        localStorage.removeItem(getWorkflowRunStorageKey(editingFormat.id));
-      } catch {}
-    }
+    const targetClearId = editingFormat?.id || activeFormatId || getActiveWorkflowFormatId() || 'default';
+    delete cachedWorkflowRunMemory[targetClearId];
     try {
-      localStorage.removeItem(getWorkflowRunStorageKey('default'));
-    } catch {}
-    try {
-      localStorage.removeItem('ea_workflow_execution_data_active');
-    } catch {}
-    try {
-      localStorage.removeItem('estate_facebook_import_session_v1');
+      localStorage.removeItem(getWorkflowRunStorageKey(targetClearId));
     } catch {}
     try {
       localStorage.removeItem('bolthaven_active_session_listing_code');
@@ -1121,12 +1219,9 @@ export const CreateWorkflowView: React.FC = () => {
       const k = localStorage.key(i);
       if (
         k &&
-        (k.startsWith('ea_workflow_execution_data_') ||
-         k.startsWith('bolthaven_') ||
-         k.startsWith('ea_crop_studio_images_') ||
-         k.startsWith('combine_card_order_') ||
-         k.startsWith('combine_preset_order_') ||
-         k.startsWith('estate_facebook_import_'))
+        (k.startsWith('bolthaven_format_uploads_') ||
+         k.startsWith('bolthaven_canvas_enhanced_') ||
+         k.startsWith('ea_crop_studio_images_'))
       ) {
         localStorage.removeItem(k);
       }
@@ -1197,6 +1292,7 @@ export const CreateWorkflowView: React.FC = () => {
             uploadedImages: [],
             imageSource: b.imageSource === 'upload' ? undefined : b.imageSource,
             selectedImageIndices: undefined,
+            enhancedImagesOrder: undefined,
           })),
         });
       }
@@ -1311,12 +1407,18 @@ export const CreateWorkflowView: React.FC = () => {
     });
   };
 
-  // Delete Format
+  // Delete Format (opens custom confirmation modal)
+  const [deleteFormatTarget, setDeleteFormatTarget] = useState<{ id: string; name: string } | null>(null);
+
   const handleDeleteFormat = (formatId: string, formatName: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (!window.confirm(`Delete workflow format "${formatName}"?`)) {
-      return;
-    }
+    setDeleteFormatTarget({ id: formatId, name: formatName });
+  };
+
+  const confirmDeleteFormat = () => {
+    if (!deleteFormatTarget) return;
+    const { id: formatId, name: formatName } = deleteFormatTarget;
+    setDeleteFormatTarget(null);
 
     const updatedList = formats.filter((f) => f.id !== formatId);
     setFormats(updatedList);
@@ -1332,6 +1434,12 @@ export const CreateWorkflowView: React.FC = () => {
       handleCloseCanvas();
       setEditingFormat(updatedList[0] || null);
     }
+
+    showMacNotification({
+      title: 'Workflow Deleted',
+      message: `"${formatName}" was removed from Workflow Formats.`,
+      type: 'danger',
+    });
   };
 
   // Delete All Formats
@@ -4690,7 +4798,6 @@ export const CreateWorkflowView: React.FC = () => {
       if (url) {
         executeCanvasWorkflow(url);
       } else {
-        setRunFacebookUrl('');
         setIsRunModalOpen(true);
       }
       return;
@@ -4879,7 +4986,6 @@ export const CreateWorkflowView: React.FC = () => {
           executeCanvasWorkflow(url);
           return;
         }
-        setRunFacebookUrl('');
         setIsRunModalOpen(true);
         return;
       }
@@ -5234,7 +5340,6 @@ export const CreateWorkflowView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  setRunFacebookUrl('');
                   setIsRunModalOpen(true);
                 }}
                 data-tooltip="Run"
@@ -6312,22 +6417,22 @@ export const CreateWorkflowView: React.FC = () => {
                       Property Description / Content
                     </label>
                     <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                      {(editingFormat.config.trigger.manualContent || '').length} characters
+                      {manualDraftText.length} characters
                     </span>
                   </div>
                   <textarea
-                    value={editingFormat.config.trigger.manualContent || ''}
+                    value={manualDraftText}
                     onChange={(e) => {
                       const val = e.target.value;
-                      const updatedCfg = {
-                        ...editingFormat.config,
-                        trigger: {
-                          ...editingFormat.config.trigger,
-                          manualContent: val,
-                        },
-                      };
-                      handleCanvasConfigChange(updatedCfg);
+                      setManualDraftText(val);
+                      if (manualDraftTimerRef.current) {
+                        clearTimeout(manualDraftTimerRef.current);
+                      }
+                      manualDraftTimerRef.current = setTimeout(() => {
+                        flushManualDraftText(val);
+                      }, 400);
                     }}
+                    onBlur={() => flushManualDraftText(manualDraftText)}
                     placeholder="Paste or edit property description, room specs, rent price, location..."
                     style={{
                       width: '100%',
@@ -6622,7 +6727,10 @@ export const CreateWorkflowView: React.FC = () => {
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={handleConfirmRun}
+                  onClick={() => {
+                    flushManualDraftText(manualDraftText);
+                    handleConfirmRun();
+                  }}
                   leftIcon={<FiPlay style={{ fill: 'currentColor' }} />}
                   style={{
                     backgroundColor: '#10B981',
@@ -6759,7 +6867,10 @@ export const CreateWorkflowView: React.FC = () => {
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={handleConfirmRun}
+                  onClick={() => {
+                    flushManualDraftText(manualDraftText);
+                    handleConfirmRun();
+                  }}
                   disabled={!runFacebookUrl.trim()}
                   leftIcon={<FiPlay style={{ fill: 'currentColor' }} />}
                   style={{
@@ -7156,6 +7267,106 @@ export const CreateWorkflowView: React.FC = () => {
                 }}
               >
                 Create Group
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete Workflow Format Confirmation Modal */}
+      {deleteFormatTarget && (
+        <Modal
+          isOpen={!!deleteFormatTarget}
+          onClose={() => setDeleteFormatTarget(null)}
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', color: '#F87171' }}>
+              <div
+                style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(239, 68, 68, 0.14)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <FiAlertTriangle size={15} />
+              </div>
+              <span style={{ fontSize: '0.9375rem', fontWeight: 600 }}>Delete Workflow Format</span>
+            </div>
+          }
+          maxWidth="430px"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <p style={{ margin: 0, fontSize: '0.8125rem', color: isDark ? '#C9D1D9' : '#475569', lineHeight: 1.55 }}>
+              Are you sure you want to delete{' '}
+              <strong style={{ color: isDark ? '#F0F6FC' : '#0F172A', fontWeight: 600 }}>
+                &ldquo;{deleteFormatTarget.name}&rdquo;
+              </strong>
+              ?
+            </p>
+            <div
+              style={{
+                padding: '0.625rem 0.75rem',
+                backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.22)',
+                borderRadius: '6px',
+                fontSize: '0.75rem',
+                color: '#F87171',
+                lineHeight: 1.5,
+              }}
+            >
+              This action cannot be undone and will permanently remove this workflow format.
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '0.5rem',
+                paddingTop: '0.75rem',
+                borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setDeleteFormatTarget(null)}
+                style={{
+                  height: '32px',
+                  padding: '0 0.75rem',
+                  borderRadius: '6px',
+                  backgroundColor: isDark ? '#1C2128' : '#FFFFFF',
+                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  color: isDark ? '#E6EDF3' : '#0F172A',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteFormat}
+                style={{
+                  height: '32px',
+                  padding: '0 0.875rem',
+                  borderRadius: '6px',
+                  backgroundColor: '#DC2626',
+                  border: '1px solid rgba(220, 38, 38, 0.85)',
+                  color: '#FFFFFF',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.375rem',
+                  cursor: 'pointer',
+                }}
+              >
+                <FiTrash2 size={13} />
+                <span>Delete</span>
               </button>
             </div>
           </div>

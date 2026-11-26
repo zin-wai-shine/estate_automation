@@ -212,6 +212,7 @@ const MainApp: React.FC = () => {
 };
 
 import { GlobalTooltip } from './components/ui/Tooltip';
+import { MacNotificationHost } from './components/ui/MacNotification';
 
 export function App() {
   return (
@@ -220,6 +221,7 @@ export function App() {
         <BrowserRouter>
           <MainApp />
           <GlobalTooltip />
+          <MacNotificationHost />
         </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>

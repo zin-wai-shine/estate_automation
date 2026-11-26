@@ -128,13 +128,14 @@ export const isN8NAIBox = (
  * Determines whether a box is a Browser Extension Autofill & Dispatch node.
  */
 export const isExtensionAutofillBox = (
-  box?: { id?: string; provider?: string; processType?: string; title?: string }
+  box?: { id?: string; provider?: string; processType?: string; title?: string; extensionBoxId?: string }
 ): boolean => {
   if (!box) return false;
   return (
     box.provider === 'extension_autofill' ||
     box.processType === 'extension_autofill' ||
-    Boolean(box.id?.includes('extension-autofill'))
+    Boolean(box.id?.includes('extension-autofill')) ||
+    Boolean(box.extensionBoxId)
   );
 };
 
@@ -327,7 +328,19 @@ export const isEnhanceAIBox = (
   box: { id?: string; provider?: string; model?: string; processType?: string },
   connections: { fromNodeId: string; toNodeId: string }[] = []
 ): boolean => {
-  if (!box || isCropStudioBox(box) || isChromeProfileAIBox(box) || isChromeTabGroupAIBox(box) || isWatermarkAIBox(box)) return false;
+  if (
+    !box ||
+    isCropStudioBox(box) ||
+    isChromeProfileAIBox(box) ||
+    isChromeTabGroupAIBox(box) ||
+    isWatermarkAIBox(box) ||
+    isExtensionAutofillBox(box) ||
+    isExternalBrowserAIBox(box) ||
+    isFolderImagesBox(box) ||
+    isGoogleSheetBox(box)
+  ) {
+    return false;
+  }
   return isImageAIBox(box, connections);
 };
 

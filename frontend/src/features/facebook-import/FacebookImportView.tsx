@@ -7,6 +7,7 @@ import { Select } from '../../components/ui/Select';
 import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal, useScrollLock } from '../../components/ui/Modal';
+import { showMacNotification } from '../../components/ui/MacNotification';
 import { useTheme } from '../../context/ThemeContext';
 import {
   FiDownload,
@@ -340,10 +341,15 @@ export const FacebookImportView: React.FC<FacebookImportViewProps> = ({
     } catch {}
   };
 
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastMessage] = useState<string | null>(null);
   const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+    const lower = msg.toLowerCase();
+    const isErr = lower.includes('fail') || lower.includes('error') || msg.includes('⚠️') || msg.includes('❌');
+    showMacNotification({
+      title: isErr ? 'Notice' : 'Success',
+      message: msg,
+      type: isErr ? 'danger' : 'success',
+    });
   };
 
   const [showInfo, setShowInfo] = useState(false);

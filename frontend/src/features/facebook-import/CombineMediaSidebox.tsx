@@ -68,7 +68,7 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
       style={embedded ? {
         width: '100%',
         height: '100%',
-        backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+        backgroundColor: isDark ? '#25282B' : '#FFFFFF',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
@@ -81,9 +81,9 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
         right: '380px', // sits cleanly alongside the 380px main sidebar
         width: '520px',
         maxWidth: 'calc(100vw - 420px)',
-        backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
-        borderLeft: '1px solid var(--border-color)',
-        borderRight: '1px solid var(--border-color)',
+        backgroundColor: isDark ? '#25282B' : '#FFFFFF',
+        borderLeft: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
+        borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border-color)',
         boxShadow: isDark ? '-12px 0 35px rgba(0, 0, 0, 0.75)' : '-6px 0 24px rgba(0, 0, 0, 0.08)',
         zIndex: 169,
         display: 'flex',
@@ -98,11 +98,14 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: '12px',
-          padding: '0.875rem 1.125rem',
+          padding: '0 1.125rem',
           height: '62px',
+          minHeight: '62px',
+          maxHeight: '62px',
           boxSizing: 'border-box',
-          borderBottom: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-          backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+          flexShrink: 0,
+          borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+          backgroundColor: isDark ? '#25282B' : '#FFFFFF',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0, flex: 1 }}>
@@ -440,9 +443,14 @@ export const CombineMediaSidebox: React.FC<CombineMediaSideboxProps> = ({
       {/* ── Bottom Summary Footer ────────────────────────────────────────────── */}
       <div
         style={{
-          padding: '0.75rem 1.125rem',
-          borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
-          backgroundColor: isDark ? 'var(--bg-main)' : '#FFFFFF',
+          padding: '0 1.125rem',
+          height: '60px',
+          minHeight: '60px',
+          maxHeight: '60px',
+          boxSizing: 'border-box',
+          flexShrink: 0,
+          borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+          backgroundColor: isDark ? '#25282B' : '#FFFFFF',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
