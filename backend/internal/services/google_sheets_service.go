@@ -42,10 +42,12 @@ type GoogleServiceAccountKey struct {
 
 // GoogleSheetsService handles authentication and operations with Google Sheets API v4.
 type GoogleSheetsService struct {
-	cachedToken     string
-	tokenExpiry     time.Time
-	mu              sync.RWMutex
-	credentialsPath string
+	cachedToken      string
+	tokenExpiry      time.Time
+	cachedDriveToken string
+	driveTokenExpiry time.Time
+	mu               sync.RWMutex
+	credentialsPath  string
 }
 
 var (
@@ -166,6 +168,35 @@ func base64UrlEncode(data []byte) string {
 
 // generateTokenForCreds signs a JWT and exchanges it for an OAuth2 access token with Google.
 func (s *GoogleSheetsService) generateTokenForCreds(ctx context.Context, creds *GoogleServiceAccountKey) (string, error) {
+	return s.generateTokenForCredsWithScope(ctx, creds, "https://www.googleapis.com/auth/spreadsheets")
+}
+
+// GetDriveReadOnlyToken returns a cached OAuth2 token with drive.readonly scope.
+func (s *GoogleSheetsService) GetDriveReadOnlyToken(ctx context.Context) (string, error) {
+	s.mu.RLock()
+	if s.cachedDriveToken != "" && time.Now().Before(s.driveTokenExpiry.Add(-2*time.Minute)) {
+		tok := s.cachedDriveToken
+		s.mu.RUnlock()
+		return tok, nil
+	}
+	s.mu.RUnlock()
+
+	creds, err := s.LoadCredentials()
+	if err != nil {
+		return "", err
+	}
+	tok, err := s.generateTokenForCredsWithScope(ctx, creds, "https://www.googleapis.com/auth/drive.readonly")
+	if err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	s.cachedDriveToken = tok
+	s.driveTokenExpiry = time.Now().Add(55 * time.Minute)
+	s.mu.Unlock()
+	return tok, nil
+}
+
+func (s *GoogleSheetsService) generateTokenForCredsWithScope(ctx context.Context, creds *GoogleServiceAccountKey, scope string) (string, error) {
 	now := time.Now().Unix()
 	exp := now + 3600 // 1 hour validity
 
@@ -173,7 +204,7 @@ func (s *GoogleSheetsService) generateTokenForCreds(ctx context.Context, creds *
 	headerJSON := `{"alg":"RS256","typ":"JWT"}`
 	claims := map[string]interface{}{
 		"iss":   creds.ClientEmail,
-		"scope": "https://www.googleapis.com/auth/spreadsheets",
+		"scope": scope,
 		"aud":   "https://oauth2.googleapis.com/token",
 		"exp":   exp,
 		"iat":   now,

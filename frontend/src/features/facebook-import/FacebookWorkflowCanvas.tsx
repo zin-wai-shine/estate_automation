@@ -4667,18 +4667,34 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const fetchFolderImagesForBox = async (box: any) => {
     if (!box?.id) return;
+    const sourceType = box.folderSourceType === 'gdrive' ? 'gdrive' : 'local';
     const basePath = String(box.folderBasePath || '/Users/zinwaishine/Desktop/Condo Building').trim();
+    const driveUrl = String(box.folderDriveUrl || '').trim();
     const folderName = resolveFolderBoxName(box);
     const subPath = String(box.folderSubPath || '').trim();
     const maxCount = Number(box.folderMaxImages ?? 10);
     setLoadingFolderBoxIds((prev) => ({ ...prev, [box.id]: true }));
     try {
-      const resp = await fetch('http://127.0.0.1:9224/list-folder-images', {
+      const endpoint = sourceType === 'gdrive'
+        ? apiUrl('/api/google-drive/list-folder-images')
+        : 'http://127.0.0.1:9224/list-folder-images';
+      const payload = sourceType === 'gdrive'
+        ? { driveUrl, folderName, subPath, maxCount }
+        : { basePath, folderName, subPath, maxCount };
+      const resp = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ basePath, folderName, subPath, maxCount }),
+        body: JSON.stringify(payload),
       });
       const data = await resp.json();
+      const normalizedImages = Array.isArray(data.images)
+        ? data.images.map((img: any) => ({
+            ...img,
+            url: sourceType === 'gdrive' && img?.url && String(img.url).startsWith('/')
+              ? apiUrl(String(img.url))
+              : img?.url,
+          }))
+        : [];
       setFolderImagesMap((prev) => {
         const next = {
           ...prev,
@@ -4687,7 +4703,7 @@ export const FacebookWorkflowCanvas = forwardRef<
             folderPath: data.folderPath || '',
             totalFound: data.totalFound || 0,
             error: data.status !== 'ok' ? (data.error || 'Folder not found') : undefined,
-            images: Array.isArray(data.images) ? data.images : [],
+            images: normalizedImages,
           },
         };
         try {
@@ -4700,7 +4716,7 @@ export const FacebookWorkflowCanvas = forwardRef<
         ...prev,
         [box.id]: {
           matchedFolder: folderName,
-          error: err?.message || 'Companion server offline',
+          error: err?.message || (sourceType === 'gdrive' ? 'Failed to fetch Google Drive folder' : 'Companion server offline'),
           images: [],
         },
       }));
@@ -4714,11 +4730,14 @@ export const FacebookWorkflowCanvas = forwardRef<
     const folderBoxes = (config.aiBoxes || []).filter((b) => isFolderImagesBox(b));
     return folderBoxes
       .map((b: any) => {
-        const basePath = String(b.folderBasePath || '/Users/zinwaishine/Desktop/Condo Building').trim();
+        const sourceType = b.folderSourceType === 'gdrive' ? 'gdrive' : 'local';
+        const baseLoc = sourceType === 'gdrive'
+          ? String(b.folderDriveUrl || '').trim()
+          : String(b.folderBasePath || '/Users/zinwaishine/Desktop/Condo Building').trim();
         const folderName = resolveFolderBoxName(b);
         const subPath = String(b.folderSubPath || '').trim();
         const maxCount = Number(b.folderMaxImages ?? 10);
-        return `${b.id}::${basePath}::${folderName}::${subPath}::${maxCount}`;
+        return `${b.id}::${sourceType}::${baseLoc}::${folderName}::${subPath}::${maxCount}`;
       })
       .join('|');
   }, [config.aiBoxes, config.connections, aiGeneratedOutputs, rawContent]);
@@ -4728,12 +4747,15 @@ export const FacebookWorkflowCanvas = forwardRef<
     if (folderBoxes.length === 0) return;
     const timer = setTimeout(() => {
       folderBoxes.forEach((b: any) => {
-        const basePath = String(b.folderBasePath || '/Users/zinwaishine/Desktop/Condo Building').trim();
+        const sourceType = b.folderSourceType === 'gdrive' ? 'gdrive' : 'local';
+        const baseLoc = sourceType === 'gdrive'
+          ? String(b.folderDriveUrl || '').trim()
+          : String(b.folderBasePath || '/Users/zinwaishine/Desktop/Condo Building').trim();
         const folderName = resolveFolderBoxName(b);
         const subPath = String(b.folderSubPath || '').trim();
         const maxCount = Number(b.folderMaxImages ?? 10);
-        const sig = `${basePath}::${folderName}::${subPath}::${maxCount}`;
-        if (!folderName) {
+        const sig = `${sourceType}::${baseLoc}::${folderName}::${subPath}::${maxCount}`;
+        if ((sourceType === 'gdrive' && !baseLoc) || (sourceType === 'local' && !folderName)) {
           if (lastFolderFetchSigRef.current[b.id] !== sig) {
             lastFolderFetchSigRef.current[b.id] = sig;
             setFolderImagesMap((prev) => {
@@ -15647,22 +15669,26 @@ export const FacebookWorkflowCanvas = forwardRef<
                         >
                           <div
                             style={{
-                              width: '28px',
-                              height: '28px',
-                              borderRadius: '7px',
-                              background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '8px',
+                              backgroundColor: 'rgba(245, 158, 11, 0.15)',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              color: '#FFFFFF',
+                              color: '#F59E0B',
                               flexShrink: 0,
                             }}
                           >
-                            <FiFolder size={13} />
+                            <FiFolder size={16} />
                           </div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>Folder Images Settings</div>
-                            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Configure folder path, name source &amp; limit</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                              Folder Images Settings
+                            </div>
+                            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                              Configure folder source, name &amp; limit
+                            </div>
                           </div>
                           <button
                             type="button"
@@ -15686,7 +15712,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                         </div>
 
                         {/* Settings Body */}
-                        <div style={{ flex: 1, overflowY: 'auto', padding: '1rem 1rem 3rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '1rem 1.125rem 2.5rem 1.125rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                           {/* Node Status Toggle Row */}
                           <div
                             style={{
@@ -15736,7 +15762,88 @@ export const FacebookWorkflowCanvas = forwardRef<
                               />
                             </div>
                           </div>
-                          {/* Base Folder Path + Browse */}
+                          {/* Image Source (Local Folder vs Google Drive Public Link) */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                            <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                              Image Source
+                            </label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateAIBox(currentModalAIBox.id, { folderSourceType: 'local' } as any)}
+                                style={{
+                                  height: '34px',
+                                  borderRadius: '8px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  outline: 'none',
+                                  border: (fBox.folderSourceType || 'local') === 'local'
+                                    ? '1px solid #326EE6'
+                                    : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1'),
+                                  backgroundColor: (fBox.folderSourceType || 'local') === 'local'
+                                    ? (isDark ? '#326EE6' : '#0F172A')
+                                    : (isDark ? '#1D1F22' : '#FFFFFF'),
+                                  color: (fBox.folderSourceType || 'local') === 'local' ? '#FFFFFF' : 'var(--text-secondary)',
+                                }}
+                              >
+                                Local Folder
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateAIBox(currentModalAIBox.id, { folderSourceType: 'gdrive' } as any)}
+                                style={{
+                                  height: '34px',
+                                  borderRadius: '8px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  outline: 'none',
+                                  border: fBox.folderSourceType === 'gdrive'
+                                    ? '1px solid #326EE6'
+                                    : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1'),
+                                  backgroundColor: fBox.folderSourceType === 'gdrive'
+                                    ? (isDark ? '#326EE6' : '#0F172A')
+                                    : (isDark ? '#1D1F22' : '#FFFFFF'),
+                                  color: fBox.folderSourceType === 'gdrive' ? '#FFFFFF' : 'var(--text-secondary)',
+                                }}
+                              >
+                                Google Drive Link
+                              </button>
+                            </div>
+                          </div>
+
+                          <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
+
+                          {fBox.folderSourceType === 'gdrive' ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                              <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                Google Drive Public Folder URL / ID
+                              </label>
+                              <input
+                                type="text"
+                                value={fBox.folderDriveUrl || ''}
+                                onChange={(e) => handleUpdateAIBox(currentModalAIBox.id, { folderDriveUrl: e.target.value } as any)}
+                                placeholder="https://drive.google.com/drive/folders/..."
+                                style={{
+                                  width: '100%',
+                                  height: '36px',
+                                  padding: '0 0.75rem',
+                                  borderRadius: '8px',
+                                  border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+                                  backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
+                                  color: 'var(--text-primary)',
+                                  fontSize: '0.75rem',
+                                  boxSizing: 'border-box',
+                                  outline: 'none',
+                                }}
+                              />
+                              <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                                Share your root Drive folder as &quot;Anyone with the link can view&quot;. Subfolders inherit access automatically.
+                              </span>
+                            </div>
+                          ) : (
+                          /* Base Folder Path + Browse */
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                             <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)' }}>
                               Base Folder Path
@@ -15777,7 +15884,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   padding: '0 10px',
                                   borderRadius: '8px',
                                   border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #CBD5E1',
-                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F8FAFC',
+                                  backgroundColor: isDark ? '#1D1F22' : '#F8FAFC',
                                   color: 'var(--text-primary)',
                                   fontSize: '0.75rem',
                                   fontWeight: 600,
@@ -15793,6 +15900,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               </button>
                             </div>
                           </div>
+                          )}
 
                           <div style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid #F1F5F9' }} />
 
@@ -15811,13 +15919,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   fontSize: '0.75rem',
                                   fontWeight: 600,
                                   cursor: 'pointer',
+                                  outline: 'none',
                                   border: nameMode === 'connected'
-                                    ? '1px solid rgba(50, 110, 230, 0.6)'
+                                    ? '1px solid #326EE6'
                                     : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1'),
                                   backgroundColor: nameMode === 'connected'
-                                    ? 'rgba(50, 110, 230, 0.16)'
+                                    ? (isDark ? '#326EE6' : '#0F172A')
                                     : (isDark ? '#1D1F22' : '#FFFFFF'),
-                                  color: nameMode === 'connected' ? (isDark ? '#93C5FD' : '#2563EB') : 'var(--text-secondary)',
+                                  color: nameMode === 'connected' ? '#FFFFFF' : 'var(--text-secondary)',
                                 }}
                               >
                                 Connected Box
@@ -15831,13 +15940,14 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   fontSize: '0.75rem',
                                   fontWeight: 600,
                                   cursor: 'pointer',
+                                  outline: 'none',
                                   border: nameMode === 'manual'
-                                    ? '1px solid rgba(50, 110, 230, 0.6)'
+                                    ? '1px solid #326EE6'
                                     : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1'),
                                   backgroundColor: nameMode === 'manual'
-                                    ? 'rgba(50, 110, 230, 0.16)'
+                                    ? (isDark ? '#326EE6' : '#0F172A')
                                     : (isDark ? '#1D1F22' : '#FFFFFF'),
-                                  color: nameMode === 'manual' ? (isDark ? '#93C5FD' : '#2563EB') : 'var(--text-secondary)',
+                                  color: nameMode === 'manual' ? '#FFFFFF' : 'var(--text-secondary)',
                                 }}
                               >
                                 Manual Name
@@ -15941,49 +16051,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                               }}
                             />
                           </div>
-                        </div>
-
-                        {/* Done Footer */}
-                        <div
-                          style={{
-                            padding: '0 1.125rem',
-                            height: '60px',
-                            minHeight: '60px',
-                            maxHeight: '60px',
-                            boxSizing: 'border-box',
-                            backgroundColor: isDark ? '#25282B' : '#FFFFFF',
-                            borderTop: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #E2E8F0',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'flex-end',
-                            flexShrink: 0,
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowFBHeroSettingsSidebox(false);
-                              fetchFolderImagesForBox(fBox);
-                            }}
-                            style={{
-                              height: '34px',
-                              padding: '0 16px',
-                              borderRadius: '7px',
-                              border: 'none',
-                              backgroundColor: isDark ? '#326EE6' : '#0F172A',
-                              color: '#FFFFFF',
-                              fontSize: '0.78125rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '6px',
-                            }}
-                          >
-                            <FiCheck size={13} />
-                            Done &amp; Apply Settings
-                          </button>
                         </div>
                       </div>
                     );
@@ -21229,8 +21296,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 gap: '0.625rem',
                                 padding: '0.65rem 0.75rem',
                                 borderRadius: '8px',
-                                backgroundColor: isDark ? 'rgba(245, 158, 11, 0.08)' : '#FFFBEB',
-                                border: isDark ? '1px solid rgba(245, 158, 11, 0.28)' : '1px solid #FDE68A',
+                                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
                               }}
                             >
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
@@ -21239,8 +21306,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     width: '32px',
                                     height: '32px',
                                     borderRadius: '8px',
-                                    backgroundColor: '#F59E0B',
-                                    color: '#FFFFFF',
+                                    backgroundColor: fBox.folderSourceType === 'gdrive'
+                                      ? 'rgba(50, 110, 230, 0.15)'
+                                      : 'rgba(245, 158, 11, 0.15)',
+                                    color: fBox.folderSourceType === 'gdrive' ? '#60A5FA' : '#F59E0B',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
@@ -21250,31 +21319,39 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   <FiFolder size={16} />
                                 </div>
                                 <div style={{ minWidth: 0 }}>
-                                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                    Folder Images Loader
+                                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {fBox.folderSourceType === 'gdrive' ? 'Google Drive Folder Loader' : 'Folder Images Loader'}
                                   </div>
                                   <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {resolvedName ? `Looking for: ${resolvedName}` : (fBox.folderBasePath || '/Users/zinwaishine/Desktop/Condo Building')}
+                                    {resolvedName
+                                      ? `Looking for: ${resolvedName}`
+                                      : fBox.folderSourceType === 'gdrive'
+                                        ? (fBox.folderDriveUrl || 'No Google Drive folder link set')
+                                        : (fBox.folderBasePath || '/Users/zinwaishine/Desktop/Condo Building')}
                                   </div>
                                 </div>
                               </div>
                               <button
                                 type="button"
-                                onClick={() => setShowFBHeroSettingsSidebox(true)}
+                                onClick={() => fetchFolderImagesForBox(fBox)}
+                                disabled={isLoadingFolder}
+                                title="Refresh images"
                                 style={{
                                   height: '28px',
-                                  padding: '0 8px',
+                                  width: '28px',
+                                  padding: 0,
                                   borderRadius: '6px',
-                                  border: isDark ? '1px solid rgba(255,255,255,0.14)' : '1px solid #E2E8F0',
-                                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
-                                  color: 'var(--text-primary)',
-                                  fontSize: '0.6875rem',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
+                                  border: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #E2E8F0',
+                                  backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
+                                  color: 'var(--text-secondary)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: isLoadingFolder ? 'not-allowed' : 'pointer',
                                   flexShrink: 0,
                                 }}
                               >
-                                Settings
+                                <FiRefreshCw size={12} className={isLoadingFolder ? 'animate-spin' : undefined} />
                               </button>
                             </div>
 
@@ -21310,6 +21387,35 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 }}
                               >
                                 {folderData.error}
+                              </div>
+                            )}
+
+                            {/* Empty State */}
+                            {!isLoadingFolder && !folderData?.error && (!folderData?.images || folderData.images.length === 0) && (
+                              <div
+                                style={{
+                                  padding: '1.75rem 1rem',
+                                  borderRadius: '10px',
+                                  backgroundColor: isDark ? '#1D1F22' : '#F8FAFC',
+                                  border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                                  textAlign: 'center',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'center',
+                                  gap: '0.45rem',
+                                }}
+                              >
+                                <FiFolder size={22} style={{ color: 'var(--text-muted)', opacity: 0.7 }} />
+                                <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                  No Images Loaded Yet
+                                </div>
+                                <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', maxWidth: '240px', lineHeight: 1.45 }}>
+                                  {fBox.folderSourceType === 'gdrive' && !fBox.folderDriveUrl
+                                    ? 'Open Settings to paste your public Google Drive folder link.'
+                                    : !resolvedName
+                                      ? 'Run the connected node or set a Manual Name in Settings.'
+                                      : 'Click Refresh above to load images from the matched folder.'}
+                                </div>
                               </div>
                             )}
 

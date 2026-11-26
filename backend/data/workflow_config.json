@@ -1,6 +1,6 @@
 {
   "has_saved_config": true,
-  "timestamp": 1795711563574,
+  "timestamp": 1795719882650,
   "workflow_formats": [
     {
       "config": {
@@ -755,7 +755,7 @@
             ],
             "browserCondoImagesCount": 0,
             "browserCondoName": "",
-            "browserGroupName": "BoltHaven Tiktok Hero IMG",
+            "browserGroupName": "Bolthaven Tiktok Hero Img",
             "browserGroupTabUrls": [
               "https://chatgpt.com/c/6b0734d2-5a3c-83ec-a019-4b1e292fb81f"
             ],
@@ -805,7 +805,7 @@
             ],
             "model": "chrome-tab-group",
             "outputCopy": "",
-            "processKind": "enhance_images",
+            "processKind": "generate_image",
             "processType": "chrome_tab_group",
             "promptSourceMode": "upstream_ai",
             "provider": "external_browser",
@@ -819,7 +819,7 @@
             "skipTab1": true,
             "stagingMode": "direct_tab2",
             "subtitle": "1 Tabs",
-            "tabGroupMode": "enhance",
+            "tabGroupMode": "generate",
             "templateId": "chrome-tab-group",
             "templateText": "Tab Group: Flow-5146",
             "title": "BoltHaven Tiktok Hero IMG",
@@ -1021,7 +1021,8 @@
             "folderManualName": "",
             "folderMaxImages": 10,
             "folderNameSourceId": "auto",
-            "folderNameSourceMode": "connected",
+            "folderNameSourceMode": "manual",
+            "folderSourceType": "local",
             "folderSubPath": "watermark",
             "generatedImages": [],
             "id": "ai-box-folder-images-1795578925642",
@@ -1541,7 +1542,7 @@
       "id": "format-1792648980268",
       "isPinned": true,
       "name": "General Post",
-      "updatedAt": 1795710111310
+      "updatedAt": 1795719882235
     },
     {
       "config": {

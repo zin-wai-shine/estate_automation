@@ -205,6 +205,11 @@ func main() {
 	sheetsGroup.Post("/delete-row", handlers.DeleteGoogleSheetRow)
 	sheetsGroup.Post("/update-row", handlers.UpdateGoogleSheetRow)
 
+	// Google Drive Public / Service-Account Folder Image Routes
+	driveGroup := app.Group("/api/google-drive")
+	driveGroup.Post("/list-folder-images", handlers.ListGoogleDriveFolderImages)
+	driveGroup.Get("/image", handlers.ProxyGoogleDriveImage)
+
 	// n8n Automation Engine Integration Routes (Admin-protected)
 	n8nRoutes := app.Group("/api/integrations/n8n", middleware.Protected(), middleware.RequireRole(models.RoleAdmin))
 	n8nRoutes.Get("/status", handlers.N8NStatusCheck)
