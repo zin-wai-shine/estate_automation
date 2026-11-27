@@ -91,7 +91,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     };
     fetchCropFormatsFromBackend().then((fmts) => {
       if (fmts && fmts.length > 0) setSavedFormats(fmts);
-    }).catch(() => {});
+    }).catch(() => { });
     window.addEventListener('storage', handleSync);
     window.addEventListener('ea_crop_formats_updated', handleSync);
     window.addEventListener('ea_active_crop_format_changed', handleSync);
@@ -204,7 +204,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       a.click();
       document.body.removeChild(a);
       setTimeout(() => {
-        try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+        try { URL.revokeObjectURL(blobUrl); } catch (_) { }
       }, 30000);
     } catch (err) {
       console.warn('downloadFileFromUrl direct fallback:', err);
@@ -389,7 +389,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       a.click();
       document.body.removeChild(a);
       setTimeout(() => {
-        try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+        try { URL.revokeObjectURL(blobUrl); } catch (_) { }
       }, 30000);
     } catch (err) {
       console.error('Failed to create ZIP:', err);
@@ -561,8 +561,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       (b) =>
         !isRunnerBox(b) &&
         (b.title?.toLowerCase().includes('enhance') ||
-         b.browserGroupName?.toLowerCase().includes('enhance') ||
-         b.tabGroupMode === 'enhance') &&
+          b.browserGroupName?.toLowerCase().includes('enhance') ||
+          b.tabGroupMode === 'enhance') &&
         b.id !== box.id
     );
   }, [connectedUpstreamEnhance, box.imageSource, workflowBoxes, box.id]);
@@ -660,7 +660,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           }
         }
       }
-    } catch (_) {}
+    } catch (_) { }
     return null;
   });
 
@@ -769,7 +769,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     try {
       const saved = localStorage.getItem(`bolthaven_format_uploads_${box.id}`);
       if (saved) return JSON.parse(saved);
-    } catch {}
+    } catch { }
     return [];
   });
 
@@ -823,7 +823,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       });
       try {
         localStorage.setItem(`bolthaven_format_uploads_${box.id}`, JSON.stringify(updated));
-      } catch {}
+      } catch { }
 
       lastRenderedKeyRef.current = '';
     }
@@ -851,7 +851,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     });
     try {
       localStorage.setItem(`bolthaven_format_uploads_${box.id}`, JSON.stringify(next));
-    } catch {}
+    } catch { }
     lastRenderedKeyRef.current = '';
   };
 
@@ -867,7 +867,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       lastRenderedKeyRef.current = '';
       try {
         localStorage.removeItem(`bolthaven_format_uploads_${box.id}`);
-      } catch {}
+      } catch { }
       try {
         for (let i = localStorage.length - 1; i >= 0; i--) {
           const k = localStorage.key(i);
@@ -875,7 +875,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             localStorage.removeItem(k);
           }
         }
-      } catch {}
+      } catch { }
     };
     window.addEventListener('ea_workflow_cleared', handleCleared);
     return () => window.removeEventListener('ea_workflow_cleared', handleCleared);
@@ -925,7 +925,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         const saved = localStorage.getItem(`bolthaven_canvas_enhanced_${listingCode}`);
         if (saved) return JSON.parse(saved);
       }
-    } catch {}
+    } catch { }
     return {};
   });
 
@@ -967,7 +967,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             try {
               const codeKey = listingCode || 'current';
               localStorage.removeItem(`bolthaven_canvas_enhanced_${codeKey}`);
-            } catch {}
+            } catch { }
             return;
           }
 
@@ -1005,7 +1005,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             try {
               const codeKey = listingCode || 'current';
               localStorage.setItem(`bolthaven_canvas_enhanced_${codeKey}`, JSON.stringify(map));
-            } catch {}
+            } catch { }
             return map;
           });
         } else if (!isCancelled && downloaded && downloaded.length === 0) {
@@ -1014,7 +1014,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           try {
             const codeKey = listingCode || 'current';
             localStorage.removeItem(`bolthaven_canvas_enhanced_${codeKey}`);
-          } catch {}
+          } catch { }
         }
       } catch (e) {
         if (!isCancelled) setCompanionEnhanced({});
@@ -1134,7 +1134,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               return parsed;
             }
           }
-        } catch (_) {}
+        } catch (_) { }
       }
       if (effectiveHeroImage && effectiveHeroImage.url && isImageMatchingListing(effectiveHeroImage.fileName, listingCode)) {
         const targetTitle = (target?.title || '').toLowerCase();
@@ -1168,30 +1168,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
           label: activeHeroImage.condoName ? `${activeHeroImage.condoName} Hero` : `${heroNodeLabel} (1 Photo)`,
         }];
       }
-      // If hero image has not been generated yet, but connected photos exist from upstream (e.g. Get Images / Enhance):
-      // Show the connected photos so user can preview and crop them!
-      if (effectiveImageList && effectiveImageList.length > 0) {
-        effectiveImageList.forEach((img, idx) => {
-          const photoNum = idx + 1;
-          const url =
-            watermarkedPhotos?.[idx] ||
-            (typeof img.index === 'number' ? watermarkedPhotos?.[img.index] : undefined) ||
-            (img.stored_url
-              ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-              : img.source_url);
-          if (url) {
-            rawList.push({
-              id: `raw-${photoNum}`,
-              index: photoNum,
-              displayNumber: photoNum,
-              url,
-              source: 'get_images',
-              label: `Photo #${photoNum}`,
-            });
-          }
-        });
-        if (rawList.length > 0) return rawList;
-      }
+      // If hero image has NOT been generated yet:
+      // Strictly wait for Hero image! Do NOT fall back to get_images or enhance photos!
       return [];
     }
 
@@ -1200,7 +1178,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       imageSource === 'upload' ||
       (uploadedImages.length > 0 &&
         (isEnhanceEmpty ||
-         (!isEnhanceSource && (!effectiveImageList || effectiveImageList.length === 0))));
+          (!isEnhanceSource && (!effectiveImageList || effectiveImageList.length === 0))));
 
     if (shouldUseUploaded && uploadedImages.length > 0) {
       uploadedImages.forEach((img, idx) => {
@@ -1235,12 +1213,12 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
         const effectiveUrl = isEnhanceSource
           ? enhancedUrl
           : enhancedUrl ||
-            (() => {
-              const rawImg = effectiveImageList?.[idx];
-              return rawImg
-                ? (watermarkedPhotos?.[idx] || (typeof rawImg.index === 'number' ? watermarkedPhotos?.[rawImg.index] : undefined) || (rawImg.stored_url ? (rawImg.stored_url.startsWith('http') ? rawImg.stored_url : `http://localhost:8085${rawImg.stored_url}`) : rawImg.source_url))
-                : '';
-            })();
+          (() => {
+            const rawImg = effectiveImageList?.[idx];
+            return rawImg
+              ? (watermarkedPhotos?.[idx] || (typeof rawImg.index === 'number' ? watermarkedPhotos?.[rawImg.index] : undefined) || (rawImg.stored_url ? (rawImg.stored_url.startsWith('http') ? rawImg.stored_url : `http://localhost:8085${rawImg.stored_url}`) : rawImg.source_url))
+              : '';
+          })();
 
         if (!effectiveUrl) {
           continue;
@@ -1265,12 +1243,14 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
       if (effectiveImageList && effectiveImageList.length > 0) {
         effectiveImageList.forEach((img, idx) => {
           const photoNum = idx + 1;
-          const url =
-            watermarkedPhotos?.[idx] ||
-            (typeof img.index === 'number' ? watermarkedPhotos?.[img.index] : undefined) ||
-            (img.stored_url
-              ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-              : img.source_url);
+          const isFolderImg = String((img as any).id || '').startsWith('folder-');
+          const url = isFolderImg
+            ? ((img as any).url || img.source_url)
+            : (watermarkedPhotos?.[idx] ||
+              (typeof img.index === 'number' ? watermarkedPhotos?.[img.index] : undefined) ||
+              (img.stored_url
+                ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+                : img.source_url));
           rawList.push({
             id: `raw-${photoNum}`,
             index: photoNum,
@@ -1542,6 +1522,47 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
   const sourceOptions: SelectOption[] = useMemo(() => {
     const opts: SelectOption[] = [];
     const getImagesCount = effectiveImageList.length;
+
+    const directUpIds = new Set(
+      (connections || []).filter((c) => c.toNodeId === box.id).map((c) => c.fromNodeId)
+    );
+    const cropParentIds = (connections || [])
+      .filter((c) => c.toNodeId === box.id)
+      .map((c) => c.fromNodeId)
+      .filter((pid) =>
+        (workflowBoxes || []).some(
+          (b: any) =>
+            b.id === pid &&
+            (b.processType === 'crop_studio' || b.model === 'crop_studio' || b.id?.includes('crop-studio'))
+        )
+      );
+    const cropUpIds = new Set(
+      (connections || []).filter((c) => cropParentIds.includes(c.toNodeId)).map((c) => c.fromNodeId)
+    );
+    const allUpstreamIds = new Set([...directUpIds, ...cropUpIds]);
+    const connectedFolderBoxes = (workflowBoxes || []).filter(
+      (b: any) =>
+        allUpstreamIds.has(b.id) &&
+        (b.processType === 'folder_images' || b.model === 'folder-images' || b.id?.includes('folder-images'))
+    );
+
+    if (connectedFolderBoxes.length > 0) {
+      connectedFolderBoxes.forEach((fb: any) => {
+        const title = (fb.title || 'Folder Images').trim();
+        opts.push({
+          value: 'get_images',
+          label: `${title} (${getImagesCount} ${getImagesCount === 1 ? 'Photo' : 'Photos'})`,
+        });
+      });
+      if (uploadedImages.length > 0) {
+        opts.push({
+          value: 'upload',
+          label: `Uploaded Files (${uploadedImages.length} ${uploadedImages.length === 1 ? 'Photo' : 'Photos'})`,
+        });
+      }
+      return opts;
+    }
+
     const enhanceCount = Object.keys(mergedEnhancedPhotos).length;
     const heroCount = (effectiveHeroImage && effectiveHeroImage.url) ? 1 : 0;
 
@@ -1564,7 +1585,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             const p = JSON.parse(raw);
             if (p?.url && isImageMatchingListing(p.fileName, listingCode)) hasImg = true;
           }
-        } catch (_) {}
+        } catch (_) { }
         if (!hasImg && effectiveHeroImage?.url && isImageMatchingListing(effectiveHeroImage.fileName, listingCode)) {
           const tLower = title.toLowerCase();
           const fn = (effectiveHeroImage.fileName || '').toLowerCase();
@@ -1631,7 +1652,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
     }
 
     return opts;
-  }, [effectiveImageList.length, mergedEnhancedPhotos, effectiveHeroImage, heroLabel, enhanceLabel, workflowBoxes, box.id, heroNode, isHeroCropNode, enhanceNode, isUpstreamEnhance, uploadedImages.length]);
+  }, [effectiveImageList.length, mergedEnhancedPhotos, effectiveHeroImage, heroLabel, enhanceLabel, workflowBoxes, connections, box.id, heroNode, isHeroCropNode, enhanceNode, isUpstreamEnhance, uploadedImages.length]);
 
   const photoOptions: SelectOption[] = useMemo(() => {
     if (currentSourceList.length === 0) {
@@ -1786,12 +1807,14 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               {isHeroCropNode && imageSource !== 'upload'
                 ? `${heroLabel} (${effectiveHeroImage && effectiveHeroImage.url ? '1 Photo' : 'Waiting for Hero Image'})`
                 : imageSource === 'upload' || (activePhotosToFormat.length > 0 && (activePhotosToFormat[0] as any)?.source === 'upload')
-                ? `Uploaded Files (${activePhotosToFormat.length} Photos)`
-                : imageSource === 'generate'
-                ? `${heroLabel} (${effectiveHeroImage && effectiveHeroImage.url ? '1 Photo' : '0 Photos'})`
-                : isEnhanceSource || imageSource === 'enhance' || isUpstreamEnhance
-                ? `${enhanceLabel} (${activePhotosToFormat.length > 0 ? `${activePhotosToFormat.length} Photos` : 'Waiting for Enhanced Photos'})`
-                : `Get Images (${activePhotosToFormat.length} Photos)`}
+                  ? `Uploaded Files (${activePhotosToFormat.length} Photos)`
+                  : imageSource === 'generate'
+                    ? `${heroLabel} (${effectiveHeroImage && effectiveHeroImage.url ? '1 Photo' : '0 Photos'})`
+                    : isEnhanceSource || imageSource === 'enhance' || isUpstreamEnhance
+                      ? `${enhanceLabel} (${activePhotosToFormat.length > 0 ? `${activePhotosToFormat.length} Photos` : 'Waiting for Enhanced Photos'})`
+                      : effectiveImageList.some((img: any) => String(img?.id || '').startsWith('folder-'))
+                        ? `Folder Images (${activePhotosToFormat.length} Photos)`
+                        : `Get Images (${activePhotosToFormat.length} Photos)`}
             </div>
           </div>
         </div>
@@ -1931,7 +1954,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                   lastRenderedKeyRef.current = '';
                   try {
                     localStorage.removeItem(`bolthaven_format_uploads_${box.id}`);
-                  } catch {}
+                  } catch { }
                   onUpdateBox(box.id, {
                     uploadedImages: [],
                     imageSource: undefined,
@@ -1984,12 +2007,12 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                 item.width && item.height
                   ? `${(item.height / item.width) * 100}%`
                   : currentFormat?.aspect === '4:5'
-                  ? '125%'
-                  : currentFormat?.aspect === '16:9'
-                  ? '56.25%'
-                  : currentFormat?.aspect === '9:16'
-                  ? '177.7%'
-                  : '100%';
+                    ? '125%'
+                    : currentFormat?.aspect === '16:9'
+                      ? '56.25%'
+                      : currentFormat?.aspect === '9:16'
+                        ? '177.7%'
+                        : '100%';
 
               return (
                 <div
@@ -2007,8 +2030,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                     border: isSelected
                       ? '2px solid #3B82F6'
                       : isDark
-                      ? '1px solid #30363D'
-                      : '1px solid #CBD5E1',
+                        ? '1px solid #30363D'
+                        : '1px solid #CBD5E1',
                     backgroundColor: isDark ? '#161B22' : '#E2E8F0',
                     cursor: 'pointer',
                     boxShadow: isSelected ? '0 0 10px rgba(59, 130, 246, 0.4)' : 'none',
@@ -2039,7 +2062,7 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                                 target.src = `/storage/uploads/facebook-import/enhanced/${filename}`;
                                 return;
                               }
-                            } catch (_) {}
+                            } catch (_) { }
                           }
                           if (currentSrc.includes('/storage/uploads/facebook-import/enhanced/')) {
                             const filename = currentSrc.split('/').pop();
@@ -2140,21 +2163,21 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
                             type="button"
                             onClick={(e) => handleRemoveUploadedImage(removeId, e)}
                             title="Remove uploaded image"
-                          style={{
-                            width: '28px',
-                            height: '28px',
-                            borderRadius: '50%',
-                            backgroundColor: 'rgba(239, 68, 68, 0.85)',
-                            border: '1px solid rgba(255, 255, 255, 0.35)',
-                            color: '#FFFFFF',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer',
-                            transition: 'all 0.15s ease',
-                          }}
-                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#DC2626')}
-                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.85)')}
+                            style={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '50%',
+                              backgroundColor: 'rgba(239, 68, 68, 0.85)',
+                              border: '1px solid rgba(255, 255, 255, 0.35)',
+                              color: '#FFFFFF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#DC2626')}
+                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.85)')}
                           >
                             <FiTrash2 size={12} />
                           </button>
@@ -2472,8 +2495,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               border: isDraggingOver
                 ? '2px dashed #3B82F6'
                 : isDark
-                ? '1px solid #30363D'
-                : '1px solid #E2E8F0',
+                  ? '1px solid #30363D'
+                  : '1px solid #E2E8F0',
               backgroundColor: isDraggingOver
                 ? (isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.06)')
                 : (isDark ? 'rgba(245, 158, 11, 0.04)' : 'rgba(245, 158, 11, 0.03)'),
@@ -2614,8 +2637,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               border: isDraggingOver
                 ? '1.5px dashed #326EE6'
                 : isDark
-                ? '1px solid rgba(255, 255, 255, 0.08)'
-                : '1px solid #E2E8F0',
+                  ? '1px solid rgba(255, 255, 255, 0.08)'
+                  : '1px solid #E2E8F0',
               backgroundColor: isDraggingOver
                 ? (isDark ? 'rgba(50, 110, 230, 0.12)' : 'rgba(50, 110, 230, 0.06)')
                 : (isDark ? '#25282B' : '#F8FAFC'),
@@ -2724,8 +2747,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
             border: isDraggingOver
               ? '2px dashed #3B82F6'
               : isDark
-              ? '1.5px dashed #30363D'
-              : '1.5px dashed #CBD5E1',
+                ? '1.5px dashed #30363D'
+                : '1.5px dashed #CBD5E1',
             backgroundColor: isDraggingOver
               ? (isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.06)')
               : (isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)'),
@@ -2760,8 +2783,8 @@ export const WatermarkNodeModal: React.FC<WatermarkNodeModalProps> = ({
               {imageSource === 'generate'
                 ? `The upstream ${heroLabel} node has not generated a photo yet. You can upload photos directly to run the crop process.`
                 : imageSource === 'enhance' || isUpstreamEnhance
-                ? `The upstream ${enhanceLabel} node has not enhanced photos yet. You can upload photos directly to run the crop process.`
-                : 'Drag & drop photos here, or click to browse files from your computer to run the crop process.'}
+                  ? `The upstream ${enhanceLabel} node has not enhanced photos yet. You can upload photos directly to run the crop process.`
+                  : 'Drag & drop photos here, or click to browse files from your computer to run the crop process.'}
             </span>
           </div>
 

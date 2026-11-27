@@ -23,6 +23,7 @@ import {
   FiRefreshCw,
   FiMinus,
   FiCheckSquare,
+  FiSidebar,
 } from 'react-icons/fi';
 import { Select } from '../../components/ui/Select';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
@@ -75,6 +76,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
 }) => {
   // Navigation: 'custom_flow' vs 'discovered_groups'
   const [activeTab, setActiveTab] = useState<'custom_flow' | 'discovered_groups'>('custom_flow');
+  const [showSettingsSidebox, setShowSettingsSidebox] = useState<boolean>(true);
 
   // Resolved workflow image sources
   const activeWorkflowSources = useMemo<WorkflowImageSource[]>(() => {
@@ -279,9 +281,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+            backgroundColor: isDark ? '#25282B' : '#FFFFFF',
             borderRadius: '4px',
-            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+            border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
             height: '24px',
             padding: '0 2px',
           }}
@@ -313,7 +315,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
             }}
             onMouseEnter={(e) => {
               if (s.count > 1) {
-                e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#E2E8F0';
+                e.currentTarget.style.backgroundColor = isDark ? '#2B2F33' : '#E2E8F0';
                 e.currentTarget.style.color = isDark ? '#F0F6FC' : '#0F172A';
               }
             }}
@@ -387,7 +389,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
             }}
             onMouseEnter={(e) => {
               if (!isAtMax) {
-                e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#E2E8F0';
+                e.currentTarget.style.backgroundColor = isDark ? '#2B2F33' : '#E2E8F0';
                 e.currentTarget.style.color = isDark ? '#F0F6FC' : '#0F172A';
               }
             }}
@@ -568,180 +570,97 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       style={{
-        position: 'absolute',
+        position: 'fixed',
         top: 0,
         right: 0,
         bottom: 0,
-        width: 'min(980px, 52vw)',
-        minWidth: '720px',
-        maxWidth: '100%',
-        backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
-        borderLeft: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+        width: showSettingsSidebox ? '880px' : '440px',
+        maxWidth: 'calc(100vw - 40px)',
+        backgroundColor: 'transparent',
+        borderLeft: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
         boxShadow: isDark
-          ? '-6px 0 24px rgba(0, 0, 0, 0.45)'
-          : '-2px 0 16px rgba(0, 0, 0, 0.06)',
+          ? '-12px 0 36px rgba(0, 0, 0, 0.65)'
+          : '-4px 0 24px rgba(0, 0, 0, 0.08)',
         zIndex: 170,
         display: 'flex',
-        flexDirection: 'column',
+        flexDirection: 'row',
+        overflow: 'hidden',
+        transition: 'width 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
         animation: 'sidebarSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
-      {/* ── HEADER ── */}
+      {/* ── LEFT SETTINGS SIDEBOX (440px, TOGGLED BY <FiSidebar />) ── */}
       <div
         style={{
-          padding: '0.75rem 1.25rem',
-          borderBottom: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+          width: showSettingsSidebox ? '440px' : '0px',
+          minWidth: showSettingsSidebox ? '440px' : '0px',
+          height: '100%',
+          backgroundColor: isDark ? '#25282B' : '#FFFFFF',
+          borderRight: showSettingsSidebox
+            ? (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0')
+            : 'none',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          backgroundColor: isDark ? '#161B22' : '#FFFFFF',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '6px',
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F1F5F9',
-              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-              color: isDark ? '#E6EDF3' : '#1E293B',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <FiGitBranch size={16} />
-          </div>
-          <div>
-            <h3
-              style={{
-                margin: 0,
-                fontSize: '0.875rem',
-                fontWeight: 600,
-                color: isDark ? '#F0F6FC' : '#0F172A',
-                letterSpacing: '-0.01em',
-              }}
-            >
-              Connect Chrome Tab Group
-            </h3>
-            <p style={{ margin: '1px 0 0', fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>
-              Configure browser workflow for {browserProfileName || fromTitle}
-            </p>
-          </div>
-        </div>
-
-        {/* View Switcher & Close */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
-              borderRadius: '6px',
-              padding: '2px',
-              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setActiveTab('custom_flow')}
-              style={{
-                padding: '4px 10px',
-                borderRadius: '4px',
-                fontSize: '0.6875rem',
-                fontWeight: activeTab === 'custom_flow' ? 600 : 500,
-                backgroundColor: activeTab === 'custom_flow'
-                  ? (isDark ? '#21262D' : '#FFFFFF')
-                  : 'transparent',
-                color: activeTab === 'custom_flow'
-                  ? (isDark ? '#F0F6FC' : '#0F172A')
-                  : (isDark ? '#8B949E' : '#64748B'),
-                border: activeTab === 'custom_flow'
-                  ? (isDark ? '1px solid #30363D' : '1px solid #CBD5E1')
-                  : '1px solid transparent',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                transition: 'all 0.12s ease',
-              }}
-            >
-              <FiPlus size={11} />
-              <span>Create Flow</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('discovered_groups')}
-              style={{
-                padding: '4px 10px',
-                borderRadius: '4px',
-                fontSize: '0.6875rem',
-                fontWeight: activeTab === 'discovered_groups' ? 600 : 500,
-                backgroundColor: activeTab === 'discovered_groups'
-                  ? (isDark ? '#21262D' : '#FFFFFF')
-                  : 'transparent',
-                color: activeTab === 'discovered_groups'
-                  ? (isDark ? '#F0F6FC' : '#0F172A')
-                  : (isDark ? '#8B949E' : '#64748B'),
-                border: activeTab === 'discovered_groups'
-                  ? (isDark ? '1px solid #30363D' : '1px solid #CBD5E1')
-                  : '1px solid transparent',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                transition: 'all 0.12s ease',
-              }}
-            >
-              <FiLayers size={11} />
-              <span>Discovered ({discoveredTabGroups.length})</span>
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            title="Close (Esc)"
-            style={{
-              width: '26px',
-              height: '26px',
-              borderRadius: '6px',
-              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-              backgroundColor: 'transparent',
-              color: isDark ? '#8B949E' : '#64748B',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all 0.12s ease',
-            }}
-          >
-            <FiX size={14} />
-          </button>
-        </div>
-      </div>
-
-      {/* ── TWO-COLUMN BODY ── */}
-      <div
-        style={{
-          flex: 1,
-          display: 'grid',
-          gridTemplateColumns: '50% 50%',
+          flexDirection: 'column',
           overflow: 'hidden',
+          opacity: showSettingsSidebox ? 1 : 0,
+          pointerEvents: showSettingsSidebox ? 'auto' : 'none',
+          visibility: showSettingsSidebox ? 'visible' : 'hidden',
+          transition: 'width 0.28s cubic-bezier(0.16, 1, 0.3, 1), min-width 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease',
         }}
       >
-        {/* ── LEFT COLUMN: FEATURES AND CONTROLS ── */}
+        {/* Left Settings Header (62px) */}
         <div
           style={{
+            padding: '0 1.125rem',
+            height: '62px',
+            minHeight: '62px',
+            maxHeight: '62px',
+            boxSizing: 'border-box',
+            borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: isDark ? '#25282B' : '#FFFFFF',
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                backgroundColor: isDark ? 'rgba(50, 110, 230, 0.15)' : '#EFF6FF',
+                color: isDark ? '#60A5FA' : '#2563EB',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <FiSliders size={15} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                Flow Settings
+              </div>
+              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Configure flow name, prompt &amp; attached photos
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Left Settings Scrollable Body */}
+        <div
+          style={{
+            flex: 1,
             overflowY: 'auto',
-            padding: '1.25rem',
-            borderRight: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+            padding: '1rem 1.125rem 2.5rem 1.125rem',
             display: 'flex',
             flexDirection: 'column',
             gap: '1rem',
-            backgroundColor: isDark ? '#0D1117' : '#FFFFFF',
+            backgroundColor: isDark ? '#25282B' : '#FFFFFF',
           }}
         >
           {activeTab === 'discovered_groups' ? (
@@ -765,8 +684,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     justifyContent: 'space-between',
                     padding: '0.65rem 0.85rem',
                     borderRadius: '6px',
-                    border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-                    backgroundColor: isDark ? '#161B22' : '#F8FAFC',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                    backgroundColor: isDark ? '#25282B' : '#F8FAFC',
                     gap: '10px',
                   }}
                 >
@@ -776,8 +695,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                         width: '28px',
                         height: '28px',
                         borderRadius: '5px',
-                        backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                        border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                        backgroundColor: isDark ? '#2B2F33' : '#F1F5F9',
+                        border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
                         color: isDark ? '#F0F6FC' : '#1E293B',
                         display: 'flex',
                         alignItems: 'center',
@@ -792,7 +711,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                         <span style={{ fontSize: '0.78125rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {g.name}
                         </span>
-                        <span style={{ fontSize: '0.5625rem', padding: '1px 5px', borderRadius: '3px', backgroundColor: isDark ? '#21262D' : '#E2E8F0', color: isDark ? '#8B949E' : '#64748B', fontWeight: 600 }}>
+                        <span style={{ fontSize: '0.5625rem', padding: '1px 5px', borderRadius: '3px', backgroundColor: isDark ? '#2B2F33' : '#E2E8F0', color: isDark ? '#8B949E' : '#64748B', fontWeight: 600 }}>
                           {g.tabs?.length || g.tabs_count || 0} tabs
                         </span>
                       </div>
@@ -817,7 +736,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                         fontWeight: 500,
                         backgroundColor: 'transparent',
                         color: isDark ? '#8B949E' : '#64748B',
-                        border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                        border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                         cursor: 'pointer',
                       }}
                     >
@@ -851,7 +770,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                   style={{
                     padding: '2rem',
                     textAlign: 'center',
-                    border: isDark ? '1px dashed #30363D' : '1px dashed #CBD5E1',
+                    border: isDark ? '1px dashed rgba(255, 255, 255, 0.14)' : '1px dashed #CBD5E1',
                     borderRadius: '6px',
                     fontSize: '0.75rem',
                     color: isDark ? '#8B949E' : '#64748B',
@@ -882,12 +801,12 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                       fontSize: '0.65625rem',
                       fontWeight: 500,
                       backgroundColor: showTemplatesDropdown
-                        ? (isDark ? '#21262D' : '#E2E8F0')
-                        : (isDark ? '#161B22' : '#F1F5F9'),
+                        ? (isDark ? '#2B2F33' : '#E2E8F0')
+                        : (isDark ? '#25282B' : '#F1F5F9'),
                       color: showTemplatesDropdown
                         ? (isDark ? '#58A6FF' : '#2563EB')
                         : (isDark ? '#C9D1D9' : '#475569'),
-                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                      border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                       cursor: 'pointer',
                       transition: 'all 0.12s ease',
                     }}
@@ -916,8 +835,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     borderRadius: '6px',
                     fontSize: '0.8125rem',
                     fontWeight: 500,
-                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                    backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+                    backgroundColor: isDark ? '#25282B' : '#FFFFFF',
                     color: isDark ? '#F0F6FC' : '#0F172A',
                     boxSizing: 'border-box',
                     outline: 'none',
@@ -939,8 +858,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                         left: 0,
                         zIndex: 50,
                         borderRadius: '6px',
-                        border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                        backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                        border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+                        backgroundColor: isDark ? '#25282B' : '#FFFFFF',
                         boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
                         padding: '6px',
                         display: 'flex',
@@ -976,7 +895,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                               borderRadius: '4px',
                               border: 'none',
                               backgroundColor: isSelected
-                                ? (isDark ? '#21262D' : '#E2E8F0')
+                                ? (isDark ? '#2B2F33' : '#E2E8F0')
                                 : 'transparent',
                               color: isSelected ? (isDark ? '#58A6FF' : '#2563EB') : (isDark ? '#F0F6FC' : '#0F172A'),
                               cursor: 'pointer',
@@ -997,7 +916,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                 fontSize: '0.59375rem',
                                 padding: '2px 6px',
                                 borderRadius: '3px',
-                                backgroundColor: isDark ? '#0D1117' : '#F1F5F9',
+                                backgroundColor: isDark ? '#1D1F22' : '#F1F5F9',
                                 color: isDark ? '#8B949E' : '#64748B',
                                 fontWeight: 500,
                                 textTransform: 'capitalize',
@@ -1033,24 +952,26 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                       alignItems: 'center',
                       justifyContent: 'center',
                       gap: '8px',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
+                      height: '36px',
+                      padding: '0 12px',
+                      borderRadius: '8px',
                       fontSize: '0.75rem',
-                      fontWeight: tabGroupMode === 'generate' ? 600 : 400,
+                      fontWeight: 600,
                       backgroundColor: tabGroupMode === 'generate'
-                        ? (isDark ? 'rgba(56, 139, 253, 0.15)' : '#EFF6FF')
-                        : 'transparent',
+                        ? (isDark ? '#326EE6' : '#0F172A')
+                        : (isDark ? '#1D1F22' : '#FFFFFF'),
                       color: tabGroupMode === 'generate'
-                        ? (isDark ? '#58A6FF' : '#2563EB')
-                        : (isDark ? '#8B949E' : '#64748B'),
+                        ? '#FFFFFF'
+                        : 'var(--text-secondary)',
                       border: tabGroupMode === 'generate'
-                        ? (isDark ? '1px solid #58A6FF' : '1px solid #2563EB')
-                        : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
+                        ? '1px solid #326EE6'
+                        : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0'),
                       cursor: 'pointer',
+                      outline: 'none',
                       transition: 'all 0.12s ease',
                     }}
                   >
-                    <FiImage size={14} style={{ color: tabGroupMode === 'generate' ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B'), flexShrink: 0 }} />
+                    <FiImage size={14} style={{ color: tabGroupMode === 'generate' ? '#FFFFFF' : 'var(--text-muted)', flexShrink: 0 }} />
                     <span>Generate Image</span>
                   </button>
 
@@ -1062,24 +983,26 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                       alignItems: 'center',
                       justifyContent: 'center',
                       gap: '8px',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
+                      height: '36px',
+                      padding: '0 12px',
+                      borderRadius: '8px',
                       fontSize: '0.75rem',
-                      fontWeight: tabGroupMode === 'enhance' ? 600 : 400,
+                      fontWeight: 600,
                       backgroundColor: tabGroupMode === 'enhance'
-                        ? (isDark ? '#21262D' : '#FFFFFF')
-                        : 'transparent',
+                        ? (isDark ? '#326EE6' : '#0F172A')
+                        : (isDark ? '#1D1F22' : '#FFFFFF'),
                       color: tabGroupMode === 'enhance'
-                        ? (isDark ? '#F0F6FC' : '#0F172A')
-                        : (isDark ? '#8B949E' : '#64748B'),
+                        ? '#FFFFFF'
+                        : 'var(--text-secondary)',
                       border: tabGroupMode === 'enhance'
-                        ? (isDark ? '1px solid #58A6FF' : '1px solid #2563EB')
-                        : (isDark ? '1px solid #30363D' : '1px solid #E2E8F0'),
+                        ? '1px solid #326EE6'
+                        : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0'),
                       cursor: 'pointer',
+                      outline: 'none',
                       transition: 'all 0.12s ease',
                     }}
                   >
-                    <FiSliders size={14} style={{ color: tabGroupMode === 'enhance' ? '#58A6FF' : (isDark ? '#8B949E' : '#64748B'), flexShrink: 0 }} />
+                    <FiSliders size={14} style={{ color: tabGroupMode === 'enhance' ? '#FFFFFF' : 'var(--text-muted)', flexShrink: 0 }} />
                     <span>Enhance Images</span>
                   </button>
                 </div>
@@ -1090,7 +1013,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                 /* GENERATE MODE PIPELINE */
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                   {/* Item 1: Prompt Section */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #2B2F33' : '1px solid #F1F5F9' }}>
                     <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
                       Prompt
                     </label>
@@ -1108,20 +1031,21 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                           type="button"
                           onClick={() => setSelectedPromptSource('upstream_ai')}
                           style={{
-                            padding: '3px 10px',
-                            borderRadius: '4px',
-                            fontSize: '0.65625rem',
-                            fontWeight: selectedPromptSource === 'upstream_ai' ? 600 : 400,
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.6875rem',
+                            fontWeight: 600,
                             backgroundColor: selectedPromptSource === 'upstream_ai'
-                              ? (isDark ? '#21262D' : '#E2E8F0')
-                              : 'transparent',
+                              ? (isDark ? '#326EE6' : '#0F172A')
+                              : (isDark ? '#1D1F22' : '#FFFFFF'),
                             color: selectedPromptSource === 'upstream_ai'
-                              ? (isDark ? '#F0F6FC' : '#0F172A')
-                              : (isDark ? '#8B949E' : '#64748B'),
+                              ? '#FFFFFF'
+                              : 'var(--text-secondary)',
                             border: selectedPromptSource === 'upstream_ai'
-                              ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                              : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                              ? '1px solid #326EE6'
+                              : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1'),
                             cursor: 'pointer',
+                            outline: 'none',
                           }}
                         >
                           Canvas AI
@@ -1130,20 +1054,21 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                           type="button"
                           onClick={() => setSelectedPromptSource('custom')}
                           style={{
-                            padding: '3px 10px',
-                            borderRadius: '4px',
-                            fontSize: '0.65625rem',
-                            fontWeight: selectedPromptSource === 'custom' ? 600 : 400,
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.6875rem',
+                            fontWeight: 600,
                             backgroundColor: selectedPromptSource === 'custom'
-                              ? (isDark ? '#21262D' : '#E2E8F0')
-                              : 'transparent',
+                              ? (isDark ? '#326EE6' : '#0F172A')
+                              : (isDark ? '#1D1F22' : '#FFFFFF'),
                             color: selectedPromptSource === 'custom'
-                              ? (isDark ? '#F0F6FC' : '#0F172A')
-                              : (isDark ? '#8B949E' : '#64748B'),
+                              ? '#FFFFFF'
+                              : 'var(--text-secondary)',
                             border: selectedPromptSource === 'custom'
-                              ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                              : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                              ? '1px solid #326EE6'
+                              : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1'),
                             cursor: 'pointer',
+                            outline: 'none',
                           }}
                         >
                           Custom
@@ -1169,8 +1094,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                             width: '100%',
                             padding: '6px 8px',
                             borderRadius: '6px',
-                            border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                            border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+                            backgroundColor: isDark ? '#25282B' : '#FFFFFF',
                             color: isDark ? '#F0F6FC' : '#0F172A',
                             fontSize: '0.6875rem',
                             boxSizing: 'border-box',
@@ -1182,7 +1107,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                   </div>
 
                   {/* Staging Flow Mode */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '0.75rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '0.75rem', borderBottom: isDark ? '1px solid #2B2F33' : '1px solid #F1F5F9' }}>
                     <div>
                       <div style={{ fontSize: '0.75rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
                         Staging Flow
@@ -1221,7 +1146,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                     </div>
 
                     {/* Item 2: Reference Layout */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #21262D' : '1px solid #F1F5F9' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '1rem', borderBottom: isDark ? '1px solid #2B2F33' : '1px solid #F1F5F9' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <FiImage size={15} style={{ color: isDark ? '#8B949E' : '#64748B', flexShrink: 0 }} />
@@ -1260,8 +1185,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                 justifyContent: 'space-between',
                                 padding: '6px 10px',
                                 borderRadius: '6px',
-                                backgroundColor: isDark ? '#161B22' : '#F8FAFC',
-                                border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                                backgroundColor: isDark ? '#25282B' : '#F8FAFC',
+                                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
                                 gap: '10px',
                               }}
                             >
@@ -1274,7 +1199,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                     height: '36px',
                                     borderRadius: '5px',
                                     objectFit: 'cover',
-                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                                     flexShrink: 0,
                                   }}
                                 />
@@ -1317,9 +1242,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                     borderRadius: '5px',
                                     fontSize: '0.6875rem',
                                     fontWeight: 500,
-                                    backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                                    backgroundColor: isDark ? '#2B2F33' : '#F1F5F9',
                                     color: isDark ? '#E6EDF3' : '#334155',
-                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                                     cursor: 'pointer',
                                     display: 'flex',
                                     alignItems: 'center',
@@ -1340,9 +1265,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                     borderRadius: '5px',
                                     fontSize: '0.6875rem',
                                     fontWeight: 500,
-                                    backgroundColor: isDark ? '#21262D' : '#F1F5F9',
+                                    backgroundColor: isDark ? '#2B2F33' : '#F1F5F9',
                                     color: isDark ? '#E6EDF3' : '#334155',
-                                    border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                    border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                                     cursor: 'pointer',
                                     display: 'flex',
                                     alignItems: 'center',
@@ -1392,8 +1317,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                   height: '32px',
                                   padding: '0 10px',
                                   borderRadius: '4px',
-                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                  backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+                                  border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+                                  backgroundColor: isDark ? '#25282B' : '#FFFFFF',
                                   color: isDark ? '#F0F6FC' : '#0F172A',
                                   fontSize: '0.6875rem',
                                   outline: 'none',
@@ -1411,9 +1336,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                   borderRadius: '4px',
                                   fontSize: '0.65625rem',
                                   fontWeight: 500,
-                                  backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                                  backgroundColor: isDark ? '#2B2F33' : '#E2E8F0',
                                   color: isDark ? '#E6EDF3' : '#334155',
-                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                                   cursor: 'pointer',
                                   display: 'inline-flex',
                                   alignItems: 'center',
@@ -1436,9 +1361,9 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                   borderRadius: '4px',
                                   fontSize: '0.65625rem',
                                   fontWeight: 500,
-                                  backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                                  backgroundColor: isDark ? '#2B2F33' : '#E2E8F0',
                                   color: isDark ? '#E6EDF3' : '#334155',
-                                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                  border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                                   cursor: 'pointer',
                                   display: 'inline-flex',
                                   alignItems: 'center',
@@ -1459,8 +1384,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                               style={{
                                 padding: '10px',
                                 borderRadius: '6px',
-                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                                backgroundColor: isDark ? '#161B22' : '#F8FAFC',
+                                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+                                backgroundColor: isDark ? '#25282B' : '#F8FAFC',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 gap: '8px',
@@ -1514,7 +1439,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                           borderRadius: '4px',
                                           border: isSelected
                                             ? (isDark ? '2px solid #58A6FF' : '2px solid #2563EB')
-                                            : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                            : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1'),
                                           overflow: 'hidden',
                                           position: 'relative',
                                           aspectRatio: '1',
@@ -1577,7 +1502,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                       padding: '0.875rem 1rem',
                       borderRadius: '12px',
                       backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#FFFFFF',
-                      border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                      border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
                       boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
                     }}
                   >
@@ -1631,7 +1556,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                             padding: '6px 10px',
                             borderRadius: '8px',
                             backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : '#F1F5F9',
-                            border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
+                            border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
                           }}
                         >
                           <span style={{ fontSize: '0.625rem', color: isDark ? '#8B949E' : '#64748B' }}>Target Group:</span>
@@ -1734,14 +1659,14 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                 fontSize: '0.65625rem',
                                 fontWeight: isSel ? 600 : 400,
                                 backgroundColor: isSel
-                                  ? (isDark ? '#21262D' : '#E2E8F0')
+                                  ? (isDark ? '#2B2F33' : '#E2E8F0')
                                   : 'transparent',
                                 color: isSel
                                   ? (isDark ? '#F0F6FC' : '#0F172A')
                                   : (isDark ? '#8B949E' : '#64748B'),
                                 border: isSel
                                   ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                                  : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                                  : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1'),
                                 cursor: 'pointer',
                               }}
                             >
@@ -1852,14 +1777,14 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                             fontSize: '0.65625rem',
                             fontWeight: enhancePhotoSource === 'all' ? 600 : 400,
                             backgroundColor: enhancePhotoSource === 'all'
-                              ? (isDark ? '#21262D' : '#E2E8F0')
+                              ? (isDark ? '#2B2F33' : '#E2E8F0')
                               : 'transparent',
                             color: enhancePhotoSource === 'all'
                               ? (isDark ? '#F0F6FC' : '#0F172A')
                               : (isDark ? '#8B949E' : '#64748B'),
                             border: enhancePhotoSource === 'all'
                               ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                              : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                              : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1'),
                             cursor: 'pointer',
                           }}
                         >
@@ -1874,14 +1799,14 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                             fontSize: '0.65625rem',
                             fontWeight: enhancePhotoSource === 'hero_only' ? 600 : 400,
                             backgroundColor: enhancePhotoSource === 'hero_only'
-                              ? (isDark ? '#21262D' : '#E2E8F0')
+                              ? (isDark ? '#2B2F33' : '#E2E8F0')
                               : 'transparent',
                             color: enhancePhotoSource === 'hero_only'
                               ? (isDark ? '#F0F6FC' : '#0F172A')
                               : (isDark ? '#8B949E' : '#64748B'),
                             border: enhancePhotoSource === 'hero_only'
                               ? (isDark ? '1px solid #6E7681' : '1px solid #94A3B8')
-                              : (isDark ? '1px solid #30363D' : '1px solid #CBD5E1'),
+                              : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1'),
                             cursor: 'pointer',
                           }}
                         >
@@ -1895,18 +1820,190 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
             </div>
           )}
         </div>
+      </div>
 
-        {/* ── RIGHT COLUMN: LIVE WORKFLOW PREVIEW ── */}
+      {/* ── RIGHT MAIN INSPECTOR PANE (440px, ALWAYS VISIBLE) ── */}
+      <div
+        style={{
+          width: '440px',
+          minWidth: '440px',
+          flexShrink: 0,
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Right Main Header (62px) with Sidebar Toggle & Close */}
         <div
           style={{
+            padding: '0 1rem',
+            height: '62px',
+            minHeight: '62px',
+            maxHeight: '62px',
+            boxSizing: 'border-box',
+            borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: isDark ? '#1D1F22' : '#FFFFFF',
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0, flex: 1 }}>
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                backgroundColor: isDark ? 'rgba(50, 110, 230, 0.15)' : '#EFF6FF',
+                color: isDark ? '#60A5FA' : '#2563EB',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <FiGitBranch size={16} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: '0.875rem',
+                  fontWeight: 700,
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.2,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                Connect Chrome Tab Group
+              </h3>
+              <p style={{ margin: '2px 0 0', fontSize: '0.6875rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Profile: {browserProfileName || fromTitle}
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={() => setShowSettingsSidebox((prev) => !prev)}
+              title={showSettingsSidebox ? 'Hide Flow Settings' : 'Open Flow Settings'}
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                border: showSettingsSidebox
+                  ? '1px solid #326EE6'
+                  : (isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)'),
+                backgroundColor: showSettingsSidebox
+                  ? 'rgba(50, 110, 230, 0.16)'
+                  : (isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9'),
+                color: showSettingsSidebox ? '#60A5FA' : 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <FiSidebar size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              title="Close (Esc)"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                color: 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <FiX size={15} />
+            </button>
+          </div>
+        </div>
+
+        {/* Right Main Scrollable Body */}
+        <div
+          style={{
+            flex: 1,
             overflowY: 'auto',
-            padding: '1.25rem',
-            backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+            padding: '1rem 1.125rem',
+            backgroundColor: isDark ? '#1D1F22' : '#F8FAFC',
             display: 'flex',
             flexDirection: 'column',
             gap: '0.85rem',
           }}
         >
+          {/* Mode Switcher: Create Flow vs Discovered Groups */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '6px',
+              padding: '4px',
+              borderRadius: '8px',
+              backgroundColor: isDark ? '#25282B' : '#F1F5F9',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setActiveTab('custom_flow')}
+              style={{
+                height: '30px',
+                borderRadius: '6px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                backgroundColor: activeTab === 'custom_flow' ? (isDark ? '#326EE6' : '#0F172A') : 'transparent',
+                color: activeTab === 'custom_flow' ? '#FFFFFF' : 'var(--text-secondary)',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '5px',
+              }}
+            >
+              <FiPlus size={12} />
+              <span>Create Flow</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('discovered_groups');
+                if (!showSettingsSidebox) setShowSettingsSidebox(true);
+              }}
+              style={{
+                height: '30px',
+                borderRadius: '6px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                backgroundColor: activeTab === 'discovered_groups' ? (isDark ? '#326EE6' : '#0F172A') : 'transparent',
+                color: activeTab === 'discovered_groups' ? '#FFFFFF' : 'var(--text-secondary)',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '5px',
+              }}
+            >
+              <FiLayers size={12} />
+              <span>Discovered ({discoveredTabGroups.length})</span>
+            </button>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <FiEye size={13} style={{ color: isDark ? '#8B949E' : '#64748B' }} />
@@ -1938,8 +2035,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
             style={{
               padding: '0.75rem 0.85rem',
               borderRadius: '6px',
-              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+              backgroundColor: isDark ? '#25282B' : '#FFFFFF',
               display: 'flex',
               flexDirection: 'column',
               gap: '6px',
@@ -1958,8 +2055,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                   gap: '5px',
                   padding: '4px 8px',
                   borderRadius: '4px',
-                  backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  backgroundColor: isDark ? '#2B2F33' : '#F1F5F9',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                   fontSize: '0.6875rem',
                   fontWeight: 500,
                   color: isDark ? '#F0F6FC' : '#0F172A',
@@ -1979,8 +2076,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                   gap: '5px',
                   padding: '4px 8px',
                   borderRadius: '4px',
-                  backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                  border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                  backgroundColor: isDark ? '#2B2F33' : '#F1F5F9',
+                  border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                   fontSize: '0.6875rem',
                   fontWeight: 600,
                   color: isDark ? '#F0F6FC' : '#0F172A',
@@ -2002,8 +2099,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                       gap: '5px',
                       padding: '4px 8px',
                       borderRadius: '4px',
-                      backgroundColor: isDark ? '#21262D' : '#F1F5F9',
-                      border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                      backgroundColor: isDark ? '#2B2F33' : '#F1F5F9',
+                      border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                       fontSize: '0.6875rem',
                       fontWeight: 500,
                       color: isDark ? '#F0F6FC' : '#0F172A',
@@ -2028,8 +2125,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
             style={{
               padding: '0.75rem 0.85rem',
               borderRadius: '6px',
-              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+              backgroundColor: isDark ? '#25282B' : '#FFFFFF',
               display: 'flex',
               flexDirection: 'column',
               gap: '8px',
@@ -2048,8 +2145,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
             <div
               style={{
                 borderRadius: '6px',
-                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
-                backgroundColor: isDark ? '#0D1117' : '#F8FAFC',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
+                backgroundColor: isDark ? '#1D1F22' : '#F8FAFC',
                 padding: '8px 10px',
                 display: 'flex',
                 flexDirection: 'column',
@@ -2065,8 +2162,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                         style={{
                           padding: '2px 6px',
                           borderRadius: '4px',
-                          backgroundColor: isDark ? '#21262D' : '#E2E8F0',
-                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                          backgroundColor: isDark ? '#2B2F33' : '#E2E8F0',
+                          border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                           color: isDark ? '#C9D1D9' : '#334155',
                           fontSize: '0.59375rem',
                           fontWeight: 500,
@@ -2086,8 +2183,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                         style={{
                           padding: '2px 6px',
                           borderRadius: '4px',
-                          backgroundColor: isDark ? '#21262D' : '#E2E8F0',
-                          border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                          backgroundColor: isDark ? '#2B2F33' : '#E2E8F0',
+                          border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                           color: isDark ? '#C9D1D9' : '#334155',
                           fontSize: '0.59375rem',
                           fontWeight: 500,
@@ -2160,7 +2257,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                                 width: '38px',
                                 height: '38px',
                                 borderRadius: '4px',
-                                border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+                                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
                                 overflow: 'hidden',
                                 flexShrink: 0,
                                 position: 'relative',
@@ -2196,8 +2293,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                       justifyContent: 'space-between',
                       padding: '5px 8px',
                       borderRadius: '4px',
-                      backgroundColor: isDark ? '#161B22' : '#F1F5F9',
-                      border: isDark ? '1px solid #21262D' : '1px solid #E2E8F0',
+                      backgroundColor: isDark ? '#25282B' : '#F1F5F9',
+                      border: isDark ? '1px solid #2B2F33' : '1px solid #E2E8F0',
                       fontSize: '0.625rem',
                       color: isDark ? '#8B949E' : '#64748B',
                     }}
@@ -2214,7 +2311,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                   </div>
 
                   {/* Composer Bottom Bar */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '4px', borderTop: isDark ? '1px solid #21262D' : '1px solid #E2E8F0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '4px', borderTop: isDark ? '1px solid #2B2F33' : '1px solid #E2E8F0' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.59375rem', color: isDark ? '#8B949E' : '#64748B' }}>
                       <FiCpu size={10} />
                       <span>ChatGPT 4o</span>
@@ -2226,7 +2323,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
                           width: '20px',
                           height: '20px',
                           borderRadius: '50%',
-                          backgroundColor: isDark ? '#21262D' : '#E2E8F0',
+                          backgroundColor: isDark ? '#2B2F33' : '#E2E8F0',
                           color: isDark ? '#F0F6FC' : '#0F172A',
                           display: 'flex',
                           alignItems: 'center',
@@ -2258,8 +2355,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
             style={{
               padding: '0.75rem 0.85rem',
               borderRadius: '6px',
-              border: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-              backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+              backgroundColor: isDark ? '#25282B' : '#FFFFFF',
               fontSize: '0.6875rem',
               color: isDark ? '#8B949E' : '#64748B',
               display: 'flex',
@@ -2290,31 +2387,24 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
             </div>
           </div>
         </div>
-      </div>
 
-      {/* ── FOOTER ACTION BAR (CLEAN APPLE / MAC MODAL BUTTON SIZE) ── */}
-      <div
-        style={{
-          padding: '0.75rem 1.25rem',
-          borderTop: isDark ? '1px solid #30363D' : '1px solid #E2E8F0',
-          backgroundColor: isDark ? '#161B22' : '#F8FAFC',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.6875rem', color: isDark ? '#8B949E' : '#64748B' }}>
-          <FiMonitor size={12} />
-          <span>Profile: <strong style={{ color: isDark ? '#F0F6FC' : '#0F172A' }}>{browserProfileName || fromTitle}</strong></span>
-          <span>•</span>
-          <span>
-            {tabGroupMode === 'generate'
-              ? (stagingMode === 'two_stage_tabs' ? '2 Tabs (2-Stage Composite)' : '1 Tab (Direct Composite)')
-              : `${workerTabsCount} Tabs (Batch)`}
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {/* ── FOOTER ACTION BAR (60px, INSIDE RIGHT MAIN BOX) ── */}
+        <div
+          style={{
+            padding: '0 1.125rem',
+            height: '60px',
+            minHeight: '60px',
+            maxHeight: '60px',
+            boxSizing: 'border-box',
+            borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+            backgroundColor: isDark ? '#1D1F22' : '#F8FAFC',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: '8px',
+            flexShrink: 0,
+          }}
+        >
           <button
             type="button"
             onClick={onClose}
@@ -2326,7 +2416,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
               fontWeight: 500,
               cursor: 'pointer',
               backgroundColor: 'transparent',
-              border: isDark ? '1px solid #30363D' : '1px solid #CBD5E1',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1',
               color: isDark ? '#C9D1D9' : '#475569',
               display: 'inline-flex',
               alignItems: 'center',
@@ -2335,7 +2425,7 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
               transition: 'all 0.12s ease',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = isDark ? '#21262D' : '#F1F5F9';
+              e.currentTarget.style.backgroundColor = isDark ? '#2B2F33' : '#F1F5F9';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = 'transparent';
@@ -2354,8 +2444,8 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
               fontSize: '0.75rem',
               fontWeight: 600,
               cursor: 'pointer',
-              backgroundColor: '#2563EB',
-              border: '1px solid #1D4ED8',
+              backgroundColor: isDark ? '#326EE6' : '#0F172A',
+              border: 'none',
               color: '#FFFFFF',
               display: 'inline-flex',
               alignItems: 'center',
@@ -2366,10 +2456,10 @@ export const ChromeTabGroupConnectDrawer: React.FC<ChromeTabGroupConnectDrawerPr
               transition: 'background-color 0.12s ease',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#1D4ED8';
+              e.currentTarget.style.backgroundColor = isDark ? '#295EC9' : '#1E293B';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#2563EB';
+              e.currentTarget.style.backgroundColor = isDark ? '#326EE6' : '#0F172A';
             }}
           >
             <FiPlus size={13} />

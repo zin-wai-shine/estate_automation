@@ -1,5 +1,6 @@
 import { CombineMediaSidebox, type CombineMediaAssetItem } from './CombineMediaSidebox';
 import { GoogleSheetDataViewerSidebox } from './GoogleSheetDataViewerSidebox';
+import { apiUrl } from '../../services/apiClient';
 import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '../../components/ui/Button';
@@ -2267,9 +2268,10 @@ export const sanitizeAndResolveCollisions = (
       });
     }
 
+    const allCropStudioIds = new Set(finalAiBoxes.filter((b) => isCropStudioBox(b)).map((b) => b.id));
     existingWatermarkBoxes.forEach((w) => {
       const isConnected = finalConnections.some(
-        (c) => (c.fromNodeId === centralCropBox!.id && c.toNodeId === w.id) || (c.fromNodeId === w.id && c.toNodeId === centralCropBox!.id)
+        (c) => (allCropStudioIds.has(c.fromNodeId) && c.toNodeId === w.id) || (c.fromNodeId === w.id && allCropStudioIds.has(c.toNodeId))
       );
       if (!isConnected) {
         finalConnections.push({
@@ -2693,6 +2695,7 @@ export interface MergedNodeShapeProps {
   showAddButton?: boolean;
   showBottomAddButton?: boolean;
   showTopAddButton?: boolean;
+  softWhiteTopAddButton?: boolean;
   onAddClick?: (e: React.MouseEvent) => void;
   onBottomAddClick?: (e: React.MouseEvent) => void;
   onTopAddClick?: (e: React.MouseEvent) => void;
@@ -3050,6 +3053,7 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
   showAddButton = false,
   showBottomAddButton = false,
   showTopAddButton = false,
+  softWhiteTopAddButton = false,
   onAddClick,
   onBottomAddClick,
   onTopAddClick,
@@ -3359,8 +3363,8 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
             width: '22px',
             height: '22px',
             borderRadius: '6px',
-            border: isDark ? '1.5px solid #4B5563' : '1.5px solid #94A3B8',
-            backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+            border: '1.5px solid rgba(16, 185, 129, 0.45)',
+            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.16)' : 'rgba(16, 185, 129, 0.12)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -3372,18 +3376,18 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
             transition: 'all 0.15s ease',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = isDark ? '#60A5FA' : '#2563EB';
-            e.currentTarget.style.backgroundColor = isDark ? '#263342' : '#EFF6FF';
+            e.currentTarget.style.borderColor = 'rgba(52, 211, 153, 0.75)';
+            e.currentTarget.style.backgroundColor = isDark ? 'rgba(16, 185, 129, 0.28)' : 'rgba(16, 185, 129, 0.22)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#94A3B8';
-            e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#FFFFFF';
+            e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.45)';
+            e.currentTarget.style.backgroundColor = isDark ? 'rgba(16, 185, 129, 0.16)' : 'rgba(16, 185, 129, 0.12)';
           }}
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
             <path
               d="M 6 2 L 6 10 M 2 6 L 10 6"
-              stroke={isDark ? '#9CA3AF' : '#64748B'}
+              stroke={isDark ? '#34D399' : '#059669'}
               strokeWidth="1.75"
               strokeLinecap="round"
             />
@@ -3413,8 +3417,8 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
             width: '22px',
             height: '22px',
             borderRadius: '6px',
-            border: isDark ? '1.5px solid #4B5563' : '1.5px solid #94A3B8',
-            backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+            border: softWhiteTopAddButton ? '1.5px solid rgba(245, 158, 11, 0.45)' : (isDark ? '1.5px solid #4B5563' : '1.5px solid #94A3B8'),
+            backgroundColor: softWhiteTopAddButton ? 'rgba(245, 158, 11, 0.16)' : (isDark ? '#1F2937' : '#FFFFFF'),
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -3426,18 +3430,23 @@ export const MergedNodeShape: React.FC<MergedNodeShapeProps> = ({
             transition: 'all 0.15s ease',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = isDark ? '#C084FC' : '#7C3AED';
-            e.currentTarget.style.backgroundColor = isDark ? '#2D1F3F' : '#F5F3FF';
+            if (softWhiteTopAddButton) {
+              e.currentTarget.style.borderColor = 'rgba(251, 191, 36, 0.75)';
+              e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.28)';
+            } else {
+              e.currentTarget.style.borderColor = isDark ? '#C084FC' : '#7C3AED';
+              e.currentTarget.style.backgroundColor = isDark ? '#2D1F3F' : '#F5F3FF';
+            }
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#94A3B8';
-            e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#FFFFFF';
+            e.currentTarget.style.borderColor = softWhiteTopAddButton ? 'rgba(245, 158, 11, 0.45)' : (isDark ? '#4B5563' : '#94A3B8');
+            e.currentTarget.style.backgroundColor = softWhiteTopAddButton ? 'rgba(245, 158, 11, 0.16)' : (isDark ? '#1F2937' : '#FFFFFF');
           }}
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
             <path
               d="M 6 2 L 6 10 M 2 6 L 10 6"
-              stroke={isDark ? '#9CA3AF' : '#64748B'}
+              stroke={softWhiteTopAddButton ? '#FCD34D' : (isDark ? '#9CA3AF' : '#64748B')}
               strokeWidth="1.75"
               strokeLinecap="round"
             />
@@ -5831,9 +5840,30 @@ export const FacebookWorkflowCanvas = forwardRef<
           );
         });
 
-        const isHeroCropBox = isExplicitHeroSource || hasIncomingHeroConn || isHeroCutFormat;
+        const cropParentIds = incomingConns
+          .map((c) => c.fromNodeId)
+          .filter((pid) => isCropStudioBox((config.aiBoxes || []).find((b) => b.id === pid)));
+        const cropParentConns = (config.connections || []).filter((c) => cropParentIds.includes(c.toNodeId));
+        const allUpFolderIds = Array.from(
+          new Set(
+            [...incomingConns, ...cropParentConns]
+              .map((c) => c.fromNodeId)
+              .filter((fid) => isFolderImagesBox((config.aiBoxes || []).find((b) => b.id === fid)))
+          )
+        );
 
-        if (isHeroCropBox) {
+        const isHeroCropBox = allUpFolderIds.length === 0 && (isExplicitHeroSource || hasIncomingHeroConn || isHeroCutFormat);
+
+        if (allUpFolderIds.length > 0) {
+          let folderIdx = 0;
+          allUpFolderIds.forEach((fid) => {
+            (folderImagesMap[fid]?.images || []).forEach((fImg) => {
+              if (fImg?.url) {
+                sourcePhotos.push({ url: fImg.url, photoIndex: folderIdx++, isEnhanced: false });
+              }
+            });
+          });
+        } else if (isHeroCropBox) {
           const selectedSourceNode = (typeof cropBox.imageSource === 'string' && cropBox.imageSource.startsWith('node:'))
             ? (config.aiBoxes || []).find((b: any) => b.id === (cropBox.imageSource as string).replace('node:', ''))
             : null;
@@ -6014,7 +6044,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       isCancelled = true;
       clearTimeout(debounceTimer);
     };
-  }, [config.aiBoxes, config.connections, effectiveImages, allEnhancedPhotos, heroImage, executionState?.listingCode, previewSampleCode]);
+  }, [config.aiBoxes, config.connections, effectiveImages, allEnhancedPhotos, heroImage, folderImagesMap, executionState?.listingCode, previewSampleCode]);
 
   const getExtSourceIds = (
     box: any,
@@ -6027,7 +6057,7 @@ export const FacebookWorkflowCanvas = forwardRef<
       : [];
     if (arr.length > 0) return arr;
     const single = box?.[singleKey];
-    if (single && single !== 'auto' && joinedIds.has(single)) return [single];
+    if (single && single !== 'auto' && single !== 'none' && joinedIds.has(single)) return [single];
     return [];
   };
 
@@ -6051,7 +6081,7 @@ export const FacebookWorkflowCanvas = forwardRef<
 
   const resolveExtTextFromIds = (
     selectedIds: string[],
-    joinedConns: Array<{ fromNodeId: string }>,
+    _joinedConns: Array<{ fromNodeId: string }>,
     outputs: Record<string, string> | undefined,
     fallbackRawContent: string | undefined
   ): string => {
@@ -6061,10 +6091,6 @@ export const FacebookWorkflowCanvas = forwardRef<
         .map((t) => (t || '').trim())
         .filter(Boolean)
         .join('\n\n');
-    }
-    for (const c of joinedConns) {
-      if (outputs?.[c.fromNodeId]) return outputs[c.fromNodeId];
-      if (c.fromNodeId === 'get-content' && fallbackRawContent) return fallbackRawContent;
     }
     return '';
   };
@@ -6124,8 +6150,8 @@ export const FacebookWorkflowCanvas = forwardRef<
         };
 
         const connImgIds = joinedConns.map((c) => c.fromNodeId).filter(isImgCapable);
-        if (connImgIds.length > 0) {
-          const targetIds = imgSrcIds.length > 0 ? imgSrcIds : connImgIds;
+        if (connImgIds.length > 0 && imgSrcIds.length > 0) {
+          const targetIds = imgSrcIds;
           for (const tid of targetIds) {
             const directAssets = combineMediaAssets.filter((a) => a.formatId === tid && a.url);
             if (directAssets.length > 0) {
@@ -6179,22 +6205,52 @@ export const FacebookWorkflowCanvas = forwardRef<
             }
             if (nb && isChromeTabGroupAIBox(nb)) {
               const tabUrls = resolveChromeTabGroupUrls(nb);
-              if (tabUrls.length > 0) {
-                tabUrls.forEach((u) => resolvedImgUrls.push(u));
+              tabUrls.forEach((u) => resolvedImgUrls.push(u));
+              continue;
+            }
+            if (nb && (isWatermarkAIBox(nb) || isCropStudioBox(nb))) {
+              const directUp = (config.connections || []).filter((c) => c.toNodeId === nb.id).map((c) => c.fromNodeId);
+              const cropParents = directUp.filter((pid) => isCropStudioBox(config.aiBoxes.find((x) => x.id === pid)));
+              const cropParentUp = (config.connections || []).filter((c) => cropParents.includes(c.toNodeId)).map((c) => c.fromNodeId);
+              const allUpIds = Array.from(new Set([...directUp, ...cropParentUp]));
+              const upFolderIds = allUpIds.filter((fid) => isFolderImagesBox(config.aiBoxes.find((x) => x.id === fid)));
+              if (upFolderIds.length > 0) {
+                upFolderIds.forEach((fid) => {
+                  (folderImagesMap[fid]?.images || []).forEach((fImg) => {
+                    if (fImg?.url) resolvedImgUrls.push(fImg.url);
+                  });
+                });
+                continue;
+              }
+              const isHeroCut =
+                nb.imageSource === 'generate' ||
+                (nb.title || '').toLowerCase().includes('hero') ||
+                (nb.cropFormatId || '').toLowerCase() === 'format-grid-2split';
+              if (isHeroCut) {
+                if (heroImage?.url) resolvedImgUrls.push(String(heroImage.url));
                 continue;
               }
             }
             const isEnhance = nb && (nb.title?.toLowerCase().includes('enhance') || nb.id.includes('enhance') || nb.processType === 'image_enhance');
-            if ((isEnhance || isWatermarkAIBox(nb) || isCropStudioBox(nb)) && Object.keys(allEnhancedPhotos || {}).length > 0) {
-              Object.values(allEnhancedPhotos || {}).forEach((u) => {
-                if (u) resolvedImgUrls.push(String(u));
-              });
+            if (isEnhance || isWatermarkAIBox(nb) || isCropStudioBox(nb)) {
+              if (Object.keys(allEnhancedPhotos || {}).length > 0) {
+                Object.values(allEnhancedPhotos || {}).forEach((u) => {
+                  if (u) resolvedImgUrls.push(String(u));
+                });
+              } else if (nb?.imageSource === 'get_images') {
+                (effectiveImages || images || []).forEach((img: any) => {
+                  const u = normalizeMediaUrl(img.stored_url || img.source_url || img.url) || img.stored_url || img.source_url || img.url || '';
+                  if (u) resolvedImgUrls.push(u);
+                });
+              }
               continue;
             }
-            (effectiveImages || images || []).forEach((img: any) => {
-              const u = normalizeMediaUrl(img.stored_url || img.source_url || img.url) || img.stored_url || img.source_url || img.url || '';
-              if (u) resolvedImgUrls.push(u);
-            });
+            if (tid === 'get-images') {
+              (effectiveImages || images || []).forEach((img: any) => {
+                const u = normalizeMediaUrl(img.stored_url || img.source_url || img.url) || img.stored_url || img.source_url || img.url || '';
+                if (u) resolvedImgUrls.push(u);
+              });
+            }
           }
         }
 
@@ -7512,7 +7568,18 @@ export const FacebookWorkflowCanvas = forwardRef<
       return Boolean(fromBox && isTextFormatAIBox(fromBox));
     }
     if (fromBox && isFolderImagesBox(fromBox)) {
-      return true;
+      if (isTargetCombine) return true;
+      const isTargetDest = getNormalizedDestinations(config).some((d) => d.id === toId);
+      if (isTargetDest) return true;
+      if (!toBox) return false;
+      return Boolean(
+        isWatermarkAIBox(toBox) ||
+        isCropStudioBox(toBox) ||
+        isExtensionAutofillBox(toBox) ||
+        isExternalBrowserAIBox(toBox) ||
+        isChromeTabGroupAIBox(toBox) ||
+        isEnhanceAIBox(toBox, config.connections || [])
+      );
     }
 
     // AI Format boxes only connect with AI Model container above it; never to Combine Box, output, or destinations
@@ -9222,13 +9289,17 @@ export const FacebookWorkflowCanvas = forwardRef<
     }
     setHoveredWireId(null);
     setHoveredXId(null);
-    const newConnections = (config.connections || []).filter((c) => {
+    const baseConfig = latestConfigRef.current || config;
+    const newConnections = (baseConfig.connections || []).filter((c) => {
       if (c.id === connId) return false;
-      if (fromNodeId && toNodeId && c.fromNodeId === fromNodeId && c.toNodeId === toNodeId) return false;
+      if (fromNodeId && toNodeId) {
+        if (c.fromNodeId === fromNodeId && c.toNodeId === toNodeId) return false;
+        if (c.fromNodeId === toNodeId && c.toNodeId === fromNodeId) return false;
+      }
       return true;
     });
     updateConfig({
-      ...config,
+      ...baseConfig,
       connections: newConnections,
     });
     triggerMacNotification('Wire Disconnected', 'Connection wire between nodes was removed.', 'danger');
@@ -9453,8 +9524,10 @@ export const FacebookWorkflowCanvas = forwardRef<
 
     let nextConns = [...(config.connections || [])].filter((c) => c.fromNodeId !== 'trigger');
 
-    // If central Crop Studio exists, connect crop studio -> new watermark format node!
-    const cropStudio = config.aiBoxes.find((b) => isCropStudioBox(b));
+    // If central Crop Studio exists, connect the target Crop Studio (or first Crop Studio) -> new watermark format node!
+    const cropStudio =
+      (_sourceId ? config.aiBoxes.find((b) => b.id === _sourceId && isCropStudioBox(b)) : undefined) ||
+      config.aiBoxes.find((b) => isCropStudioBox(b));
     if (cropStudio) {
       if (!nextConns.some((c) => (c.fromNodeId === cropStudio.id && c.toNodeId === newId) || (c.fromNodeId === newId && c.toNodeId === cropStudio.id))) {
         nextConns.push({
@@ -9469,6 +9542,48 @@ export const FacebookWorkflowCanvas = forwardRef<
     const nextConfig = sanitizeAndResolveCollisions({
       ...config,
       getImages: updatedGetImages,
+      aiBoxes: nextBoxes,
+      connections: nextConns,
+    }, formatId);
+    updateConfig(nextConfig);
+    setSelectedBoxId(newId);
+    return newId;
+  };
+
+  // Add a new Photo Format & Crop (Crop & Cut Studio) main box connected from a source node (e.g. Folder Images)
+  const handleAddCropStudioNodeConnectedFrom = (fromNodeId?: string): string => {
+    const cropStudios = config.aiBoxes.filter((b) => isCropStudioBox(b));
+    const newCount = cropStudios.length + 1;
+    const newId = `ai-box-crop-studio-${Date.now()}`;
+    const coords = getSmartNextNodeCoords(fromNodeId || 'get-images', config);
+
+    const newBox: DynamicAIBoxConfig = {
+      id: newId,
+      title: newCount > 1 ? `Photo Format & Crop #${newCount}` : 'Photo Format & Crop',
+      subtitle: 'Crop & Cut Studio',
+      processType: 'crop_studio',
+      provider: 'watermark',
+      model: 'crop_studio',
+      templateId: '',
+      templateText: '',
+      customPrompt: '',
+      enabled: true,
+      x: coords.x,
+      y: coords.y,
+    };
+
+    const nextBoxes = [...config.aiBoxes, newBox];
+    let nextConns = [...(config.connections || [])];
+    if (fromNodeId) {
+      nextConns.push({
+        id: `wire-${fromNodeId}-${newId}-${Date.now()}`,
+        fromNodeId,
+        toNodeId: newId,
+      });
+    }
+
+    const nextConfig = sanitizeAndResolveCollisions({
+      ...config,
       aiBoxes: nextBoxes,
       connections: nextConns,
     }, formatId);
@@ -13557,6 +13672,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   hasSource={boxHasSource && !isExtensionAutofill}
                   showAddButton={!isChromeProfile && !isChromeTabGroup && !isTextFormat && !isAttachedCropFormat && !isExtensionAutofill}
                   showTopAddButton={isTextAI || (isCropStudio && !cropFormatsAreBelow)}
+                  softWhiteTopAddButton={isCropStudio}
                   showBottomAddButton={isExternalBrowser || (isCropStudio && cropFormatsAreBelow)}
                   onAddClick={(e) => {
                     e.stopPropagation();
@@ -13701,112 +13817,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                         </span>
                       </div>
                     </>
-                  ) : isWatermark ? (() => {
-                    // Show thumbnail preview images for this format node
-                    const boxAssets = combineMediaAssets.filter((a) => a.formatId === box.id);
-                    // Pick unique photo thumbnails (first tile per photo), max 4
-                    const seenPhotos = new Set<number>();
-                    const thumbAssets = boxAssets.filter((a) => {
-                      if (seenPhotos.has(a.photoIndex)) return false;
-                      seenPhotos.add(a.photoIndex);
-                      return true;
-                    }).slice(0, 4);
-                    // Check if this box is a hero crop box
-                    const isHeroBox =
-                      box.imageSource === 'generate' ||
-                      (typeof box.imageSource === 'string' && (box.imageSource.includes('hero') || box.imageSource.includes('generate'))) ||
-                      (box.cropFormatId || '').toLowerCase() === 'format-grid-2split' ||
-                      (box.templateId || '').toLowerCase() === 'format-grid-2split' ||
-                      (box.title || '').toLowerCase().includes('hero cut');
-
-                    // Fallback for hero box: use resolved hero image if no boxAssets yet
-                    let heroFallbackUrl: string | null = null;
-                    if (isHeroBox && thumbAssets.length === 0) {
-                      const heroNode = (config.aiBoxes || []).find((b) => (b.title || '').toLowerCase().includes('hero'));
-                      if (heroNode) {
-                        try {
-                          const raw = localStorage.getItem(`bolthaven_hero_image_${heroNode.id}`);
-                          if (raw) {
-                            const p = JSON.parse(raw);
-                            if (p?.url) heroFallbackUrl = p.url;
-                          }
-                        } catch (_) {}
-                      }
-                      if (!heroFallbackUrl && heroImage?.url) {
-                        heroFallbackUrl = heroImage.url;
-                      }
-                      if (!heroFallbackUrl) {
-                        try {
-                          const raw = localStorage.getItem('bolthaven_last_hero_image');
-                          if (raw) {
-                            const p = JSON.parse(raw);
-                            if (p?.url) heroFallbackUrl = p.url;
-                          }
-                        } catch (_) {}
-                      }
-                    }
-
-                    // Fallback: use effectiveImages ONLY if NOT a hero box
-                    const fallbackUrls: string[] = thumbAssets.length === 0
-                      ? (isHeroBox
-                          ? (heroFallbackUrl ? [heroFallbackUrl] : [])
-                          : (effectiveImages || []).slice(0, 4).map((img: any) =>
-                              normalizeMediaUrl(img.stored_url || img.source_url || img.url) || ''
-                            ).filter(Boolean))
-                      : [];
-                    const thumbUrls = thumbAssets.length > 0
-                      ? thumbAssets.map((a) => a.url)
-                      : fallbackUrls;
-                    if (thumbUrls.length > 0) {
-                      return (
-                        <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          {/* Thumbnail grid */}
-                          <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: thumbUrls.length === 1 ? '1fr' : thumbUrls.length === 2 ? '1fr 1fr' : thumbUrls.length === 3 ? '1fr 1fr 1fr' : '1fr 1fr',
-                            gridTemplateRows: thumbUrls.length <= 2 ? '1fr' : thumbUrls.length === 3 ? '1fr' : '1fr 1fr',
-                            gap: '2px',
-                            width: '48px',
-                            height: '48px',
-                            borderRadius: '8px',
-                            overflow: 'hidden',
-                          }}>
-                            {thumbUrls.map((url, i) => (
-                              <img
-                                key={i}
-                                src={url}
-                                alt=""
-                                style={{
-                                  width: '100%',
-                                  height: '100%',
-                                  objectFit: 'cover',
-                                  display: 'block',
-                                  opacity: isEffectiveEnabled ? 1 : 0.5,
-                                }}
-                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                              />
-                            ))}
-                          </div>
-                          {/* Small scissors badge */}
-                          <div style={{
-                            position: 'absolute',
-                            bottom: '4px',
-                            right: '4px',
-                            width: '16px',
-                            height: '16px',
-                            borderRadius: '4px',
-                            backgroundColor: isDark ? 'rgba(139,92,246,0.85)' : 'rgba(139,92,246,0.9)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}>
-                            <FiScissors style={{ fontSize: '10px', color: '#fff' }} />
-                          </div>
-                        </div>
-                      );
-                    }
-                    return <FiScissors style={{ fontSize: '28px', color: isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />;
-                  })() : isExternalBrowser ? (
+                  ) : isWatermark ? (
+                    <FiScissors style={{ fontSize: '28px', color: isEffectiveEnabled ? '#8B5CF6' : '#8B949E', transition: 'color 0.2s ease' }} />
+                  ) : isExternalBrowser ? (
                     <>
                       <FiMonitor style={{ fontSize: '32px', color: isEffectiveEnabled ? '#06B6D4' : '#8B949E', transition: 'color 0.2s ease', flexShrink: 0 }} />
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.25, minWidth: 0, flex: 1 }}>
@@ -14195,8 +14208,8 @@ export const FacebookWorkflowCanvas = forwardRef<
                             width: '22px',
                             height: '22px',
                             borderRadius: '6px',
-                            border: isDark ? '1.5px solid #4B5563' : '1.5px solid #94A3B8',
-                            backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+                            border: isExternalBrowser ? '1.5px solid rgba(245, 158, 11, 0.45)' : (isDark ? '1.5px solid #4B5563' : '1.5px solid #94A3B8'),
+                            backgroundColor: isExternalBrowser ? 'rgba(245, 158, 11, 0.16)' : (isDark ? '#1F2937' : '#FFFFFF'),
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -14208,18 +14221,23 @@ export const FacebookWorkflowCanvas = forwardRef<
                             transition: 'all 0.15s ease',
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.borderColor = isDark ? '#60A5FA' : '#2563EB';
-                            e.currentTarget.style.backgroundColor = isDark ? '#263342' : '#EFF6FF';
+                            if (isExternalBrowser) {
+                              e.currentTarget.style.borderColor = 'rgba(251, 191, 36, 0.75)';
+                              e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.28)';
+                            } else {
+                              e.currentTarget.style.borderColor = isDark ? '#60A5FA' : '#2563EB';
+                              e.currentTarget.style.backgroundColor = isDark ? '#263342' : '#EFF6FF';
+                            }
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.borderColor = isDark ? '#4B5563' : '#94A3B8';
-                            e.currentTarget.style.backgroundColor = isDark ? '#1F2937' : '#FFFFFF';
+                            e.currentTarget.style.borderColor = isExternalBrowser ? 'rgba(245, 158, 11, 0.45)' : (isDark ? '#4B5563' : '#94A3B8');
+                            e.currentTarget.style.backgroundColor = isExternalBrowser ? 'rgba(245, 158, 11, 0.16)' : (isDark ? '#1F2937' : '#FFFFFF');
                           }}
                         >
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                             <path
                               d="M 6 2 L 6 10 M 2 6 L 10 6"
-                              stroke={isDark ? '#9CA3AF' : '#64748B'}
+                              stroke={isExternalBrowser ? '#FCD34D' : (isDark ? '#9CA3AF' : '#64748B')}
                               strokeWidth="1.75"
                               strokeLinecap="round"
                             />
@@ -16268,7 +16286,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                               ...config,
                               aiBoxes: config.aiBoxes.map((b) =>
                                 b.id === currentModalAIBox.id
-                                  ? ({ ...b, [arrayKey]: nextIds, [singleKey]: nextIds[0] || 'auto' } as any)
+                                  ? ({ ...b, [arrayKey]: nextIds, [singleKey]: nextIds[0] || 'none' } as any)
                                   : b
                               ),
                             });
@@ -16289,7 +16307,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                   {label}
                                 </label>
                                 <span style={{ fontSize: '0.72rem', color: isDark ? '#7D828A' : 'var(--text-muted)' }}>
-                                  {selectedIds.length === 0 ? 'Auto' : `${selectedIds.length} selected`}
+                                  {selectedIds.length === 0 ? 'None' : `${selectedIds.length} selected`}
                                 </span>
                               </div>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '7px' }}>
@@ -16311,7 +16329,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                                     color: selectedIds.length === 0 ? (isDark ? '#ECEEF0' : '#2563EB') : (isDark ? '#7D828A' : 'var(--text-secondary)'),
                                   }}
                                 >
-                                  Auto
+                                  None
                                 </button>
                                 {filteredOpts.map((opt) => {
                                   const idx = selectedIds.indexOf(opt.value);
@@ -20799,8 +20817,8 @@ export const FacebookWorkflowCanvas = forwardRef<
 
                           const connectedImgNodeIds = joinedConns.map((c) => c.fromNodeId).filter(isImageCapableNode);
 
-                          if (connectedImgNodeIds.length > 0) {
-                            const targetIds = imgSrcIds.length > 0 ? imgSrcIds : connectedImgNodeIds;
+                          if (connectedImgNodeIds.length > 0 && imgSrcIds.length > 0) {
+                            const targetIds = imgSrcIds;
 
                             for (const tid of targetIds) {
                               const srcLabel = getNodeLabel(tid);
@@ -20845,23 +20863,52 @@ export const FacebookWorkflowCanvas = forwardRef<
                                 } else {
                                   tabUrls = Object.values(allEnhancedPhotos || {}).filter(Boolean).map(String);
                                 }
-                                if (tabUrls.length > 0) {
-                                  tabUrls.forEach((u) => resolvedImgEntries.push({ url: u, sourceLabel: srcLabel }));
+                                tabUrls.forEach((u) => resolvedImgEntries.push({ url: u, sourceLabel: srcLabel }));
+                                continue;
+                              }
+                              if (b && (isWatermarkAIBox(b) || isCropStudioBox(b))) {
+                                const directUp = (config.connections || []).filter((c) => c.toNodeId === b.id).map((c) => c.fromNodeId);
+                                const cropParents = directUp.filter((pid) => isCropStudioBox(config.aiBoxes.find((x) => x.id === pid)));
+                                const cropParentUp = (config.connections || []).filter((c) => cropParents.includes(c.toNodeId)).map((c) => c.fromNodeId);
+                                const allUpIds = Array.from(new Set([...directUp, ...cropParentUp]));
+                                const upFolderIds = allUpIds.filter((fid) => isFolderImagesBox(config.aiBoxes.find((x) => x.id === fid)));
+                                if (upFolderIds.length > 0) {
+                                  upFolderIds.forEach((fid) => {
+                                    (folderImagesMap[fid]?.images || []).forEach((fImg) => {
+                                      if (fImg?.url) resolvedImgEntries.push({ url: fImg.url, sourceLabel: srcLabel });
+                                    });
+                                  });
+                                  continue;
+                                }
+                                const isHeroCut =
+                                  b.imageSource === 'generate' ||
+                                  (b.title || '').toLowerCase().includes('hero') ||
+                                  (b.cropFormatId || '').toLowerCase() === 'format-grid-2split';
+                                if (isHeroCut) {
+                                  if (heroImage?.url) resolvedImgEntries.push({ url: String(heroImage.url), sourceLabel: srcLabel });
                                   continue;
                                 }
                               }
                               const isEnhance = b && (b.title?.toLowerCase().includes('enhance') || b.id.includes('enhance') || b.processType === 'image_enhance');
-                              if ((isEnhance || isWatermarkAIBox(b) || isCropStudioBox(b)) && Object.keys(allEnhancedPhotos || {}).length > 0) {
-                                Object.values(allEnhancedPhotos || {}).forEach((u) => {
-                                  if (u) resolvedImgEntries.push({ url: String(u), sourceLabel: srcLabel });
-                                });
+                              if (isEnhance || isWatermarkAIBox(b) || isCropStudioBox(b)) {
+                                if (Object.keys(allEnhancedPhotos || {}).length > 0) {
+                                  Object.values(allEnhancedPhotos || {}).forEach((u) => {
+                                    if (u) resolvedImgEntries.push({ url: String(u), sourceLabel: srcLabel });
+                                  });
+                                } else if (b?.imageSource === 'get_images') {
+                                  (effectiveImages || images || []).forEach((img: any) => {
+                                    const u = normalizeMediaUrl(img.stored_url || img.source_url || img.url) || img.stored_url || img.source_url || img.url || '';
+                                    if (u) resolvedImgEntries.push({ url: u, sourceLabel: srcLabel });
+                                  });
+                                }
                                 continue;
                               }
-                              // Fallback for connected image node when combineMediaAssets hasn't populated yet
-                              (effectiveImages || images || []).forEach((img: any) => {
-                                const u = normalizeMediaUrl(img.stored_url || img.source_url || img.url) || img.stored_url || img.source_url || img.url || '';
-                                if (u) resolvedImgEntries.push({ url: u, sourceLabel: srcLabel });
-                              });
+                              if (tid === 'get-images') {
+                                (effectiveImages || images || []).forEach((img: any) => {
+                                  const u = normalizeMediaUrl(img.stored_url || img.source_url || img.url) || img.stored_url || img.source_url || img.url || '';
+                                  if (u) resolvedImgEntries.push({ url: u, sourceLabel: srcLabel });
+                                });
+                              }
                             }
                           }
 
@@ -23415,7 +23462,34 @@ export const FacebookWorkflowCanvas = forwardRef<
                         handleUpdateAIBox(currentModalAIBox.id, updates);
                       }
                     }}
-                    images={effectiveImages}
+                    images={(() => {
+                      const directIds = [effectiveTargetFormatBox.id, currentModalAIBox?.id].filter(Boolean) as string[];
+                      const parentCropStudioIds = (config.connections || [])
+                        .filter((c) => directIds.includes(c.toNodeId))
+                        .map((c) => c.fromNodeId)
+                        .filter((pid) => {
+                          const pb = config.aiBoxes.find((b) => b.id === pid);
+                          return pb && isCropStudioBox(pb);
+                        });
+                      const targetIds = new Set([...directIds, ...parentCropStudioIds]);
+                      const folderSrcIds = (config.connections || [])
+                        .filter((c) => targetIds.has(c.toNodeId))
+                        .map((c) => c.fromNodeId)
+                        .filter((fid) => {
+                          const fb = config.aiBoxes.find((b) => b.id === fid);
+                          return fb && isFolderImagesBox(fb);
+                        });
+                      const folderImgs = folderSrcIds.flatMap((fid) =>
+                        (folderImagesMap[fid]?.images || []).map((fImg, i) => ({
+                          id: `folder-${fid}-${i}`,
+                          index: i + 1,
+                          url: fImg.url,
+                          source_url: fImg.url,
+                          fileName: fImg.name,
+                        }))
+                      );
+                      return folderImgs.length > 0 ? folderImgs : effectiveImages;
+                    })()}
                     workflowBoxes={config.aiBoxes}
                     connections={config.connections}
                     enhancedPhotos={allEnhancedPhotos}
@@ -23594,7 +23668,34 @@ export const FacebookWorkflowCanvas = forwardRef<
                       handleCloseModal();
                     }}
                     onClose={handleCloseModal}
-                    images={effectiveImages}
+                    images={(() => {
+                      const directIds = [effectiveTargetFormatBox.id, currentModalAIBox?.id].filter(Boolean) as string[];
+                      const parentCropStudioIds = (config.connections || [])
+                        .filter((c) => directIds.includes(c.toNodeId))
+                        .map((c) => c.fromNodeId)
+                        .filter((pid) => {
+                          const pb = config.aiBoxes.find((b) => b.id === pid);
+                          return pb && isCropStudioBox(pb);
+                        });
+                      const targetIds = new Set([...directIds, ...parentCropStudioIds]);
+                      const folderSrcIds = (config.connections || [])
+                        .filter((c) => targetIds.has(c.toNodeId))
+                        .map((c) => c.fromNodeId)
+                        .filter((fid) => {
+                          const fb = config.aiBoxes.find((b) => b.id === fid);
+                          return fb && isFolderImagesBox(fb);
+                        });
+                      const folderImgs = folderSrcIds.flatMap((fid) =>
+                        (folderImagesMap[fid]?.images || []).map((fImg, i) => ({
+                          id: `folder-${fid}-${i}`,
+                          index: i + 1,
+                          url: fImg.url,
+                          source_url: fImg.url,
+                          fileName: fImg.name,
+                        }))
+                      );
+                      return folderImgs.length > 0 ? folderImgs : effectiveImages;
+                    })()}
                     watermarkedPhotos={watermarkedPhotos}
                     enhancedPhotos={allEnhancedPhotos}
                     heroImage={heroImage}
@@ -25959,6 +26060,9 @@ export const FacebookWorkflowCanvas = forwardRef<
               }}
             >
               {/* SECTION: Create & Connect New Processing Step */}
+              {(() => {
+                const isFromFolderImages = Boolean(fromBox && isFolderImagesBox(fromBox));
+                return (
               <div>
                 <div
                   style={{
@@ -26275,14 +26379,20 @@ export const FacebookWorkflowCanvas = forwardRef<
                     </button>
                   )}
 
-                  {/* Studio Format / Watermark */}
-                  {(isImages || isFromEnhance) && (
+                  {/* Studio Format / Watermark (or new Photo Format & Crop main box when connecting from Folder Images) */}
+                  {(isImages || isFromEnhance || isFromFolderImages) && (
                     <button
                       type="button"
                       onClick={() => {
-                        handleAddWatermarkNodeConnectedFromImages(fromNodeId);
-                        setConnectDrawerNode(null);
-                        setActiveModalNode(null);
+                        if (isFromFolderImages) {
+                          const newCropId = handleAddCropStudioNodeConnectedFrom(fromNodeId);
+                          setConnectDrawerNode(null);
+                          setActiveModalNode({ type: 'ai-box', id: newCropId });
+                        } else {
+                          handleAddWatermarkNodeConnectedFromImages(fromNodeId);
+                          setConnectDrawerNode(null);
+                          setActiveModalNode(null);
+                        }
                       }}
                       style={{
                         display: 'flex',
@@ -26322,10 +26432,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: '0.71875rem', fontWeight: 600, color: isDark ? '#F0F6FC' : '#0F172A' }}>
-                          + Crop & Format Preset
+                          {isFromFolderImages ? '+ Photo Format & Crop' : '+ Crop & Format Preset'}
                         </div>
                         <div style={{ fontSize: '0.5625rem', color: isDark ? '#8B949E' : '#64748B' }}>
-                          Apply saved aspect ratio and agency logo
+                          {isFromFolderImages ? 'Create a new Crop & Cut Studio main box' : 'Apply saved aspect ratio and agency logo'}
                         </div>
                       </div>
                       <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
@@ -26500,6 +26610,7 @@ export const FacebookWorkflowCanvas = forwardRef<
                   </button>
 
                   {/* Folder Images Loader Node (Standalone / Manual Connect) */}
+                  {!isFromFolderImages && (
                   <button
                     type="button"
                     onClick={() => {
@@ -26545,8 +26656,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                     </div>
                     <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
                   </button>
+                  )}
 
                   {/* n8n Automation Engine Node */}
+                  {!isFromFolderImages && (
                   <button
                     type="button"
                     onClick={() => {
@@ -26600,8 +26713,10 @@ export const FacebookWorkflowCanvas = forwardRef<
                     </div>
                     <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
                   </button>
+                  )}
 
                   {/* Google Sheets Sync Node */}
+                  {!isFromFolderImages && (
                   <button
                     type="button"
                     onClick={() => {
@@ -26655,8 +26770,11 @@ export const FacebookWorkflowCanvas = forwardRef<
                     </div>
                     <FiArrowRight size={13} style={{ color: isDark ? '#8B949E' : '#94A3B8' }} />
                   </button>
+                  )}
                 </div>
               </div>
+                );
+              })()}
 
               {/* SECTION: Connect to Existing Canvas Nodes */}
               {availableExistingNodes.length > 0 && (
@@ -29537,6 +29655,46 @@ export const FacebookWorkflowCanvas = forwardRef<
             </button>
           )}
 
+          {/* Rename Box */}
+          {contextMenu.nodeType === 'ai-box' && contextMenu.box && (
+            <button
+              type="button"
+              className="context-menu-item"
+              onClick={() => {
+                const targetId = contextMenu.nodeId;
+                const currentTitle = contextMenu.box?.title || contextMenu.nodeTitle || '';
+                setContextMenu(null);
+                setEditingCanvasBoxId(targetId);
+                setEditingCanvasBoxTitle(currentTitle);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                width: '100%',
+                padding: '7px 9px',
+                borderRadius: '5px',
+                border: 'none',
+                background: 'transparent',
+                color: isDark ? '#F0F6FC' : '#1E293B',
+                fontSize: '0.75rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+                textAlign: 'left',
+                transition: 'background-color 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <FiEdit2 size={14} style={{ flexShrink: 0, opacity: 0.85 }} />
+              <span>Rename</span>
+            </button>
+          )}
+
           {/* Copy Box Setup (Cross-Canvas Clipboard) */}
           {(contextMenu.nodeType === 'ai-box' || contextMenu.nodeType === 'combine' || contextMenu.nodeType === 'destination') && (
             <button
@@ -30120,7 +30278,6 @@ export const FacebookWorkflowCanvas = forwardRef<
                 src={activeImgUrl}
                 alt={`Photo ${activeIdx + 1}`}
                 referrerPolicy="no-referrer"
-                crossOrigin="anonymous"
                 onError={(e) => {
                   const srcUrl = (activeImg as any)?.source_url;
                   if (srcUrl && !e.currentTarget.src.includes('/proxy-image')) {

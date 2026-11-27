@@ -70,7 +70,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
       .then((fmts) => {
         if (fmts && fmts.length > 0) setSavedFormats(fmts);
       })
-      .catch(() => {});
+      .catch(() => { });
     window.addEventListener('storage', handleSync);
     window.addEventListener('ea_crop_formats_updated', handleSync);
     window.addEventListener('ea_active_crop_format_changed', handleSync);
@@ -353,7 +353,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
           }
         }
       }
-    } catch (_) {}
+    } catch (_) { }
     return null;
   });
 
@@ -503,7 +503,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
             return parsed;
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     if (effectiveHeroImage && effectiveHeroImage.url && isImageMatchingListing(effectiveHeroImage.fileName, listingCode)) {
       const targetTitle = (target?.title || '').toLowerCase();
@@ -627,12 +627,14 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
     if (!isEnhanceSource && (imageSource === 'get_images' || imageSource === 'all')) {
       images.forEach((img, idx) => {
         const photoNum = idx + 1;
-        const url =
-          watermarkedPhotos?.[idx] ||
-          (typeof img.index === 'number' ? watermarkedPhotos?.[img.index] : undefined) ||
-          (img.stored_url
-            ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
-            : img.source_url);
+        const isFolderImg = String((img as any).id || '').startsWith('folder-');
+        const url = isFolderImg
+          ? ((img as any).url || img.source_url)
+          : (watermarkedPhotos?.[idx] ||
+            (typeof img.index === 'number' ? watermarkedPhotos?.[img.index] : undefined) ||
+            (img.stored_url
+              ? (img.stored_url.startsWith('http') ? img.stored_url : `http://localhost:8085${img.stored_url}`)
+              : img.source_url));
         rawList.push({
           id: `raw-${photoNum}`,
           index: photoNum,
@@ -694,6 +696,46 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
 
   const sourceOptions = useMemo<SelectOption[]>(() => {
     const opts: SelectOption[] = [];
+    const directUpIds = new Set(
+      (connections || []).filter((c) => c.toNodeId === box.id).map((c) => c.fromNodeId)
+    );
+    const cropParentIds = (connections || [])
+      .filter((c) => c.toNodeId === box.id)
+      .map((c) => c.fromNodeId)
+      .filter((pid) =>
+        (workflowBoxes || []).some(
+          (b: any) =>
+            b.id === pid &&
+            (b.processType === 'crop_studio' || b.model === 'crop_studio' || b.id?.includes('crop-studio'))
+        )
+      );
+    const cropUpIds = new Set(
+      (connections || []).filter((c) => cropParentIds.includes(c.toNodeId)).map((c) => c.fromNodeId)
+    );
+    const allUpstreamIds = new Set([...directUpIds, ...cropUpIds]);
+    const connectedFolderBoxes = (workflowBoxes || []).filter(
+      (b: any) =>
+        allUpstreamIds.has(b.id) &&
+        (b.processType === 'folder_images' || b.model === 'folder-images' || b.id?.includes('folder-images'))
+    );
+
+    if (connectedFolderBoxes.length > 0) {
+      connectedFolderBoxes.forEach((fb: any) => {
+        const title = (fb.title || 'Folder Images').trim();
+        opts.push({
+          value: 'get_images',
+          label: `${title} (${images.length} ${images.length === 1 ? 'Photo' : 'Photos'})`,
+        });
+      });
+      if (box.uploadedImages && box.uploadedImages.length > 0) {
+        opts.push({
+          value: 'upload',
+          label: `Uploaded Files (${box.uploadedImages.length} ${box.uploadedImages.length === 1 ? 'Photo' : 'Photos'})`,
+        });
+      }
+      return opts;
+    }
+
     const hasIncomingHero = connections.some(
       (c) => c.toNodeId === box.id && (c.fromNodeId.includes('hero') || workflowBoxes.some((b) => b.id === c.fromNodeId && (b.title?.toLowerCase().includes('hero') || b.browserGroupName?.toLowerCase().includes('hero'))))
     );
@@ -720,7 +762,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
             const p = JSON.parse(raw);
             if (p?.url && isImageMatchingListing(p.fileName, listingCode)) hasImg = true;
           }
-        } catch (_) {}
+        } catch (_) { }
         if (!hasImg && effectiveHeroImage?.url && isImageMatchingListing(effectiveHeroImage.fileName, listingCode)) {
           const tLower = title.toLowerCase();
           const fn = (effectiveHeroImage.fileName || '').toLowerCase();
@@ -1304,8 +1346,8 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
               {box.enabled === false
                 ? `⏸️ 0 of ${currentSourceList.length} (Bypassed)`
                 : currentSourceList.length === 0
-                ? '0 Photos (Waiting for source)'
-                : `✓ ${activePhotosToFormat.length} of ${currentSourceList.length} Selected`}
+                  ? '0 Photos (Waiting for source)'
+                  : `✓ ${activePhotosToFormat.length} of ${currentSourceList.length} Selected`}
             </span>
           </div>
 
@@ -1347,8 +1389,8 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
                 {imageSource === 'enhance' || isUpstreamEnhance
                   ? `The upstream ${enhanceLabel} node has not enhanced photos yet. Run Enhance IMG first.`
                   : imageSource === 'generate'
-                  ? `The upstream ${heroLabel} node has not generated a photo yet.`
-                  : 'No photos available from Get Images.'}
+                    ? `The upstream ${heroLabel} node has not generated a photo yet.`
+                    : 'No photos available from Get Images.'}
               </span>
             </div>
           )}
@@ -1427,7 +1469,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
                                 target.src = `/storage/uploads/facebook-import/enhanced/${encodeURIComponent(filename)}`;
                                 return;
                               }
-                            } catch (_) {}
+                            } catch (_) { }
                           } else if (currentSrc.includes('/storage/uploads/facebook-import/enhanced/')) {
                             const filename = currentSrc.split('/').pop();
                             if (filename) {
@@ -1574,7 +1616,7 @@ export const PhotoCropSettingsSidebox: React.FC<PhotoCropSettingsSideboxProps> =
                       setDownloadFolder(path);
                       onUpdateBox(box.id, { downloadFolder: path });
                       localStorage.setItem('ea_crop_download_folder', path);
-                    } catch (_) {}
+                    } catch (_) { }
                   } else {
                     setDownloadFolder('/Downloads');
                     onUpdateBox(box.id, { downloadFolder: '/Downloads' });

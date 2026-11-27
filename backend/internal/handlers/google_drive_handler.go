@@ -62,5 +62,6 @@ func ProxyGoogleDriveImage(c *fiber.Ctx) error {
 
 	c.Set("Content-Type", contentType)
 	c.Set("Cache-Control", "public, max-age=3600")
+	c.Set("Access-Control-Allow-Origin", "*")
 	return c.Send(data)
 }
