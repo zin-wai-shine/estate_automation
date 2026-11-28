@@ -6259,7 +6259,10 @@ export const FacebookWorkflowCanvas = forwardRef<
           Boolean(resolvedDesc) ||
           resolvedHashtags.length > 0 ||
           resolvedImgUrls.length > 0;
-        if (!hasAnyPayload) return;
+        if (!hasAnyPayload) {
+          fetch(`http://127.0.0.1:9224/dispatch-post?id=${encodeURIComponent(`ext_${box.id}`)}`, { method: 'DELETE' }).catch(() => {});
+          return;
+        }
 
         fetch('http://127.0.0.1:9224/dispatch-post', {
           method: 'POST',
@@ -6494,7 +6497,27 @@ export const FacebookWorkflowCanvas = forwardRef<
       description: `${heroCandidateImages.length} hero photo${heroCandidateImages.length !== 1 ? 's' : ''}`,
     });
 
-    // 4. Other connected tab group boxes (e.g. Flow-5146)
+    // 4. Folder Images Loader nodes (Google Drive or Local Folder)
+    config.aiBoxes.filter(isFolderImagesBox).forEach((fb) => {
+      const fData = folderImagesMap[fb.id];
+      const fImgs = (fData?.images || []).map((img, i) => ({
+        url: img.url,
+        index: i + 1,
+        filename: img.name || `Photo #${i + 1}`,
+      }));
+      nodes.push({
+        id: fb.id,
+        title: fb.title || 'Folder Images',
+        nodeType: 'folder-images',
+        images: fImgs,
+        count: fImgs.length,
+        description: fData?.matchedFolder
+          ? `${fImgs.length} photos · ${fData.matchedFolder}`
+          : `${fImgs.length} folder photos`,
+      });
+    });
+
+    // 5. Other connected tab group boxes (e.g. Flow-5146)
     tabBoxes.forEach((b) => {
       if (enhanceTabBox && b.id === enhanceTabBox.id) return;
       if (heroTabBox && b.id === heroTabBox.id) return;
@@ -6511,7 +6534,7 @@ export const FacebookWorkflowCanvas = forwardRef<
     });
 
     return nodes;
-  }, [effectiveImages, images, allEnhancedPhotos, heroImage, config.aiBoxes, config.connections, config.getImages]);
+  }, [effectiveImages, images, allEnhancedPhotos, heroImage, folderImagesMap, config.aiBoxes, config.connections, config.getImages]);
 
   const handleOpenLightbox = (
     indexOrUrl: number | string,
@@ -18381,32 +18404,32 @@ export const FacebookWorkflowCanvas = forwardRef<
                           title="Run workflow starting from Get Content and process all downstream AI models, formats, and sheets"
                           style={{
                             flex: 1,
-                            height: '38px',
-                            minHeight: '38px',
-                            maxHeight: '38px',
+                            height: '36px',
+                            minHeight: '36px',
+                            maxHeight: '36px',
                             boxSizing: 'border-box',
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            gap: '5px',
-                            padding: '0 8px',
+                            gap: '6px',
+                            padding: '0 12px',
                             borderRadius: '8px',
                             fontSize: '0.75rem',
                             fontWeight: 600,
                             whiteSpace: 'nowrap',
                             backgroundColor: contentStatus === 'running'
-                              ? (isDark ? 'rgba(56, 189, 248, 0.2)' : '#E0F2FE')
-                              : (isDark ? '#15803D' : '#16A34A'),
-                            color: contentStatus === 'running' ? '#38BDF8' : '#FFFFFF',
+                              ? (isDark ? 'rgba(50, 110, 230, 0.2)' : '#E0F2FE')
+                              : (isDark ? '#25282B' : '#F8FAFC'),
+                            color: contentStatus === 'running' ? '#60A5FA' : 'var(--text-primary)',
                             border: contentStatus === 'running'
-                              ? '1px solid rgba(56, 189, 248, 0.4)'
-                              : (isDark ? '1px solid #166534' : '1px solid #15803D'),
-                            boxShadow: contentStatus === 'running' ? 'none' : '0 1px 3px rgba(0,0,0,0.12)',
+                              ? '1px solid rgba(50, 110, 230, 0.4)'
+                              : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0'),
+                            boxShadow: 'none',
                             cursor: contentStatus === 'running' ? 'not-allowed' : 'pointer',
                             transition: 'all 0.15s ease',
                           }}
                         >
-                          <FiPlay size={12} style={{ fill: contentStatus === 'running' ? '#38BDF8' : '#FFFFFF', color: contentStatus === 'running' ? '#38BDF8' : '#FFFFFF', flexShrink: 0 }} />
+                          <FiPlay size={12} style={{ fill: contentStatus === 'running' ? '#60A5FA' : '#10B981', color: contentStatus === 'running' ? '#60A5FA' : '#10B981', flexShrink: 0 }} />
                           <span style={{ whiteSpace: 'nowrap' }}>{contentStatus === 'running' ? 'Running Step...' : 'Run From This Step'}</span>
                         </button>
                       </div>
@@ -18417,9 +18440,9 @@ export const FacebookWorkflowCanvas = forwardRef<
                           display: 'flex',
                           alignItems: 'center',
                           gap: '6px',
-                          padding: '3px',
+                          padding: '4px',
                           borderRadius: '8px',
-                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F1F5F9',
+                          backgroundColor: isDark ? '#25282B' : '#F1F5F9',
                           border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
                           marginTop: '0.5rem',
                           marginBottom: '0.625rem',
@@ -18438,25 +18461,26 @@ export const FacebookWorkflowCanvas = forwardRef<
                           }}
                           style={{
                             flex: 1,
+                            height: '30px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: '6px',
-                            padding: '7px 10px',
+                            padding: '0 10px',
                             borderRadius: '6px',
                             fontSize: '0.75rem',
-                            fontWeight: !isContentManualTab ? 600 : 500,
-                            border: !isContentManualTab ? '1px solid #1877F2' : '1px solid transparent',
+                            fontWeight: 600,
+                            border: 'none',
                             backgroundColor: !isContentManualTab
-                              ? (isDark ? 'rgba(24, 119, 242, 0.2)' : '#FFFFFF')
+                              ? (isDark ? '#326EE6' : '#0F172A')
                               : 'transparent',
-                            color: !isContentManualTab ? '#1877F2' : 'var(--text-secondary)',
-                            boxShadow: !isContentManualTab && !isDark ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                            color: !isContentManualTab ? '#FFFFFF' : 'var(--text-secondary)',
+                            boxShadow: 'none',
                             cursor: 'pointer',
                             transition: 'all 0.15s ease',
                           }}
                         >
-                          <FiLink size={14} />
+                          <FiLink size={13} />
                           <span>Link Extraction</span>
                         </button>
 
@@ -18477,25 +18501,26 @@ export const FacebookWorkflowCanvas = forwardRef<
                           }}
                           style={{
                             flex: 1,
+                            height: '30px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: '6px',
-                            padding: '7px 10px',
+                            padding: '0 10px',
                             borderRadius: '6px',
                             fontSize: '0.75rem',
-                            fontWeight: isContentManualTab ? 600 : 500,
-                            border: isContentManualTab ? '1px solid #3B82F6' : '1px solid transparent',
+                            fontWeight: 600,
+                            border: 'none',
                             backgroundColor: isContentManualTab
-                              ? (isDark ? 'rgba(59, 130, 246, 0.2)' : '#FFFFFF')
+                              ? (isDark ? '#326EE6' : '#0F172A')
                               : 'transparent',
-                            color: isContentManualTab ? '#3B82F6' : 'var(--text-secondary)',
-                            boxShadow: isContentManualTab && !isDark ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                            color: isContentManualTab ? '#FFFFFF' : 'var(--text-secondary)',
+                            boxShadow: 'none',
                             cursor: 'pointer',
                             transition: 'all 0.15s ease',
                           }}
                         >
-                          <FiEdit3 size={14} />
+                          <FiEdit3 size={13} />
                           <span>Manual Input</span>
                         </button>
                       </div>

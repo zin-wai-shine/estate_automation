@@ -159,6 +159,7 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
   workflowImageSources = [],
   footerContainer,
 }) => {
+  const [copiedOutputName, setCopiedOutputName] = useState(false);
   const [targetFooterEl, setTargetFooterEl] = useState<HTMLElement | null>(() => {
     if (footerContainer) return footerContainer;
     return typeof document !== 'undefined' ? document.getElementById('workflow-sidebar-pinned-footer') : null;
@@ -4790,18 +4791,53 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                             <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isDark ? '#8B949E' : '#64748B' }}>
                               {isDownloaded ? 'Downloaded File Name' : 'Output Name Preview'}
                             </span>
-                            <span
-                              style={{
-                                fontSize: '0.625rem',
-                                fontWeight: 600,
-                                padding: '1px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: isDownloaded ? 'rgba(63, 185, 80, 0.14)' : (isDark ? '#25282B' : '#E2E8F0'),
-                                color: isDownloaded ? '#3FB950' : (isDark ? '#8B949E' : '#475569'),
-                              }}
-                            >
-                              {isDownloaded ? 'Ready' : 'Preview'}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!previewFileName) return;
+                                  navigator.clipboard.writeText(previewFileName);
+                                  setCopiedOutputName(true);
+                                  setTimeout(() => setCopiedOutputName(false), 1800);
+                                }}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  height: '22px',
+                                  padding: '0 8px',
+                                  borderRadius: '5px',
+                                  border: copiedOutputName
+                                    ? '1px solid rgba(16, 185, 129, 0.45)'
+                                    : (isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #CBD5E1'),
+                                  backgroundColor: copiedOutputName
+                                    ? 'rgba(16, 185, 129, 0.14)'
+                                    : (isDark ? '#25282B' : '#F8FAFC'),
+                                  color: copiedOutputName
+                                    ? '#34D399'
+                                    : (isDark ? '#E6EDF3' : '#334155'),
+                                  fontSize: '0.625rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  outline: 'none',
+                                }}
+                              >
+                                {copiedOutputName ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                                <span>{copiedOutputName ? 'Copied' : 'Copy'}</span>
+                              </button>
+                              <span
+                                style={{
+                                  fontSize: '0.625rem',
+                                  fontWeight: 600,
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  backgroundColor: isDownloaded ? 'rgba(63, 185, 80, 0.14)' : (isDark ? '#25282B' : '#E2E8F0'),
+                                  color: isDownloaded ? '#3FB950' : (isDark ? '#8B949E' : '#475569'),
+                                }}
+                              >
+                                {isDownloaded ? 'Ready' : 'Preview'}
+                              </span>
+                            </div>
                           </div>
                           <span
                             style={{
@@ -6925,32 +6961,32 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
             </button>
 
             {isAutomating || isRunningTwoStage ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
-                {/* Clean Running Status Pill */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                {/* Compact Running Status Pill */}
                 <div
                   style={{
-                    flex: 1,
-                    height: '36px',
-                    borderRadius: '8px',
-                    backgroundColor: isDark ? 'rgba(37, 99, 235, 0.12)' : 'rgba(37, 99, 235, 0.08)',
-                    border: isDark ? '1px solid rgba(59, 130, 246, 0.35)' : '1px solid rgba(37, 99, 235, 0.25)',
+                    height: '34px',
+                    borderRadius: '7px',
+                    backgroundColor: isDark ? '#25282B' : '#EFF6FF',
+                    border: isDark ? '1px solid rgba(50, 110, 230, 0.45)' : '1px solid rgba(37, 99, 235, 0.25)',
                     color: isDark ? '#93C5FD' : '#1D4ED8',
                     fontSize: '0.78125rem',
                     fontWeight: 600,
-                    display: 'flex',
+                    display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '7px',
-                    padding: '0 12px',
+                    padding: '0 14px',
                     userSelect: 'none',
                     letterSpacing: '0.01em',
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  <FiLoader className="animate-spin" size={13} style={{ color: '#3B82F6' }} />
+                  <FiLoader className="animate-spin" size={13} style={{ color: '#326EE6' }} />
                   <span>Running...</span>
                 </div>
 
-                {/* Sleek Stop Button */}
+                {/* Crisp Stop Button */}
                 <button
                   type="button"
                   title="Stop active automation"
@@ -6959,27 +6995,25 @@ export const ExternalBrowserSidebar: React.FC<ExternalBrowserSidebarProps> = ({
                     height: '34px',
                     padding: '0 14px',
                     borderRadius: '7px',
-                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
-                    border: isDark ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid #FECACA',
-                    color: isDark ? '#F87171' : '#DC2626',
+                    backgroundColor: isDark ? '#DC2626' : '#EF4444',
+                    border: 'none',
+                    color: '#FFFFFF',
                     fontSize: '0.78125rem',
                     fontWeight: 600,
-                    display: 'flex',
+                    display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '6px',
                     cursor: 'pointer',
-                    transition: 'all 0.15s ease',
+                    transition: 'background-color 0.15s ease',
                     whiteSpace: 'nowrap',
                     flexShrink: 0,
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.22)' : '#FEE2E2';
-                    e.currentTarget.style.borderColor = isDark ? 'rgba(239, 68, 68, 0.55)' : '#FCA5A5';
+                    e.currentTarget.style.backgroundColor = '#B91C1C';
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2';
-                    e.currentTarget.style.borderColor = isDark ? 'rgba(239, 68, 68, 0.35)' : '#FECACA';
+                    e.currentTarget.style.backgroundColor = isDark ? '#DC2626' : '#EF4444';
                   }}
                 >
                   <FiSquare size={10} style={{ fill: 'currentColor' }} />

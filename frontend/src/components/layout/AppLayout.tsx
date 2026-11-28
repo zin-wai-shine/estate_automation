@@ -496,17 +496,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
                   // Colors cleanly adapted for both light and dark mode with ZERO glow
                   const activeBg = isDark
-                    ? 'rgba(59, 130, 246, 0.14)'
-                    : 'rgba(37, 99, 235, 0.08)';
+                    ? '#326EE6'
+                    : 'rgba(37, 99, 235, 0.1)';
                   const activeBorder = isDark
-                    ? '1px solid rgba(59, 130, 246, 0.28)'
-                    : '1px solid rgba(37, 99, 235, 0.22)';
+                    ? '1px solid #326EE6'
+                    : '1px solid rgba(37, 99, 235, 0.25)';
                   const activeTextColor = isDark
                     ? '#FFFFFF'
                     : '#1D4ED8';
 
                   const iconColor = isActive
-                    ? (isDark ? '#60A5FA' : '#1D4ED8')
+                    ? (isDark ? '#FFFFFF' : '#1D4ED8')
                     : 'var(--text-secondary)';
 
                   return (
@@ -521,9 +521,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: isCollapsed ? 'center' : 'space-between',
-                        width: '100%',
-                        padding: isCollapsed ? '0.5rem 0' : '0.5rem 0.625rem',
-                        borderRadius: '0.625rem',
+                        width: isCollapsed ? '36px' : '100%',
+                        height: isCollapsed ? '36px' : undefined,
+                        margin: isCollapsed ? '0 auto' : undefined,
+                        padding: isCollapsed ? 0 : '0.5rem 0.625rem',
+                        borderRadius: isCollapsed ? '8px' : '0.625rem',
                         fontSize: '0.8125rem',
                         fontWeight: isActive ? 600 : 500,
                         color: isActive ? activeTextColor : 'var(--text-secondary)',
@@ -636,28 +638,32 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 }
               }}
               style={{
-                width: '100%',
+                width: (isCollapsed || isCanvasMode) ? '36px' : '100%',
+                height: (isCollapsed || isCanvasMode) ? '36px' : undefined,
+                margin: (isCollapsed || isCanvasMode) ? '0 auto' : undefined,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: (isCollapsed || isCanvasMode) ? 'center' : 'flex-start',
                 gap: '0.5rem',
-                padding: '0.5rem 0.625rem',
-                color: 'var(--text-muted)',
+                padding: (isCollapsed || isCanvasMode) ? 0 : '0.5rem 0.625rem',
+                color: isDark ? '#E5E7EB' : 'var(--text-muted)',
                 fontSize: '0.75rem',
                 fontWeight: 500,
-                border: 'none',
-                background: 'transparent',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #E2E8F0',
+                background: isDark ? '#1D1F22' : '#F8FAFC',
                 cursor: 'pointer',
-                borderRadius: '0.375rem',
-                transition: 'color 0.15s ease',
+                borderRadius: '8px',
+                transition: 'all 0.15s ease',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.color = 'var(--text-primary)';
-                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)';
+                e.currentTarget.style.color = isDark ? '#FFFFFF' : 'var(--text-primary)';
+                e.currentTarget.style.borderColor = '#326EE6';
+                e.currentTarget.style.backgroundColor = isDark ? 'rgba(50, 110, 230, 0.18)' : '#EFF6FF';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.color = 'var(--text-muted)';
-                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = isDark ? '#E5E7EB' : 'var(--text-muted)';
+                e.currentTarget.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0';
+                e.currentTarget.style.backgroundColor = isDark ? '#1D1F22' : '#F8FAFC';
               }}
               title={isCanvasMode ? 'Hide sidebar' : (isCollapsed ? 'Expand sidebar' : 'Collapse sidebar')}
             >

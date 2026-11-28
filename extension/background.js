@@ -3375,7 +3375,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
                       candidates.find(n => /add photo\\/video|add photo/i.test((n.textContent || '').trim()));
                     const btn = el ? (el.closest('[role="button"], button') || el) : null;
                     if (!btn) return null;
-                    btn.scrollIntoView({ block: 'center' });
+                    btn.scrollIntoView({ block: 'center', behavior: 'instant' });
                     const r = btn.getBoundingClientRect();
                     if (r.width <= 0 || r.height <= 0) return null;
 
@@ -3396,7 +3396,9 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
                     return { assigned: false, strategy: 'no-add-btn' };
                   }
 
+                  await delay(80);
                   await cdpClick(addBtnInfo.x, addBtnInfo.y);
+                  await delay(150);
 
                   const pollStart = Date.now();
                   let uploadActionCoords = null;
@@ -3446,6 +3448,9 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
                         const isNew = !prevSet.has(label);
                         const inOverlay = Boolean(n.closest('[role="menu"], [role="dialog"], [role="listbox"], [data-visualcompletion]'));
                         const dist = Math.hypot((r.left + r.width / 2) - ${addBtnInfo.x}, (r.top + r.height / 2) - ${addBtnInfo.y});
+                        // Never click the Add photo/video trigger button itself again
+                        if (dist < 12) continue;
+                        if (!isNew && !inOverlay) continue;
 
                         let score = 0;
                         if (/^(add photo|add photos|upload from desktop|upload photo|upload photos|from computer|from device)$/i.test(label)) score += 70;
@@ -3461,7 +3466,19 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
                       }
 
                       scored.sort((a, b) => b.score - a.score);
-                      return scored[0] || null;
+                      const best = scored[0] || null;
+                      if (!best) return null;
+                      // Ensure menu item is visible inside viewport before clicking
+                      const bestNode = nodes.find(n => {
+                        const r = n.getBoundingClientRect();
+                        return Math.abs((r.left + r.width / 2) - best.x) < 2 && Math.abs((r.top + r.height / 2) - best.y) < 2;
+                      });
+                      if (bestNode) {
+                        bestNode.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+                        const r2 = bestNode.getBoundingClientRect();
+                        return { ...best, x: r2.left + r2.width / 2, y: r2.top + r2.height / 2 };
+                      }
+                      return best;
                     })()`);
 
                     if (uploadActionCoords) {
@@ -3524,22 +3541,35 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
               try {
                 for (let idx = 0; idx < localPaths.length; idx++) {
                   const singleFile = localPaths[idx];
+                  // Wait briefly if Meta still has an active upload progress bar from the previous photo
+                  if (idx > 0) {
+                    const busyStart = Date.now();
+                    while (Date.now() - busyStart < 8000) {
+                      const snap = await countMediaThumbnails();
+                      if (snap.progressEls === 0) break;
+                      await delay(250);
+                    }
+                  }
                   const curSnap = await countMediaThumbnails();
                   const countBeforeThis = curSnap.mediaEls;
 
-                  const stepRes = await uploadSingleFileToMeta(singleFile, idx);
+                  let stepRes = await uploadSingleFileToMeta(singleFile, idx);
+                  for (let retry = 0; retry < 2 && !stepRes.assigned; retry++) {
+                    await delay(800);
+                    stepRes = await uploadSingleFileToMeta(singleFile, idx);
+                  }
                   if (idx === 0) mediaStrategy = stepRes.strategy;
                   if (!stepRes.assigned) {
                     break;
                   }
                   filesAssigned = true;
 
-                  const renderSnap = await waitForMediaThumbnails(countBeforeThis, 12000, 25000);
+                  const renderSnap = await waitForMediaThumbnails(countBeforeThis, 15000, 30000);
                   if (renderSnap.afterCount > countBeforeThis || renderSnap.sawProgress) {
                     uploadedSuccessCount++;
                   }
                   if (idx < localPaths.length - 1) {
-                    await delay(180);
+                    await delay(220);
                   }
                 }
 
@@ -3608,7 +3638,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
             },
             args: [
               overallOk
-                ? `Filled Meta (${attachedCount} photos${textFilled ? ' + caption' : ''})`
+                ? `Filled Meta (${attachedCount}/${localPaths.length} photos${textFilled ? ' + caption' : ''}${attachedCount < localPaths.length && debugNote.trim() ? ` — ${debugNote.trim()}` : ''})`
                 : `Fill failed (${debugNote.trim() || 'caption verification failed'})`,
               overallOk,
             ],

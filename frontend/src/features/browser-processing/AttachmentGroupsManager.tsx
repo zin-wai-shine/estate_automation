@@ -95,10 +95,13 @@ export function resolveAttachedPhotosFromSteps(
         ? (workflowImageSources.find((s) => s.id === step.workflowSourceId) || workflowImageSources[0])
         : null;
       const isEnhance = (src?.nodeType === 'enhance') || (src?.title?.toLowerCase().includes('enhance')) || step.workflowSourceId === 'enhanced-images' || step.sourceType === 'enhanced';
+      const isFolderNode = src?.nodeType === 'folder-images';
       const imgs = (src?.images && src.images.length > 0)
         ? src.images
         : isEnhance
         ? (enhancedImages && enhancedImages.length > 0 ? enhancedImages : [])
+        : isFolderNode
+        ? []
         : propertyImages;
 
       if (imgs && imgs.length > 0) {
@@ -280,17 +283,33 @@ export const AttachmentGroupsManager: React.FC<AttachmentGroupsManagerProps> = (
           index: idx + 1,
         }));
 
-        // Cache the parsed images in global in-memory cache for the entire session
-        globalCondoImagesCache[cacheKey] = mappedImages;
+        if (mappedImages.length > 0) {
+          // Cache the parsed images in global in-memory cache for the entire session
+          globalCondoImagesCache[cacheKey] = mappedImages;
 
-        handleUpdateStep(stepId, {
-          folderImages: mappedImages,
-        });
+          handleUpdateStep(stepId, {
+            folderImages: mappedImages,
+          });
+          return;
+        }
       }
     } catch (_) {
     } finally {
       inFlightFetchRef.current[fetchKey] = false;
       setLoadingSteps((prev) => ({ ...prev, [stepId]: false }));
+    }
+
+    // Fallback: if local Mac folder returned 0 photos (or companion offline), reuse any Folder Images workflow node!
+    const folderWorkflowSrc = activeSources.find((s) => s.nodeType === 'folder-images' && s.images && s.images.length > 0);
+    if (folderWorkflowSrc && folderWorkflowSrc.images) {
+      const mapped = folderWorkflowSrc.images.map((im, idx) => ({
+        filename: im.filename || `Photo #${idx + 1}`,
+        data_url: im.url || '',
+        full_path: '',
+        index: idx + 1,
+      }));
+      globalCondoImagesCache[cacheKey] = mapped;
+      handleUpdateStep(stepId, { folderImages: mapped });
     }
   };
 

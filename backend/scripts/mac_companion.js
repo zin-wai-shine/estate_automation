@@ -4285,7 +4285,7 @@ function mergeTabGroups(scannedGroups, liveGroups) {
     const includeAll = url.searchParams.get('all') === '1';
     const normProfile = rawProfileKey ? normalizeProfileKey(rawProfileKey) : '';
 
-    const items = includeAll
+    const rawItems = includeAll
       ? dispatchQueue
       : dispatchQueue.filter((item) => {
           if (boxId && item.boxId && item.boxId === boxId) return true;
@@ -4293,6 +4293,15 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           if (!item.profileKey && !item.boxId) return true;
           return false;
         });
+
+    // Only keep the latest staged post per boxId / id so old workspace runs never accumulate
+    const seenBoxes = new Set();
+    const items = rawItems.filter((item) => {
+      const key = item.boxId ? `box:${item.boxId}` : `id:${item.id}`;
+      if (seenBoxes.has(key)) return false;
+      seenBoxes.add(key);
+      return true;
+    });
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(
@@ -4343,13 +4352,13 @@ function mergeTabGroups(scannedGroups, liveGroups) {
           updatedAt: new Date().toISOString(),
         };
 
-        const existingIdx = dispatchQueue.findIndex((x) => x.id === id);
-        if (existingIdx !== -1) {
-          dispatchQueue[existingIdx] = item;
-        } else {
-          dispatchQueue.unshift(item);
-        }
-        // Keep queue bounded to last 50 items
+        // Replace any previous staged post with the same id or boxId so only current workspace data is shown
+        dispatchQueue = dispatchQueue.filter((x) => {
+          if (x.id === id) return false;
+          if (item.boxId && x.boxId && x.boxId === item.boxId) return false;
+          return true;
+        });
+        dispatchQueue.unshift(item);
         if (dispatchQueue.length > 50) {
           dispatchQueue = dispatchQueue.slice(0, 50);
         }
